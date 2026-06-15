@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+from enum import IntEnum
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QDial, QDoubleSpinBox, QSpinBox
 
+from .shadow_support import ShadowSupportMixin
 from .theme_support import ThemeSupportMixin
 from .themes import theme_color, theme_int, theme_radius
 
@@ -170,19 +172,30 @@ class MonkezDoubleSpinBox(QDoubleSpinBox, _SpinBoxStyleMixin):
     controlHeight = pyqtProperty(int, _SpinBoxStyleMixin.getControlHeight, _SpinBoxStyleMixin.setControlHeight)
 
 
-class MonkezDial(QDial, ThemeSupportMixin):
+class MonkezDial(QDial, ThemeSupportMixin, ShadowSupportMixin):
     themeChanged = pyqtSignal(str)
+
+    @pyqtEnum
+    class DialStyle(IntEnum):
+        Ring = 0
+        Knob = 1
+        Needle = 2
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._init_theme_support()
+        self._init_shadow_support()
         self._track_color = QColor()
         self._value_color = QColor()
         self._handle_color = QColor()
         self._text_color = QColor()
+        self._dial_style = self.DialStyle.Ring
         self._track_width = 8
         self._handle_size = 12
         self._show_value = True
+        self._show_ticks = True
+        self._tick_count = 11
+        self._suffix = ""
         self.setRange(0, 100)
         self.setValue(35)
         self.setNotchesVisible(False)
@@ -219,21 +232,56 @@ class MonkezDial(QDial, ThemeSupportMixin):
         start_angle = 225 * 16
         total_span = -270 * 16
 
-        pen = QPen(self._track_color, self._track_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        painter.drawArc(rect, start_angle, total_span)
-
-        pen.setColor(self._value_color)
-        painter.setPen(pen)
-        painter.drawArc(rect, start_angle, int(total_span * ratio))
-
         angle = math.radians(135 + ratio * 270)
         center = rect.center()
         radius = rect.width() / 2
-        handle = QPointF(center.x() + radius * math.cos(angle), center.y() + radius * math.sin(angle))
-        painter.setPen(QPen(self._value_color, 2))
-        painter.setBrush(self._handle_color)
-        painter.drawEllipse(handle, self._handle_size / 2, self._handle_size / 2)
+        if self._show_ticks:
+            painter.setPen(QPen(self._text_color, 1))
+            for index in range(max(2, self._tick_count)):
+                tick_ratio = index / max(1, self._tick_count - 1)
+                tick_angle = math.radians(135 + tick_ratio * 270)
+                outer = radius + self._track_width / 2 + 4
+                inner = outer - (5 if index % 5 else 8)
+                painter.drawLine(
+                    QPointF(center.x() + inner * math.cos(tick_angle), center.y() + inner * math.sin(tick_angle)),
+                    QPointF(center.x() + outer * math.cos(tick_angle), center.y() + outer * math.sin(tick_angle)),
+                )
+
+        if self._dial_style == self.DialStyle.Ring:
+            pen = QPen(self._track_color, self._track_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.drawArc(rect, start_angle, total_span)
+            pen.setColor(self._value_color)
+            painter.setPen(pen)
+            painter.drawArc(rect, start_angle, int(total_span * ratio))
+            handle = QPointF(center.x() + radius * math.cos(angle), center.y() + radius * math.sin(angle))
+            painter.setPen(QPen(self._value_color, 2))
+            painter.setBrush(self._handle_color)
+            painter.drawEllipse(handle, self._handle_size / 2, self._handle_size / 2)
+        elif self._dial_style == self.DialStyle.Knob:
+            painter.setPen(QPen(self._track_color, 2))
+            painter.setBrush(self._handle_color)
+            painter.drawEllipse(rect)
+            inner = rect.adjusted(self._track_width, self._track_width, -self._track_width, -self._track_width)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(theme_color(self._theme, "surface_alt"))
+            painter.drawEllipse(inner)
+            pointer_radius = inner.width() * 0.38
+            end = QPointF(center.x() + pointer_radius * math.cos(angle), center.y() + pointer_radius * math.sin(angle))
+            painter.setPen(QPen(self._value_color, max(3, self._track_width // 2), cap=Qt.PenCapStyle.RoundCap))
+            painter.drawLine(center, end)
+            painter.setBrush(self._value_color)
+            painter.drawEllipse(center, 4, 4)
+        else:
+            painter.setPen(QPen(self._track_color, self._track_width, cap=Qt.PenCapStyle.RoundCap))
+            painter.drawArc(rect, start_angle, total_span)
+            needle_radius = radius - 4
+            end = QPointF(center.x() + needle_radius * math.cos(angle), center.y() + needle_radius * math.sin(angle))
+            painter.setPen(QPen(self._value_color, 3, cap=Qt.PenCapStyle.RoundCap))
+            painter.drawLine(center, end)
+            painter.setPen(QPen(self._handle_color, 2))
+            painter.setBrush(self._value_color)
+            painter.drawEllipse(center, self._handle_size / 2, self._handle_size / 2)
 
         if self._show_value:
             painter.setPen(self._text_color)
@@ -241,7 +289,10 @@ class MonkezDial(QDial, ThemeSupportMixin):
             font.setBold(True)
             font.setPointSize(max(8, min(14, side // 9)))
             painter.setFont(font)
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, str(self.value()))
+            value_rect = QRectF(self.rect())
+            if self._dial_style != self.DialStyle.Ring:
+                value_rect = QRectF(0, self.height() * 0.62, self.width(), self.height() * 0.24)
+            painter.drawText(value_rect, Qt.AlignmentFlag.AlignCenter, f"{self.value()}{self._suffix}")
 
     def getTrackColor(self) -> QColor:
         return QColor(self._track_color)
@@ -292,6 +343,43 @@ class MonkezDial(QDial, ThemeSupportMixin):
         self._show_value = bool(value)
         self.update()
 
+    def getDialStyle(self):
+        return int(self._dial_style)
+
+    def setDialStyle(self, value) -> None:
+        try:
+            self._dial_style = self.DialStyle(int(value))
+        except (TypeError, ValueError):
+            self._dial_style = self.DialStyle.Ring
+        self.update()
+
+    def getDialStyleHint(self) -> str:
+        return "0 Ring | 1 Knob | 2 Needle"
+
+    def setDialStyleHint(self, value: str) -> None:
+        return None
+
+    def getShowTicks(self) -> bool:
+        return self._show_ticks
+
+    def setShowTicks(self, value: bool) -> None:
+        self._show_ticks = bool(value)
+        self.update()
+
+    def getTickCount(self) -> int:
+        return self._tick_count
+
+    def setTickCount(self, value: int) -> None:
+        self._tick_count = min(101, max(2, int(value)))
+        self.update()
+
+    def getSuffix(self) -> str:
+        return self._suffix
+
+    def setSuffix(self, value: str) -> None:
+        self._suffix = value or ""
+        self.update()
+
     themeIndex = pyqtProperty(int, ThemeSupportMixin.getThemeIndex, ThemeSupportMixin.setThemeIndex)
     themeHint = pyqtProperty(
         str, ThemeSupportMixin.getThemeOptions, ThemeSupportMixin.setThemeOptions, stored=False
@@ -304,3 +392,13 @@ class MonkezDial(QDial, ThemeSupportMixin):
     trackWidth = pyqtProperty(int, getTrackWidth, setTrackWidth)
     handleSize = pyqtProperty(int, getHandleSize, setHandleSize)
     showValue = pyqtProperty(bool, getShowValue, setShowValue)
+    dialStyle = pyqtProperty(int, getDialStyle, setDialStyle)
+    dialStyleHint = pyqtProperty(str, getDialStyleHint, setDialStyleHint, stored=False)
+    showTicks = pyqtProperty(bool, getShowTicks, setShowTicks)
+    tickCount = pyqtProperty(int, getTickCount, setTickCount)
+    suffix = pyqtProperty(str, getSuffix, setSuffix)
+    shadowEnabled = pyqtProperty(bool, ShadowSupportMixin.getShadowEnabled, ShadowSupportMixin.setShadowEnabled)
+    shadowBlur = pyqtProperty(int, ShadowSupportMixin.getShadowBlur, ShadowSupportMixin.setShadowBlur)
+    shadowOffsetX = pyqtProperty(int, ShadowSupportMixin.getShadowOffsetX, ShadowSupportMixin.setShadowOffsetX)
+    shadowOffsetY = pyqtProperty(int, ShadowSupportMixin.getShadowOffsetY, ShadowSupportMixin.setShadowOffsetY)
+    shadowColor = pyqtProperty(QColor, ShadowSupportMixin.getShadowColor, ShadowSupportMixin.setShadowColor)

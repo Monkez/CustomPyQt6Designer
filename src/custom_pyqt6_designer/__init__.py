@@ -1,3 +1,3 @@
 """Installer-friendly Qt Designer plugin package for PyQt6 custom widgets."""
 
-__version__ = "0.2.4"
+__version__ = "0.3.0"

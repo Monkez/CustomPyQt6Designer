@@ -16,6 +16,7 @@ THEME_LABELS = (
 )
 THEMED_CLASS_NAMES = {
     "MonkezButton",
+    "MonkezArcGauge",
     "MonkezCalendarWidget",
     "MonkezCheckBox",
     "MonkezComboBox",
@@ -26,8 +27,10 @@ THEMED_CLASS_NAMES = {
     "MonkezFrame",
     "MonkezGroupBox",
     "MonkezLCDNumber",
+    "MonkezLinearGauge",
     "MonkezProgressBar",
     "MonkezRadioButton",
+    "MonkezRadialGauge",
     "MonkezScrollArea",
     "MonkezSlider",
     "MonkezSpinBox",

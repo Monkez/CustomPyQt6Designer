@@ -41,7 +41,7 @@ class PluginTests(unittest.TestCase):
             names.append(plugin.name())
             widget.deleteLater()
 
-        self.assertEqual(len(names), 21)
+        self.assertEqual(len(names), 24)
         self.assertNotIn("MetricCard", names)
         self.assertNotIn("StatusBadge", names)
 

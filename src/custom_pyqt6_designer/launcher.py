@@ -258,7 +258,13 @@ def append_path(existing: str, new_entry: str, separator: str) -> str:
     return separator.join(parts)
 
 
-def verify_designer_plugins(command: list[str], env: dict[str, str], expected_plugins: int = 21) -> int:
+def verify_designer_plugins(
+    command: list[str],
+    env: dict[str, str],
+    expected_plugins: int | None = None,
+) -> int:
+    if expected_plugins is None:
+        expected_plugins = len(list(plugin_dir().glob("*_plugin.py")))
     with tempfile.TemporaryDirectory(prefix="monkez-designer-check-") as temp_dir:
         probe_path = Path(temp_dir) / "plugin-probe.log"
         stdout_path = Path(temp_dir) / "designer-stdout.log"

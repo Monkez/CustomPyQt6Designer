@@ -4,6 +4,7 @@ from .monkez_combobox import MonkezComboBox
 from .monkez_containers import MonkezFrame, MonkezGroupBox, MonkezScrollArea
 from .monkez_datetime_widgets import MonkezCalendarWidget, MonkezDateEdit, MonkezDateTimeEdit, MonkezTimeEdit
 from .monkez_display_widgets import MonkezLCDNumber
+from .monkez_gauges import MonkezArcGauge, MonkezLinearGauge, MonkezRadialGauge
 from .monkez_image import MonkezImage
 from .monkez_progress_bar import MonkezProgressBar
 from .monkez_radio_button import MonkezRadioButton
@@ -15,6 +16,7 @@ from .monkez_value_widgets import MonkezDial, MonkezDoubleSpinBox, MonkezSpinBox
 
 __all__ = [
     "MonkezButton",
+    "MonkezArcGauge",
     "MonkezCheckBox",
     "MonkezCalendarWidget",
     "MonkezComboBox",
@@ -26,8 +28,10 @@ __all__ = [
     "MonkezGroupBox",
     "MonkezImage",
     "MonkezLCDNumber",
+    "MonkezLinearGauge",
     "MonkezProgressBar",
     "MonkezRadioButton",
+    "MonkezRadialGauge",
     "MonkezScrollArea",
     "MonkezSlider",
     "MonkezSpinBox",

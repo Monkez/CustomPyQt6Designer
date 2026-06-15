@@ -85,6 +85,7 @@ Demo dùng `PyQt6.uic.loadUi()` và kết nối các widget bằng signal/slot t
 | Input | `MonkezTextInput`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
 | Action | `MonkezButton`, `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
 | Value | `MonkezSlider`, `MonkezDial`, `MonkezProgressBar`, `MonkezLCDNumber` |
+| Gauge | `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
 | Date/time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
 | Media | `MonkezImage`, `MonkezUSBCamera` |
 | Container | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea` |

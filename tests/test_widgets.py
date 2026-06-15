@@ -12,9 +12,14 @@ from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout
 from custom_pyqt6_designer import monkez_widgets
 from custom_pyqt6_designer.monkez_widgets import (
     MonkezCalendarWidget,
+    MonkezArcGauge,
     MonkezComboBox,
+    MonkezDial,
     MonkezGroupBox,
     MonkezImage,
+    MonkezLinearGauge,
+    MonkezRadialGauge,
+    MonkezRadioButton,
     MonkezUSBCamera,
 )
 
@@ -112,6 +117,48 @@ class WidgetTests(unittest.TestCase):
         self.assertFalse(group.subtitleVisible)
         group.close()
         group.deleteLater()
+
+    def test_group_box_auto_header_height_tracks_subtitle_and_font(self) -> None:
+        group = MonkezGroupBox()
+        group.subtitle = "Secondary information"
+        with_subtitle = group.headerHeight
+        group.subtitleVisible = False
+        title_only = group.headerHeight
+        font = group.font()
+        font.setPointSize(font.pointSize() + 8)
+        group.setFont(font)
+        large_title = group.headerHeight
+
+        self.assertLess(title_only, with_subtitle)
+        self.assertGreater(large_title, title_only)
+        self.assertTrue(group.autoHeaderHeight)
+        group.deleteLater()
+
+    def test_radio_dial_and_gauges_expose_distinct_styles_and_shadow(self) -> None:
+        radio = MonkezRadioButton()
+        dial = MonkezDial()
+        gauges = (MonkezRadialGauge(), MonkezArcGauge(), MonkezLinearGauge())
+
+        radio.radioStyle = 2
+        dial.dialStyle = 2
+        radio.shadowEnabled = True
+        dial.shadowEnabled = True
+        self.assertEqual(int(radio.radioStyle), 2)
+        self.assertEqual(int(dial.dialStyle), 2)
+        self.assertIsNotNone(radio.graphicsEffect())
+        self.assertIsNotNone(dial.graphicsEffect())
+
+        for gauge in gauges:
+            gauge.shadowEnabled = True
+            gauge.resize(gauge.minimumSize())
+            gauge.show()
+            self.app.processEvents()
+            self.assertFalse(gauge.grab().isNull())
+            self.assertIsNotNone(gauge.graphicsEffect())
+            gauge.close()
+            gauge.deleteLater()
+        radio.deleteLater()
+        dial.deleteLater()
 
     def test_combo_popup_has_no_native_black_frame_or_shadow(self) -> None:
         combo = MonkezComboBox()

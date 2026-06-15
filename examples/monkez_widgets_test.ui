@@ -212,6 +212,25 @@
      </property>
     </widget>
    </item>
+   <item row="12" column="0">
+    <widget class="MonkezRadialGauge" name="monkezRadialGauge">
+     <property name="value"><number>72</number></property>
+     <property name="minimumSize"><size><width>220</width><height>220</height></size></property>
+    </widget>
+   </item>
+   <item row="12" column="1">
+    <widget class="MonkezArcGauge" name="monkezArcGauge">
+     <property name="value"><number>84</number></property>
+     <property name="segmented"><bool>true</bool></property>
+     <property name="minimumSize"><size><width>220</width><height>150</height></size></property>
+    </widget>
+   </item>
+   <item row="13" column="0" colspan="2">
+    <widget class="MonkezLinearGauge" name="monkezLinearGauge">
+     <property name="value"><number>64</number></property>
+     <property name="minimumSize"><size><width>480</width><height>90</height></size></property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <customwidgets>
@@ -321,6 +340,21 @@
   <customwidget>
    <class>MonkezLCDNumber</class>
    <extends>QLCDNumber</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezRadialGauge</class>
+   <extends>QAbstractSlider</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezArcGauge</class>
+   <extends>QAbstractSlider</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezLinearGauge</class>
+   <extends>QAbstractSlider</extends>
    <header>custom_pyqt6_designer.monkez_widgets</header>
   </customwidget>
  </customwidgets>

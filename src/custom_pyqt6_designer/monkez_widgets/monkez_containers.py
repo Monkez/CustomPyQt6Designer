@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea, QWidget
 
 from .theme_support import ThemeSupportMixin
@@ -114,6 +114,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         self._radius = 12
         self._border_width = 1
         self._header_height = 54
+        self._auto_header_height = True
         self._accent_width = 4
         self._elevation = 1
         self._content_padding = 16
@@ -140,9 +141,10 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         self._update_style()
 
     def _update_style(self) -> None:
+        header_height = self._effective_header_height()
         self.setContentsMargins(
             self._content_padding,
-            self._header_height + 10,
+            header_height + 10,
             self._content_padding,
             self._content_padding,
         )
@@ -153,12 +155,28 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         layout = self.layout()
         if layout is None:
             return
+        header_height = self._effective_header_height()
         layout.setContentsMargins(
             self._content_padding,
-            self._header_height + 12,
+            header_height + 12,
             self._content_padding,
             self._content_padding,
         )
+
+    def _effective_header_height(self) -> int:
+        if not self._auto_header_height:
+            return self._header_height
+        title_font = QFont(self.font())
+        title_font.setBold(True)
+        title_font.setPointSizeF(max(9.0, title_font.pointSizeF()))
+        title_height = QFontMetrics(title_font).height()
+        subtitle = self._subtitle.strip() if self._subtitle_visible else ""
+        if not subtitle:
+            return max(38, title_height + 20)
+        subtitle_font = QFont(self.font())
+        subtitle_font.setPointSizeF(max(8.0, subtitle_font.pointSizeF() - 1))
+        subtitle_height = QFontMetrics(subtitle_font).height()
+        return max(52, title_height + subtitle_height + 22)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -189,9 +207,10 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         painter.setBrush(self._background_color)
         painter.drawPath(card_path)
 
+        header_height = self._effective_header_height()
         painter.save()
         painter.setClipPath(card_path)
-        header_rect = QRectF(card_rect.left(), card_rect.top(), card_rect.width(), self._header_height)
+        header_rect = QRectF(card_rect.left(), card_rect.top(), card_rect.width(), header_height)
         painter.fillRect(header_rect, self._header_color)
         divider = QColor(self._border_color)
         divider.setAlpha(max(80, divider.alpha()))
@@ -208,10 +227,10 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         painter.setPen(QPen(border, border_width))
         painter.drawPath(card_path)
 
-        accent_height = max(16.0, self._header_height - 22.0)
+        accent_height = max(16.0, header_height - 22.0)
         accent_rect = QRectF(
             card_rect.left() + 13,
-            card_rect.top() + (self._header_height - accent_height) / 2,
+            card_rect.top() + (header_height - accent_height) / 2,
             self._accent_width,
             accent_height,
         )
@@ -221,7 +240,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
 
         text_left = accent_rect.right() + 12
         if self.isCheckable():
-            indicator_rect = QRectF(text_left, card_rect.top() + (self._header_height - 18) / 2, 18, 18)
+            indicator_rect = QRectF(text_left, card_rect.top() + (header_height - 18) / 2, 18, 18)
             self._draw_indicator(painter, indicator_rect)
             text_left = indicator_rect.right() + 10
 
@@ -241,29 +260,37 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         )
         subtitle = self._subtitle.strip() if self._subtitle_visible else ""
         if subtitle:
-            title_y = card_rect.top() + 12
-            painter.drawText(QRectF(text_left, title_y, text_width, 20), Qt.AlignmentFlag.AlignVCenter, title)
             subtitle_font = QFont(self.font())
             subtitle_font.setPointSizeF(max(8.0, subtitle_font.pointSizeF() - 1))
+            subtitle_metrics = QFontMetrics(subtitle_font)
+            block_height = title_metrics.height() + subtitle_metrics.height() + 4
+            block_top = card_rect.top() + (header_height - block_height) / 2
+            painter.drawText(
+                QRectF(text_left, block_top, text_width, title_metrics.height()),
+                Qt.AlignmentFlag.AlignVCenter,
+                title,
+            )
             painter.setFont(subtitle_font)
             painter.setPen(self._subtitle_color)
-            subtitle_metrics = painter.fontMetrics()
             subtitle_text = subtitle_metrics.elidedText(
                 subtitle,
                 Qt.TextElideMode.ElideRight,
                 int(text_width),
             )
             painter.drawText(
-                QRectF(text_left, card_rect.top() + 31, text_width, 16),
+                QRectF(text_left, block_top + title_metrics.height() + 4, text_width, subtitle_metrics.height()),
                 Qt.AlignmentFlag.AlignVCenter,
                 subtitle_text,
             )
         else:
             painter.drawText(
-                QRectF(text_left, card_rect.top(), text_width, self._header_height),
+                QRectF(text_left, card_rect.top(), text_width, header_height),
                 Qt.AlignmentFlag.AlignVCenter,
                 title,
             )
+
+    def _header_hit_height(self) -> int:
+        return self._effective_header_height() + 4
 
     def _draw_indicator(self, painter: QPainter, rect: QRectF) -> None:
         checked = self.isChecked()
@@ -296,7 +323,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         if (
             self.isCheckable()
             and event.button() == Qt.MouseButton.LeftButton
-            and event.position().y() <= self._header_height + 4
+            and event.position().y() <= self._header_hit_height()
             and self.isChecked() == was_checked
         ):
             self.setChecked(not was_checked)
@@ -362,7 +389,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
 
     def setSubtitleVisible(self, value: bool) -> None:
         self._subtitle_visible = bool(value)
-        self.update()
+        self._update_style()
 
     def getSubtitleColor(self) -> QColor:
         return QColor(self._subtitle_color)
@@ -393,10 +420,17 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         self._update_style()
 
     def getHeaderHeight(self) -> int:
-        return self._header_height
+        return self._effective_header_height()
 
     def setHeaderHeight(self, value: int) -> None:
         self._header_height = min(96, max(40, int(value)))
+        self._update_style()
+
+    def getAutoHeaderHeight(self) -> bool:
+        return self._auto_header_height
+
+    def setAutoHeaderHeight(self, value: bool) -> None:
+        self._auto_header_height = bool(value)
         self._update_style()
 
     def getAccentWidth(self) -> int:
@@ -437,6 +471,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
     radius = pyqtProperty(int, getRadius, setRadius)
     borderWidth = pyqtProperty(int, getBorderWidth, setBorderWidth)
     headerHeight = pyqtProperty(int, getHeaderHeight, setHeaderHeight)
+    autoHeaderHeight = pyqtProperty(bool, getAutoHeaderHeight, setAutoHeaderHeight)
     accentWidth = pyqtProperty(int, getAccentWidth, setAccentWidth)
     elevation = pyqtProperty(int, getElevation, setElevation)
     contentPadding = pyqtProperty(int, getContentPadding, setContentPadding)

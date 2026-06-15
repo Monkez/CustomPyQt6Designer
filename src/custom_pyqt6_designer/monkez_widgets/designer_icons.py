@@ -188,6 +188,33 @@ def _draw_dial(painter: QPainter) -> None:
     painter.drawEllipse(QRectF(43, 16, 10, 10))
 
 
+def _draw_radial_gauge(painter: QPainter) -> None:
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(QPen(MUTED, 4, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawArc(QRectF(9, 9, 46, 46), 225 * 16, -270 * 16)
+    painter.setPen(QPen(PRIMARY, 3, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawLine(32, 36, 45, 20)
+    painter.setBrush(PRIMARY)
+    painter.drawEllipse(QPointF(32, 36), 4, 4)
+
+
+def _draw_arc_gauge(painter: QPainter) -> None:
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(QPen(MUTED, 8, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawArc(QRectF(8, 12, 48, 48), 210 * 16, -240 * 16)
+    painter.setPen(QPen(PRIMARY, 8, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawArc(QRectF(8, 12, 48, 48), 210 * 16, -145 * 16)
+
+
+def _draw_linear_gauge(painter: QPainter) -> None:
+    painter.setPen(QPen(MUTED, 10, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawLine(8, 34, 56, 34)
+    painter.setPen(QPen(PRIMARY, 10, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawLine(8, 34, 40, 34)
+    painter.setPen(QPen(QColor("#f59e0b"), 3))
+    painter.drawLine(47, 22, 47, 46)
+
+
 def _draw_calendar(painter: QPainter) -> None:
     _rounded_box(painter, QRectF(9, 11, 46, 44), 6)
     painter.setBrush(PRIMARY)
@@ -253,6 +280,9 @@ _DRAWERS = {
     "spinbox": _draw_spin,
     "doublespinbox": _draw_spin,
     "dial": _draw_dial,
+    "radialgauge": _draw_radial_gauge,
+    "arcgauge": _draw_arc_gauge,
+    "lineargauge": _draw_linear_gauge,
     "dateedit": _draw_date,
     "timeedit": _draw_time,
     "datetimeedit": _draw_datetime,
