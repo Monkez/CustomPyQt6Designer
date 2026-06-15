@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "custom-pyqt6-designer"
+version = "0.2.1"
+description = "Qt Designer launcher and Python custom widget plugins for PyQt6 projects."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.4.2,<6.12",
+]
+authors = [
+    { name = "Monkez" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Framework :: PyQt",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: User Interfaces",
+]
+
+[project.optional-dependencies]
+camera = [
+    "opencv-python>=4.8",
+]
+designer = [
+    "pyqt6-tools==6.4.2.3.3; python_version == '3.11'",
+    "setuptools<81; python_version == '3.11'",
+]
+all = [
+    "opencv-python>=4.8",
+    "pyqt6-tools==6.4.2.3.3; python_version == '3.11'",
+    "setuptools<81; python_version == '3.11'",
+]
+
+[project.urls]
+Homepage = "https://github.com/Monkez/CustomPyQt6Designer"
+Repository = "https://github.com/Monkez/CustomPyQt6Designer.git"
+Issues = "https://github.com/Monkez/CustomPyQt6Designer/issues"
+
+[project.scripts]
+custom-pyqt6-designer = "custom_pyqt6_designer.launcher:main"
+custom-pyqt6-plugin-info = "custom_pyqt6_designer.plugin_info:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"custom_pyqt6_designer" = ["designer_plugins/*.py"]
+"custom_pyqt6_designer.monkez_widgets" = [
+    "monkez_assets/icons/*",
+    "monkez_assets/images/*",
+]

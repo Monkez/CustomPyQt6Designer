@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MonkezWidgetsTest</class>
+ <widget class="QWidget" name="MonkezWidgetsTest">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>1180</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Monkez Widgets Test</string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout">
+   <item row="0" column="0">
+    <widget class="MonkezButton" name="monkezButton">
+     <property name="text">
+      <string>Monkez Button</string>
+     </property>
+     <property name="themeIndex">
+      <number>0</number>
+     </property>
+     <property name="buttonTypeIndex">
+      <number>0</number>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="MonkezComboBox" name="monkezComboBox">
+     <property name="themeIndex">
+      <number>1</number>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0" colspan="2">
+    <widget class="MonkezTextInput" name="monkezTextInput">
+     <property name="placeholderText">
+      <string>Monkez input text...</string>
+     </property>
+     <property name="themeIndex">
+      <number>2</number>
+     </property>
+     <property name="leadingIcon">
+      <string>search.png</string>
+     </property>
+     <property name="trailingIcon">
+      <string>clear.png</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="MonkezCheckBox" name="monkezCheckBox">
+     <property name="text">
+      <string>Receive updates</string>
+     </property>
+     <property name="themeIndex">
+      <number>3</number>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="MonkezRadioButton" name="monkezRadioButton">
+     <property name="text">
+      <string>Primary option</string>
+     </property>
+     <property name="themeIndex">
+      <number>2</number>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0" colspan="2">
+    <widget class="MonkezSwitch" name="monkezSwitch">
+     <property name="themeIndex">
+      <number>1</number>
+     </property>
+     <property name="showText">
+      <bool>true</bool>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="MonkezSlider" name="monkezSlider">
+     <property name="themeIndex">
+      <number>0</number>
+     </property>
+     <property name="value">
+      <number>35</number>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="MonkezProgressBar" name="monkezProgressBar">
+     <property name="themeIndex">
+      <number>5</number>
+     </property>
+     <property name="value">
+      <number>62</number>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="MonkezImage" name="monkezImage"/>
+   </item>
+   <item row="5" column="1">
+    <widget class="MonkezUSBCamera" name="monkezUSBCamera">
+    <property name="backend">
+     <string>dshow</string>
+    </property>
+    <property name="cameraSource">
+     <string>0</string>
+    </property>
+    <property name="resolutionWidth">
+     <number>1280</number>
+    </property>
+    <property name="resolutionHeight">
+     <number>720</number>
+    </property>
+    <property name="fps">
+     <number>30</number>
+    </property>
+    <property name="displayFps">
+     <number>30</number>
+    </property>
+    <property name="fourcc">
+     <string>MJPG</string>
+    </property>
+    <property name="bufferSize">
+     <number>1</number>
+    </property>
+    <property name="previewAutoStart">
+     <bool>false</bool>
+    </property>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="MonkezSpinBox" name="monkezSpinBox">
+     <property name="themeIndex"><number>0</number></property>
+     <property name="value"><number>25</number></property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="MonkezDoubleSpinBox" name="monkezDoubleSpinBox">
+     <property name="themeIndex"><number>1</number></property>
+     <property name="value"><double>25.500000000000000</double></property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="MonkezDateEdit" name="monkezDateEdit">
+     <property name="themeIndex"><number>2</number></property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="MonkezTimeEdit" name="monkezTimeEdit">
+     <property name="themeIndex"><number>3</number></property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="MonkezDateTimeEdit" name="monkezDateTimeEdit">
+     <property name="themeIndex"><number>4</number></property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="MonkezLCDNumber" name="monkezLCDNumber">
+     <property name="themeIndex"><number>5</number></property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="MonkezDial" name="monkezDial">
+     <property name="themeIndex"><number>0</number></property>
+     <property name="value"><number>35</number></property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="MonkezCalendarWidget" name="monkezCalendarWidget">
+     <property name="themeIndex"><number>1</number></property>
+    </widget>
+   </item>
+   <item row="10" column="0">
+    <widget class="MonkezFrame" name="monkezFrame">
+     <property name="themeIndex"><number>2</number></property>
+     <property name="minimumSize">
+      <size><width>240</width><height>120</height></size>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="MonkezGroupBox" name="monkezGroupBox">
+     <property name="themeIndex"><number>3</number></property>
+     <property name="title"><string>Monkez Group</string></property>
+     <property name="subtitle"><string>Polished container header</string></property>
+     <property name="minimumSize">
+      <size><width>240</width><height>120</height></size>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="0" colspan="2">
+    <widget class="MonkezScrollArea" name="monkezScrollArea">
+     <property name="themeIndex"><number>4</number></property>
+     <property name="minimumSize">
+      <size><width>480</width><height>140</height></size>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MonkezButton</class>
+   <extends>QPushButton</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezComboBox</class>
+   <extends>QComboBox</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezTextInput</class>
+   <extends>QLineEdit</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezCheckBox</class>
+   <extends>QCheckBox</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezRadioButton</class>
+   <extends>QRadioButton</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezSwitch</class>
+   <extends>QAbstractButton</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezSlider</class>
+   <extends>QSlider</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezProgressBar</class>
+   <extends>QProgressBar</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezImage</class>
+   <extends>QWidget</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezUSBCamera</class>
+   <extends>QWidget</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezFrame</class>
+   <extends>QFrame</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>MonkezGroupBox</class>
+   <extends>QGroupBox</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>MonkezScrollArea</class>
+   <extends>QScrollArea</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>MonkezSpinBox</class>
+   <extends>QSpinBox</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezDoubleSpinBox</class>
+   <extends>QDoubleSpinBox</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezDial</class>
+   <extends>QDial</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezDateEdit</class>
+   <extends>QDateEdit</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezTimeEdit</class>
+   <extends>QTimeEdit</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezDateTimeEdit</class>
+   <extends>QDateTimeEdit</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezCalendarWidget</class>
+   <extends>QCalendarWidget</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>MonkezLCDNumber</class>
+   <extends>QLCDNumber</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
