@@ -1,9 +1,9 @@
 # Designer portable
 
-## Dùng bản release
+## Dùng bản one-folder
 
-1. Tải `MonkezPyQt6DesignerFull-*.zip` từ trang Releases.
-2. Giải nén nguyên thư mục.
+1. Lấy nguyên thư mục `MonkezPyQt6DesignerFull`.
+2. Giữ nguyên thư mục `_internal` cạnh file chạy.
 3. Chạy `MonkezPyQt6DesignerFull.exe`.
 
 Không di chuyển riêng file `.exe` ra khỏi thư mục vì Qt, Python bridge và plugin nằm trong `_internal`.
@@ -60,3 +60,6 @@ Build lại portable:
 ```powershell
 .\scripts\build_full_designer.ps1
 ```
+
+Kết quả nằm tại `dist\MonkezPyQt6DesignerFull`. Script không tạo file ZIP và sẽ
+tự mở Designer ở chế độ kiểm tra để xác nhận toàn bộ plugin đã được load.

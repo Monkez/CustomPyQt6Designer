@@ -41,8 +41,8 @@ Xem project chạy hoàn chỉnh tại [demo_project](demo_project).
 
 ## Dùng Designer portable
 
-1. Tải `MonkezPyQt6DesignerFull-*.zip` trong [Releases](https://github.com/Monkez/CustomPyQt6Designer/releases).
-2. Giải nén toàn bộ thư mục.
+1. Tải thư mục build `MonkezPyQt6DesignerFull` hoặc build từ source.
+2. Giữ nguyên toàn bộ cấu trúc thư mục.
 3. Chạy `MonkezPyQt6DesignerFull.exe`.
 4. Các widget nằm trong nhóm **Monkez Widgets** của Widget Box.
 

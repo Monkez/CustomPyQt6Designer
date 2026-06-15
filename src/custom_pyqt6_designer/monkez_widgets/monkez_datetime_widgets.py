@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QDate, QDateTime, QPointF, QRectF, Qt, QTime, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPen
-from PyQt6.QtWidgets import QCalendarWidget, QDateEdit, QDateTimeEdit, QTimeEdit, QToolButton
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPen
+from PyQt6.QtWidgets import (
+    QCalendarWidget,
+    QDateEdit,
+    QDateTimeEdit,
+    QHeaderView,
+    QTableView,
+    QTimeEdit,
+    QToolButton,
+)
 
 from .theme_support import ThemeSupportMixin
 from .themes import theme_color, theme_int, theme_radius
@@ -228,17 +236,31 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
         self._text_color = QColor()
         self._accent_color = QColor()
         self._muted_color = QColor()
+        self._weekend_color = QColor()
+        self._today_color = QColor()
+        self._outside_month_color = QColor()
         self._radius = 8
         self.setGridVisible(False)
-        self.setMinimumSize(300, 220)
+        self.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        self.setHorizontalHeaderFormat(QCalendarWidget.HorizontalHeaderFormat.ShortDayNames)
+        self.setNavigationBarVisible(True)
+        self.setMinimumSize(340, 280)
         for object_name, text in (
-            ("qt_calendar_prevmonth", "<"),
-            ("qt_calendar_nextmonth", ">"),
+            ("qt_calendar_prevmonth", "‹"),
+            ("qt_calendar_nextmonth", "›"),
         ):
             button = self.findChild(QToolButton, object_name)
             if button is not None:
                 button.setIcon(QIcon())
                 button.setText(text)
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+        view = self.findChild(QTableView, "qt_calendar_calendarview")
+        if view is not None:
+            view.setShowGrid(False)
+            view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            view.setSelectionMode(QTableView.SelectionMode.NoSelection)
+            view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            view.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.setTheme("material")
 
     def _apply_theme(self) -> None:
@@ -246,6 +268,10 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
         self._text_color = theme_color(self._theme, "text")
         self._accent_color = theme_color(self._theme, "primary")
         self._muted_color = theme_color(self._theme, "muted")
+        self._weekend_color = theme_color(self._theme, "danger")
+        self._today_color = theme_color(self._theme, "primary")
+        self._outside_month_color = QColor(self._muted_color)
+        self._outside_month_color.setAlpha(120)
         self._radius = theme_radius(self._theme)
         self._update_style()
 
@@ -263,28 +289,122 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             f"background-color: {theme_color(self._theme, 'surface_alt').name()};"
             f"border-top-left-radius: {self._radius}px;"
             f"border-top-right-radius: {self._radius}px;"
-            "padding: 5px;"
+            f"border-bottom: 1px solid {border};"
+            "padding: 8px 10px;"
+            "min-height: 38px;"
             "}"
             "MonkezCalendarWidget QToolButton {"
             f"color: {self._text_color.name()};"
             "background: transparent;"
             "border: 0;"
-            "padding: 6px;"
-            "font-weight: 600;"
+            "padding: 7px 10px;"
+            "font-weight: 650;"
+            "font-size: 14px;"
             "}"
-            f"MonkezCalendarWidget QToolButton:hover {{ background: {hover}; border-radius: 5px; }}"
+            "MonkezCalendarWidget QToolButton::menu-indicator {"
+            "image: none;"
+            "width: 0px;"
+            "height: 0px;"
+            "subcontrol-position: center;"
+            "}"
+            f"MonkezCalendarWidget QToolButton:hover {{ background: {hover}; border-radius: 8px; }}"
+            "MonkezCalendarWidget QToolButton#qt_calendar_prevmonth,"
+            "MonkezCalendarWidget QToolButton#qt_calendar_nextmonth {"
+            f"color: {self._accent_color.name()};"
+            "font-size: 22px;"
+            "font-weight: 500;"
+            "min-width: 30px;"
+            "}"
+            "MonkezCalendarWidget QToolButton#qt_calendar_monthbutton {"
+            "padding-right: 4px;"
+            "}"
+            "MonkezCalendarWidget QToolButton#qt_calendar_yearbutton {"
+            "padding-left: 4px;"
+            "}"
             "MonkezCalendarWidget QMenu {"
-            f"background: {self._background_color.name()}; color: {self._text_color.name()};"
+            f"background: {self._background_color.name()};"
+            f"color: {self._text_color.name()};"
+            f"border: 1px solid {border};"
+            f"border-radius: {max(6, self._radius - 2)}px;"
+            "padding: 6px;"
+            "}"
+            "MonkezCalendarWidget QMenu::item {"
+            "padding: 7px 20px;"
+            "border-radius: 6px;"
+            "}"
+            f"MonkezCalendarWidget QMenu::item:selected {{ background: {hover}; }}"
+            "MonkezCalendarWidget QTableView {"
+            f"background: {self._background_color.name()};"
+            "border: 0;"
+            "padding: 8px;"
+            "selection-background-color: transparent;"
+            "outline: 0;"
+            "}"
+            "MonkezCalendarWidget QHeaderView {"
+            f"background: {self._background_color.name()};"
+            "border: 0;"
+            "}"
+            "MonkezCalendarWidget QHeaderView::section {"
+            f"background: {self._background_color.name()};"
+            f"color: {self._muted_color.name()};"
+            "border: 0;"
+            "padding: 7px 2px;"
+            "font-size: 12px;"
+            "font-weight: 600;"
             "}"
             "MonkezCalendarWidget QAbstractItemView {"
             f"background: {self._background_color.name()};"
             f"color: {self._text_color.name()};"
-            f"selection-background-color: {self._accent_color.name()};"
-            f"selection-color: {theme_color(self._theme, 'on_primary').name()};"
+            "selection-background-color: transparent;"
             "outline: 0;"
             "}"
-            f"MonkezCalendarWidget QSpinBox {{ color: {self._text_color.name()}; background: transparent; }}"
+            "MonkezCalendarWidget QSpinBox {"
+            f"color: {self._text_color.name()};"
+            f"background: {self._background_color.name()};"
+            f"border: 1px solid {border};"
+            "border-radius: 6px;"
+            "padding: 5px;"
+            "}"
         )
+        self.updateCells()
+
+    def paintCell(self, painter: QPainter, rect, date: QDate) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        cell = QRectF(rect).adjusted(4, 3, -4, -3)
+        selected = date == self.selectedDate()
+        today = date == QDate.currentDate()
+        current_month = date.month() == self.monthShown() and date.year() == self.yearShown()
+        weekend = date.dayOfWeek() in {Qt.DayOfWeek.Saturday, Qt.DayOfWeek.Sunday}
+
+        if selected:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self._accent_color)
+            radius = cell.height() / 2 if self._theme == "ios" else min(9.0, cell.height() / 3)
+            painter.drawRoundedRect(cell, radius, radius)
+        elif today:
+            painter.setPen(QPen(self._today_color, 1.5))
+            painter.setBrush(theme_color(self._theme, "secondary"))
+            radius = cell.height() / 2 if self._theme == "ios" else min(9.0, cell.height() / 3)
+            painter.drawRoundedRect(cell, radius, radius)
+
+        if selected:
+            text_color = theme_color(self._theme, "on_primary")
+        elif not current_month:
+            text_color = self._outside_month_color
+        elif weekend:
+            text_color = self._weekend_color
+        else:
+            text_color = self._text_color
+
+        font = QFont(self.font())
+        font.setPointSizeF(max(9.0, font.pointSizeF()))
+        font.setBold(selected or today)
+        painter.setFont(font)
+        painter.setPen(text_color)
+        painter.drawText(cell, Qt.AlignmentFlag.AlignCenter, str(date.day()))
+        painter.restore()
 
     def getBackgroundColor(self) -> QColor:
         return QColor(self._background_color)
@@ -307,6 +427,27 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
         self._accent_color = QColor(value)
         self._update_style()
 
+    def getWeekendColor(self) -> QColor:
+        return QColor(self._weekend_color)
+
+    def setWeekendColor(self, value: QColor) -> None:
+        self._weekend_color = QColor(value)
+        self.updateCells()
+
+    def getTodayColor(self) -> QColor:
+        return QColor(self._today_color)
+
+    def setTodayColor(self, value: QColor) -> None:
+        self._today_color = QColor(value)
+        self.updateCells()
+
+    def getOutsideMonthColor(self) -> QColor:
+        return QColor(self._outside_month_color)
+
+    def setOutsideMonthColor(self, value: QColor) -> None:
+        self._outside_month_color = QColor(value)
+        self.updateCells()
+
     def getRadius(self) -> int:
         return self._radius
 
@@ -322,4 +463,7 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
     backgroundColor = pyqtProperty(QColor, getBackgroundColor, setBackgroundColor)
     textColor = pyqtProperty(QColor, getTextColor, setTextColor)
     accentColor = pyqtProperty(QColor, getAccentColor, setAccentColor)
+    weekendColor = pyqtProperty(QColor, getWeekendColor, setWeekendColor)
+    todayColor = pyqtProperty(QColor, getTodayColor, setTodayColor)
+    outsideMonthColor = pyqtProperty(QColor, getOutsideMonthColor, setOutsideMonthColor)
     radius = pyqtProperty(int, getRadius, setRadius)

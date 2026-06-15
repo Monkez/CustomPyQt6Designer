@@ -313,6 +313,13 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
     def getBackgroundColor(self) -> QColor:
         return QColor(self._background_color)
 
+    def getTitle(self) -> str:
+        return QGroupBox.title(self)
+
+    def setTitle(self, value: str) -> None:
+        QGroupBox.setTitle(self, value or "")
+        self.update()
+
     def setBackgroundColor(self, value: QColor) -> None:
         self._background_color = QColor(value)
         self._update_style()
@@ -406,6 +413,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         str, ThemeSupportMixin.getThemeOptions, ThemeSupportMixin.setThemeOptions, stored=False
     )
     themeName = pyqtProperty(str, ThemeSupportMixin.getThemeName, ThemeSupportMixin.setThemeName, designable=False)
+    title = pyqtProperty(str, getTitle, setTitle)
     backgroundColor = pyqtProperty(QColor, getBackgroundColor, setBackgroundColor)
     headerColor = pyqtProperty(QColor, getHeaderColor, setHeaderColor)
     borderColor = pyqtProperty(QColor, getBorderColor, setBorderColor)

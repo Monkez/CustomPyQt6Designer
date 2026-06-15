@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtEnum, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
-from PyQt6.QtWidgets import QComboBox, QFrame, QListView, QStyle, QStyledItemDelegate
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtWidgets import QApplication, QComboBox, QFrame, QListView, QStyle, QStyledItemDelegate, QVBoxLayout
 
 from .themes import (
     normalize_theme,
@@ -18,10 +18,14 @@ from .themes import (
 
 
 class MonkezComboItemDelegate(QStyledItemDelegate):
+    def __init__(self, combo, parent=None) -> None:
+        super().__init__(parent)
+        self._combo = combo
+
     def paint(self, painter, option, index) -> None:
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         text = index.data(Qt.ItemDataRole.DisplayRole)
-        combo = self.parent()
+        combo = self._combo
         hover_background = getattr(combo, "_hover_background_color", QColor("#ebf3fd"))
         text_color = getattr(combo, "_text_color", QColor("#2c3e50"))
         hover_text_color = getattr(combo, "_hover_text_color", QColor("#3498db"))
@@ -53,6 +57,10 @@ class MonkezComboItemDelegate(QStyledItemDelegate):
         painter.setFont(QFont("Segoe UI", 10))
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, str(text))
 
+    def sizeHint(self, option, index) -> QSize:
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(40, hint.height()))
+
 
 class MonkezComboListView(QListView):
     def __init__(self, combo, parent=None) -> None:
@@ -67,23 +75,129 @@ class MonkezComboListView(QListView):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-    def paintEvent(self, event) -> None:
-        painter = QPainter(self.viewport())
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(self.viewport().rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        radius = float(getattr(self._combo, "_border_radius", 8))
-        background = getattr(self._combo, "_background_color", QColor("white"))
-        border = theme_color(getattr(self._combo, "_theme", "material"), "border_focus")
-        border_width = max(1, theme_int(getattr(self._combo, "_theme", "material"), "border_width"))
 
-        painter.setPen(Qt.PenStyle.NoPen)
+
+class MonkezComboPopup(QFrame):
+    def __init__(self, combo) -> None:
+        flags = (
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint
+        )
+        super().__init__(None, flags)
+        self._combo = combo
+        self.setObjectName("monkezComboPopup")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+        self.setAutoFillBackground(False)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        self.view = MonkezComboListView(combo, self)
+        self.view.setModel(combo.model())
+        self.view.setRootIndex(combo.rootModelIndex())
+        self.view.setModelColumn(combo.modelColumn())
+        self.view.setItemDelegate(MonkezComboItemDelegate(combo, self.view))
+        self.view.clicked.connect(self._activate_index)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(0)
+        layout.addWidget(self.view)
+
+    def sync_and_show(self) -> None:
+        combo = self._combo
+        self.view.setModel(combo.model())
+        self.view.setRootIndex(combo.rootModelIndex())
+        self.view.setModelColumn(combo.modelColumn())
+
+        current = combo.model().index(combo.currentIndex(), combo.modelColumn(), combo.rootModelIndex())
+        if current.isValid():
+            self.view.setCurrentIndex(current)
+            self.view.scrollTo(current, QListView.ScrollHint.EnsureVisible)
+
+        row_count = combo.model().rowCount(combo.rootModelIndex())
+        visible_rows = max(1, min(combo.maxVisibleItems(), row_count))
+        self.view.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            if row_count <= combo.maxVisibleItems()
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        row_height = self.view.sizeHintForRow(0) if row_count else 40
+        content_height = visible_rows * max(40, row_height) + max(0, visible_rows - 1) * self.view.spacing()
+        popup_height = content_height + 24
+        popup_width = max(combo.width(), self.view.sizeHintForColumn(combo.modelColumn()) + 48)
+
+        global_position = combo.mapToGlobal(QPoint(0, combo.height() + 4))
+        screen = combo.screen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            popup_width = min(popup_width, available.width())
+            popup_height = min(popup_height, available.height())
+            if global_position.y() + popup_height > available.bottom():
+                global_position.setY(combo.mapToGlobal(QPoint(0, -popup_height - 4)).y())
+            global_position.setX(min(max(global_position.x(), available.left()), available.right() - popup_width + 1))
+
+        self.resize(popup_width, popup_height)
+        self.move(global_position)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.view.setFocus(Qt.FocusReason.PopupFocusReason)
+        self.update()
+
+    def dismiss(self) -> None:
+        if not self.isVisible():
+            return
+        self.hide()
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        self._combo._popup_hidden()
+
+    def _activate_index(self, index) -> None:
+        if index.isValid():
+            self._combo.setCurrentIndex(index.row())
+            self._combo.activated.emit(index.row())
+        self.dismiss()
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.MouseButtonPress and self.isVisible():
+            global_position = event.globalPosition().toPoint()
+            popup_rect = QRect(self.mapToGlobal(QPoint()), self.size())
+            combo_rect = QRect(self._combo.mapToGlobal(QPoint()), self._combo.size())
+            if not popup_rect.contains(global_position) and not combo_rect.contains(global_position):
+                self.dismiss()
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.dismiss()
+            event.accept()
+            return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._activate_index(self.view.currentIndex())
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        border_width = max(1, theme_int(self._combo._theme, "border_width"))
+        inset = border_width / 2
+        rect = QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
+        radius = float(getattr(self._combo, "_border_radius", 8))
+        background = self._combo._background_color
+        border = theme_color(self._combo._theme, "border_focus")
+
+        painter.setPen(QPen(border, border_width))
         painter.setBrush(background)
         painter.drawRoundedRect(rect, radius, radius)
-        painter.setPen(QPen(border, border_width))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(rect, radius, radius)
         painter.end()
-        super().paintEvent(event)
 
 
 class MonkezComboBox(QComboBox):
@@ -115,26 +229,27 @@ class MonkezComboBox(QComboBox):
         self._hover_text_color = QColor("#3498db")
         self._border_radius = 8
 
-        view = MonkezComboListView(self, self)
-        self.setView(view)
-        self.setItemDelegate(MonkezComboItemDelegate(self))
+        self._popup = MonkezComboPopup(self)
+        self.destroyed.connect(self._popup.deleteLater)
         self.addItems(["Option 1", "Option 2", "Option 3"])
         self.setMinimumSize(150, 36)
         self.setTheme(self._theme)
         self._update_style()
 
     def showPopup(self) -> None:
+        if self._popup.isVisible():
+            self._popup.dismiss()
+            return
         self.is_opened = True
         self._update_style()
-        super().showPopup()
-        popup = self.view().window()
-        popup.setAutoFillBackground(False)
-        popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._popup.sync_and_show()
 
     def hidePopup(self) -> None:
+        self._popup.dismiss()
+
+    def _popup_hidden(self) -> None:
         self.is_opened = False
         self._update_style()
-        super().hidePopup()
 
     def _update_style(self) -> None:
         self.setStyleSheet(
@@ -165,12 +280,11 @@ class MonkezComboBox(QComboBox):
             "}"
             "QComboBox::down-arrow { width: 0px; height: 0px; border: none; background: none; }"
         )
-        self.view().setStyleSheet(
+        self._popup.view.setStyleSheet(
             "QListView {"
             "border: none;"
             "background-color: transparent;"
             f"color: {self._text_color.name()};"
-            "padding: 8px 0px;"
             "outline: 0;"
             "}"
             "QListView::item {"
@@ -184,7 +298,21 @@ class MonkezComboBox(QComboBox):
             f"background-color: {self._hover_background_color.name()};"
             f"color: {self._hover_text_color.name()};"
             "}"
+            "QScrollBar:vertical {"
+            "background: transparent;"
+            "border: 0;"
+            "width: 8px;"
+            "margin: 4px 1px;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            f"background: {theme_color(self._theme, 'muted').name()};"
+            "border-radius: 4px;"
+            "min-height: 24px;"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
         )
+        self._popup.update()
         self.update()
 
     def paintEvent(self, event) -> None:

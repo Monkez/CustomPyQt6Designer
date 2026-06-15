@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from custom_pyqt6_designer.launcher import (
+    append_path,
+    build_env,
+    configure_frozen_python_runtime,
+    package_root,
+)
+
+
+class LauncherTests(unittest.TestCase):
+    def test_append_path_moves_existing_entry_to_front(self) -> None:
+        separator = os.pathsep
+        value = separator.join(["stale", "source", "other"])
+
+        result = append_path(value, "source", separator)
+
+        self.assertEqual(result.split(separator), ["source", "stale", "other"])
+
+    def test_source_root_is_first_pythonpath_entry(self) -> None:
+        import_root = str(package_root().parent)
+
+        entries = build_env()["PYTHONPATH"].split(os.pathsep)
+
+        self.assertEqual(entries[0], import_root)
+        self.assertEqual(entries.count(import_root), 1)
+
+    def test_frozen_runtime_sets_pythonhome_and_standard_library_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            internal_dir = Path(temp_dir)
+            runtime_dir = internal_dir / "python_runtime"
+            (runtime_dir / "Lib").mkdir(parents=True)
+            (runtime_dir / "DLLs").mkdir()
+            (runtime_dir / "Lib" / "pkgutil.py").touch()
+            (runtime_dir / "python311.dll").touch()
+            env = {"PATH": "system", "PYTHONPATH": ""}
+
+            configured = configure_frozen_python_runtime(env, internal_dir, os.pathsep)
+
+            self.assertTrue(configured)
+            self.assertEqual(env["PYTHONHOME"], str(runtime_dir))
+            self.assertEqual(env["PYTHONPATH"].split(os.pathsep)[0], str(internal_dir))
+            self.assertIn(str(runtime_dir / "Lib"), env["PYTHONPATH"].split(os.pathsep))
+            self.assertIn(str(runtime_dir / "DLLs"), env["PATH"].split(os.pathsep))
+
+
+if __name__ == "__main__":
+    unittest.main()

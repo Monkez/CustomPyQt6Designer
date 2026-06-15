@@ -45,6 +45,13 @@ class PluginTests(unittest.TestCase):
         self.assertNotIn("MetricCard", names)
         self.assertNotIn("StatusBadge", names)
 
+    def test_theme_task_menu_only_exposes_material_and_ios(self) -> None:
+        theme_task_menu = importlib.import_module("theme_task_menu")
+        self.assertEqual(
+            [entry[0] for entry in theme_task_menu.THEME_LABELS],
+            ["Material", "IOS"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

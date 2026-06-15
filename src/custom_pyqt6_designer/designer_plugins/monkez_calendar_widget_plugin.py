@@ -14,8 +14,8 @@ MonkezCalendarWidgetPlugin = create_plugin(
         "calendar",
         "Themed calendar",
         "Calendar with styled navigation, selection, grid, date limits, and configurable colors.",
+        380,
         320,
-        240,
     ),
     __name__,
 )

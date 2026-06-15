@@ -5,6 +5,9 @@ Set-Location $Root
 
 $Python = ".\.venv311\Scripts\python.exe"
 $PyInstaller = ".\.venv311\Scripts\pyinstaller.exe"
+$Version = & $Python -c "from custom_pyqt6_designer import __version__; print(__version__)"
+$PythonHome = & $Python -c "import sys; print(sys.base_prefix)"
+$OutputDirectory = "dist\MonkezPyQt6DesignerFull"
 
 & $Python -m pip install pyinstaller
 
@@ -24,6 +27,18 @@ $PyInstaller = ".\.venv311\Scripts\pyinstaller.exe"
     --add-data ".venv311\Lib\site-packages\cv2;cv2" `
     --add-data ".venv311\Lib\site-packages\numpy;numpy" `
     --add-data ".venv311\Lib\site-packages\numpy.libs;numpy.libs" `
+    --add-data "$PythonHome\Lib;python_runtime\Lib" `
+    --add-data "$PythonHome\DLLs;python_runtime\DLLs" `
+    --add-binary "$PythonHome\python3.dll;python_runtime" `
+    --add-binary "$PythonHome\python311.dll;python_runtime" `
+    --add-binary "$PythonHome\vcruntime140.dll;python_runtime" `
+    --add-binary "$PythonHome\vcruntime140_1.dll;python_runtime" `
     src\custom_pyqt6_designer\exe_entry.py
 
-Write-Host "Built: dist\MonkezPyQt6DesignerFull\MonkezPyQt6DesignerFull.exe"
+$VerificationUi = (Resolve-Path "examples\monkez_widgets_test.ui").Path
+& "$OutputDirectory\MonkezPyQt6DesignerFull.exe" --verify-plugins $VerificationUi
+if ($LASTEXITCODE -ne 0) {
+    throw "Bundled Designer plugin verification failed."
+}
+
+Write-Host "Built: $OutputDirectory\MonkezPyQt6DesignerFull.exe"

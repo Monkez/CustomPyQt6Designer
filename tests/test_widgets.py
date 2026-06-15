@@ -10,7 +10,13 @@ from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import QApplication
 
 from custom_pyqt6_designer import monkez_widgets
-from custom_pyqt6_designer.monkez_widgets import MonkezGroupBox, MonkezImage, MonkezUSBCamera
+from custom_pyqt6_designer.monkez_widgets import (
+    MonkezCalendarWidget,
+    MonkezComboBox,
+    MonkezGroupBox,
+    MonkezImage,
+    MonkezUSBCamera,
+)
 
 
 class WidgetTests(unittest.TestCase):
@@ -74,10 +80,43 @@ class WidgetTests(unittest.TestCase):
         group.themeIndex = 5
 
         self.assertEqual(group.subtitle, "Manage profile and preferences")
+        self.assertEqual(group.title, "Account settings")
+        title_property = group.metaObject().property(group.metaObject().indexOfProperty("title"))
+        self.assertTrue(title_property.isDesignable())
+        self.assertTrue(title_property.isWritable())
+        self.assertGreaterEqual(group.metaObject().indexOfProperty("title"), group.metaObject().propertyOffset())
         self.assertEqual(group.themeIndex, 5)
         self.assertGreaterEqual(group.contentsMargins().top(), group.headerHeight)
         self.assertTrue(group.checked)
         group.deleteLater()
+
+    def test_combo_popup_has_no_native_black_frame_or_shadow(self) -> None:
+        combo = MonkezComboBox()
+        popup = combo._popup
+
+        self.assertTrue(popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground))
+        self.assertTrue(popup.windowFlags() & Qt.WindowType.NoDropShadowWindowHint)
+        self.assertTrue(popup.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        self.assertTrue(popup.windowFlags() & Qt.WindowType.Tool)
+        self.assertEqual(popup.contentsMargins().left(), 0)
+        self.assertEqual(popup.contentsMargins().top(), 0)
+        self.assertEqual(popup.contentsMargins().right(), 0)
+        self.assertEqual(popup.contentsMargins().bottom(), 0)
+        self.assertIs(popup.view.model(), combo.model())
+        combo.deleteLater()
+
+    def test_calendar_exposes_polished_date_colors_and_headers(self) -> None:
+        calendar = MonkezCalendarWidget()
+
+        self.assertEqual(
+            calendar.verticalHeaderFormat(),
+            calendar.VerticalHeaderFormat.NoVerticalHeader,
+        )
+        for property_name in ("weekendColor", "todayColor", "outsideMonthColor"):
+            self.assertGreaterEqual(calendar.metaObject().indexOfProperty(property_name), 0)
+        self.assertGreaterEqual(calendar.minimumWidth(), 340)
+        self.assertGreaterEqual(calendar.minimumHeight(), 280)
+        calendar.deleteLater()
 
 
 if __name__ == "__main__":

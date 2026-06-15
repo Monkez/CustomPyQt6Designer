@@ -6,6 +6,8 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 
@@ -164,6 +166,7 @@ def build_env(debug: bool = False) -> dict[str, str]:
         exe_internal_dir = Path(sys.executable).resolve().parent / "_internal"
         if any((path / "PyQt6").is_dir() and (path / "qt6_applications").is_dir() for path in (internal_dir, exe_internal_dir)):
             env["PYTHONPATH"] = ""
+        configure_frozen_python_runtime(env, internal_dir, path_separator)
 
     env["PYQTDESIGNERPATH"] = append_path(env.get("PYQTDESIGNERPATH", ""), designer_plugins, path_separator)
     env["PYTHONPATH"] = append_path(env.get("PYTHONPATH", ""), import_root, path_separator)
@@ -173,11 +176,27 @@ def build_env(debug: bool = False) -> dict[str, str]:
         if base_library.is_file():
             env["PYTHONPATH"] = append_path(env.get("PYTHONPATH", ""), str(base_library), path_separator)
     add_pyqt_bridge_paths(env, path_separator)
+    env["PYTHONPATH"] = append_path(env.get("PYTHONPATH", ""), import_root, path_separator)
 
     if debug:
         env["QT_DEBUG_PLUGINS"] = "1"
 
     return env
+
+
+def configure_frozen_python_runtime(env: dict[str, str], internal_dir: Path, path_separator: str) -> bool:
+    runtime_dir = internal_dir / "python_runtime"
+    stdlib_dir = runtime_dir / "Lib"
+    dll_dir = runtime_dir / "DLLs"
+    if not (stdlib_dir / "pkgutil.py").is_file() or not (runtime_dir / "python311.dll").is_file():
+        return False
+
+    env["PYTHONHOME"] = str(runtime_dir)
+    for path in (dll_dir, stdlib_dir, internal_dir):
+        env["PYTHONPATH"] = append_path(env.get("PYTHONPATH", ""), str(path), path_separator)
+    for path in (dll_dir, runtime_dir, internal_dir):
+        env["PATH"] = append_path(env.get("PATH", ""), str(path), path_separator)
+    return True
 
 
 def add_pyqt_bridge_paths(env: dict[str, str], path_separator: str) -> None:
@@ -229,10 +248,61 @@ def add_pyqt_bridge_paths(env: dict[str, str], path_separator: str) -> None:
 
 
 def append_path(existing: str, new_entry: str, separator: str) -> str:
-    parts = [part for part in existing.split(separator) if part]
-    if new_entry not in parts:
-        parts.insert(0, new_entry)
+    normalized_entry = os.path.normcase(os.path.normpath(new_entry))
+    parts = [
+        part
+        for part in existing.split(separator)
+        if part and os.path.normcase(os.path.normpath(part)) != normalized_entry
+    ]
+    parts.insert(0, new_entry)
     return separator.join(parts)
+
+
+def verify_designer_plugins(command: list[str], env: dict[str, str], expected_plugins: int = 21) -> int:
+    with tempfile.TemporaryDirectory(prefix="monkez-designer-check-") as temp_dir:
+        probe_path = Path(temp_dir) / "plugin-probe.log"
+        stdout_path = Path(temp_dir) / "designer-stdout.log"
+        stderr_path = Path(temp_dir) / "designer-stderr.log"
+        verify_env = env.copy()
+        verify_env["CUSTOM_PYQT6_DESIGNER_PLUGIN_PROBE"] = str(probe_path)
+
+        with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
+            process = subprocess.Popen(command, env=verify_env, stdout=stdout, stderr=stderr)
+            deadline = time.monotonic() + 30
+            initialized: set[str] = set()
+            created: set[str] = set()
+            while time.monotonic() < deadline and process.poll() is None:
+                if probe_path.is_file():
+                    for line in probe_path.read_text(encoding="utf-8").splitlines():
+                        if line.endswith("Plugin.__init__"):
+                            initialized.add(line)
+                        elif line.endswith("Plugin.createWidget"):
+                            created.add(line)
+                    if len(initialized) >= expected_plugins and len(created) >= expected_plugins:
+                        break
+                time.sleep(0.2)
+
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+
+        if len(initialized) == expected_plugins and len(created) >= expected_plugins:
+            print(f"Plugin verification passed: {len(initialized)} initialized, {len(created)} created.")
+            return 0
+
+        print(
+            f"Plugin verification failed: expected {expected_plugins}, "
+            f"initialized {len(initialized)}, created {len(created)}.",
+            file=sys.stderr,
+        )
+        stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+        if stderr_text:
+            print(stderr_text, file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -241,6 +311,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--designer", help=f"Path to designer executable. Overrides {ENV_DESIGNER_EXE}.")
     parser.add_argument("--debug", action="store_true", help="Enable Qt plugin debug output.")
     parser.add_argument("--print-env", action="store_true", help="Print environment values without launching.")
+    parser.add_argument(
+        "--verify-plugins",
+        action="store_true",
+        help="Launch Designer briefly and fail unless all bundled custom plugins load.",
+    )
     args = parser.parse_args(argv)
 
     if args.designer:
@@ -251,25 +326,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.print_env:
         print(f"PYQTDESIGNERPATH={env.get('PYQTDESIGNERPATH', '')}")
         print(f"PYTHONPATH={env.get('PYTHONPATH', '')}")
+        print(f"PYTHONHOME={env.get('PYTHONHOME', '')}")
+        print(f"QTDESIGNERPATH={env.get('QTDESIGNERPATH', '')}")
+        print(f"QT_PLUGIN_PATH={env.get('QT_PLUGIN_PATH', '')}")
         print(f"{ENV_DESIGNER_EXE}={os.environ.get(ENV_DESIGNER_EXE, '')}")
         return 0
-
-    if has_pyqt6_tools_bridge():
-        command = [find_pyqt6_tools() or "pyqt6-tools", "designer", "-p", str(plugin_dir())]
-        if args.debug:
-            command.append("--qt-debug-plugins")
-        if args.ui_file:
-            command.append(args.ui_file)
-        return subprocess.call(command, env=env)
 
     designer = find_designer()
     command: list[str]
     if designer is not None:
         command = [str(designer)]
     else:
-        pyqt6_tools = shutil.which("pyqt6-tools")
+        pyqt6_tools = find_pyqt6_tools()
         if pyqt6_tools:
-            command = [pyqt6_tools, "designer"]
+            command = [pyqt6_tools, "designer", "-p", str(plugin_dir())]
+            if args.debug:
+                command.append("--qt-debug-plugins")
         else:
             print(
                 "Khong tim thay Qt Designer. Cai Qt/Qt Creator hoac pyqt6-tools, "
@@ -283,6 +355,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.ui_file:
         command.append(args.ui_file)
+
+    if args.verify_plugins:
+        return verify_designer_plugins(command, env)
 
     return subprocess.call(command, env=env)
 
