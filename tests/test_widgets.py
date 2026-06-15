@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout
 
 from custom_pyqt6_designer import monkez_widgets
 from custom_pyqt6_designer.monkez_widgets import (
+    MonkezButton,
     MonkezCalendarWidget,
     MonkezArcGauge,
     MonkezComboBox,
@@ -46,6 +47,22 @@ class WidgetTests(unittest.TestCase):
             widget.setProperty("themeIndex", 5)
             self.assertEqual(widget.property("themeIndex"), 5, name)
             widget.deleteLater()
+
+    def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
+        button = MonkezButton()
+        button.resize(56, 36)
+        button.setThemeIndex(0)
+        button.show()
+        self.app.processEvents()
+
+        self.assertLessEqual(button.minimumSizeHint().width(), 56)
+        self.assertLessEqual(button.minimumSizeHint().height(), 36)
+        self.assertLessEqual(button.minimumWidth(), 56)
+        self.assertLessEqual(button.minimumHeight(), 36)
+        self.assertEqual(button.size().width(), 56)
+        self.assertEqual(button.size().height(), 36)
+        button.close()
+        button.deleteLater()
 
     def test_image_reuses_scaled_pixmap_until_source_or_size_changes(self) -> None:
         widget = MonkezImage()

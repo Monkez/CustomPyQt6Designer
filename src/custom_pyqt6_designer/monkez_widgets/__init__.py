@@ -1,3 +1,4 @@
+from .app_branding import apply_designer_branding
 from .monkez_button import MonkezButton
 from .monkez_checkbox import MonkezCheckBox
 from .monkez_combobox import MonkezComboBox
@@ -40,3 +41,5 @@ __all__ = [
     "MonkezTimeEdit",
     "MonkezUSBCamera",
 ]
+
+apply_designer_branding()

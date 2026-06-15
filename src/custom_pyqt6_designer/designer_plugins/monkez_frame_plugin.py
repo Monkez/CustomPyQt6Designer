@@ -2,8 +2,10 @@ from custom_pyqt6_designer.monkez_widgets import MonkezFrame
 
 try:
     from plugin_factory import PluginSpec, create_plugin
+    from plugin_groups import GROUP_CONTAINERS
 except ModuleNotFoundError:
     from .plugin_factory import PluginSpec, create_plugin
+    from .plugin_groups import GROUP_CONTAINERS
 
 
 MonkezFramePlugin = create_plugin(
@@ -17,6 +19,7 @@ MonkezFramePlugin = create_plugin(
         240,
         160,
         container=True,
+        group=GROUP_CONTAINERS,
     ),
     __name__,
 )

@@ -7,6 +7,11 @@ from custom_pyqt6_designer.monkez_widgets import MonkezUSBCamera
 from custom_pyqt6_designer.monkez_widgets.designer_icons import designer_icon
 
 try:
+    from plugin_groups import GROUP_MEDIA
+except ModuleNotFoundError:
+    from .plugin_groups import GROUP_MEDIA
+
+try:
     from _probe import write_probe
 except ModuleNotFoundError:
     from ._probe import write_probe
@@ -32,7 +37,7 @@ class MonkezUSBCameraPlugin(QPyDesignerCustomWidgetPlugin):
         return "MonkezUSBCamera"
 
     def group(self) -> str:
-        return "Monkez Widgets"
+        return GROUP_MEDIA
 
     def icon(self) -> QIcon:
         return designer_icon("camera")

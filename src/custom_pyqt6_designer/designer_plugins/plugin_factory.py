@@ -16,6 +16,11 @@ try:
 except ModuleNotFoundError:
     from .theme_task_menu import register_theme_task_menu
 
+try:
+    from plugin_groups import GROUP_CONTROLS
+except ModuleNotFoundError:
+    from .plugin_groups import GROUP_CONTROLS
+
 
 @dataclass(frozen=True)
 class PluginSpec:
@@ -30,7 +35,7 @@ class PluginSpec:
     container: bool = False
     themed: bool = True
     properties_xml: str = ""
-    group: str = "Monkez Widgets"
+    group: str = GROUP_CONTROLS
 
 
 def create_plugin(spec: PluginSpec, module_name: str):

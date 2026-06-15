@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 import custom_pyqt6_designer.launcher as launcher
 from custom_pyqt6_designer.launcher import (
+    ENV_APP_ICON,
     append_path,
+    app_icon_path,
     build_env,
     configure_frozen_python_runtime,
     package_root,
@@ -16,6 +18,12 @@ from custom_pyqt6_designer.launcher import (
 
 
 class LauncherTests(unittest.TestCase):
+    def test_source_logo_is_exposed_to_designer_process(self) -> None:
+        icon_path = app_icon_path()
+
+        self.assertIsNotNone(icon_path)
+        self.assertEqual(Path(build_env()[ENV_APP_ICON]), icon_path)
+
     def test_append_path_moves_existing_entry_to_front(self) -> None:
         separator = os.pathsep
         value = separator.join(["stale", "source", "other"])

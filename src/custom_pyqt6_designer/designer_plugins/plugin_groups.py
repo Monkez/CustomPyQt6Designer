@@ -1,0 +1,7 @@
+GROUP_CONTROLS = "Monkez 01 Controls"
+GROUP_INPUTS = "Monkez 02 Inputs"
+GROUP_VALUES = "Monkez 03 Value Editors"
+GROUP_DISPLAY = "Monkez 04 Display"
+GROUP_GAUGES = "Monkez 05 Gauges"
+GROUP_CONTAINERS = "Monkez 06 Containers"
+GROUP_MEDIA = "Monkez 07 Media"

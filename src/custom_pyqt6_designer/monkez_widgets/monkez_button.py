@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QPushButton
 
@@ -62,11 +62,17 @@ class MonkezButton(QPushButton):
         self._pressed = False
 
         self.setText("Monkez Button")
-        self.setMinimumSize(130, 40)
+        self.setMinimumSize(0, 0)
         self.setMouseTracking(True)
         self.setTheme(self._theme)
         self._apply_shadow()
         self._update_style()
+
+    def sizeHint(self) -> QSize:
+        return QSize(130, 40)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(24, 24)
 
     def enterEvent(self, event) -> None:
         self._hovered = True
@@ -201,7 +207,6 @@ class MonkezButton(QPushButton):
         self._shadow_color = theme_color(self._theme, "shadow")
         self._shadow_blur = 18 if self._theme in {"ios", "material"} else 8
         self._shadow_offset_y = 4 if self._theme in {"ios", "material"} else 1
-        self.setMinimumHeight(theme_int(self._theme, "control_height"))
         self._apply_shadow()
         self._update_style()
         if previous != self._theme:

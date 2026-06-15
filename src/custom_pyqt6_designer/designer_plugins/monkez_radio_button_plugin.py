@@ -7,6 +7,11 @@ from custom_pyqt6_designer.monkez_widgets import MonkezRadioButton
 from custom_pyqt6_designer.monkez_widgets.designer_icons import designer_icon
 
 try:
+    from plugin_groups import GROUP_CONTROLS
+except ModuleNotFoundError:
+    from .plugin_groups import GROUP_CONTROLS
+
+try:
     from _probe import write_probe
 except ModuleNotFoundError:
     from ._probe import write_probe
@@ -38,7 +43,7 @@ class MonkezRadioButtonPlugin(QPyDesignerCustomWidgetPlugin):
         return "MonkezRadioButton"
 
     def group(self) -> str:
-        return "Monkez Widgets"
+        return GROUP_CONTROLS
 
     def icon(self) -> QIcon:
         return designer_icon("radio")

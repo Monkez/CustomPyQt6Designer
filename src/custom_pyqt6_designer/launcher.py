@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 ENV_DESIGNER_EXE = "CUSTOM_PYQT6_DESIGNER_EXE"
+ENV_APP_ICON = "MONKEZ_DESIGNER_ICON"
 VENV_NAMES = (".venv311", ".venv", ".venv312", "venv")
 
 
@@ -21,6 +22,24 @@ def package_root() -> Path:
 
 def plugin_dir() -> Path:
     return package_root() / "designer_plugins"
+
+
+def app_icon_path() -> Path | None:
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        candidates.extend(
+            [
+                Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "logo.png",
+                Path(sys.executable).resolve().parent / "_internal" / "logo.png",
+            ]
+        )
+    candidates.extend(
+        [
+            Path.cwd() / "logo.png",
+            package_root().parent.parent / "logo.png",
+        ]
+    )
+    return next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
 
 
 def candidate_roots() -> list[Path]:
@@ -170,6 +189,8 @@ def build_env(debug: bool = False) -> dict[str, str]:
 
     env["PYQTDESIGNERPATH"] = append_path(env.get("PYQTDESIGNERPATH", ""), designer_plugins, path_separator)
     env["PYTHONPATH"] = append_path(env.get("PYTHONPATH", ""), import_root, path_separator)
+    if icon_path := app_icon_path():
+        env[ENV_APP_ICON] = str(icon_path)
     if getattr(sys, "frozen", False):
         internal_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
         base_library = internal_dir / "base_library.zip"

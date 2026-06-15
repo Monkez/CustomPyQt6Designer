@@ -52,6 +52,30 @@ class PluginTests(unittest.TestCase):
             ["Material", "IOS"],
         )
 
+    def test_plugins_are_arranged_in_logical_palette_groups(self) -> None:
+        expected_groups = {
+            "Monkez 01 Controls",
+            "Monkez 02 Inputs",
+            "Monkez 03 Value Editors",
+            "Monkez 04 Display",
+            "Monkez 05 Gauges",
+            "Monkez 06 Containers",
+            "Monkez 07 Media",
+        }
+        groups = set()
+        for path in sorted(PLUGIN_DIR.glob("*_plugin.py")):
+            module = importlib.import_module(path.stem)
+            plugin_class = next(
+                value
+                for value in vars(module).values()
+                if isinstance(value, type)
+                and issubclass(value, QPyDesignerCustomWidgetPlugin)
+                and value is not QPyDesignerCustomWidgetPlugin
+            )
+            groups.add(plugin_class().group())
+
+        self.assertEqual(groups, expected_groups)
+
 
 if __name__ == "__main__":
     unittest.main()

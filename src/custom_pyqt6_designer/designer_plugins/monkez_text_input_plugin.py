@@ -7,6 +7,11 @@ from custom_pyqt6_designer.monkez_widgets import MonkezTextInput
 from custom_pyqt6_designer.monkez_widgets.designer_icons import designer_icon
 
 try:
+    from plugin_groups import GROUP_INPUTS
+except ModuleNotFoundError:
+    from .plugin_groups import GROUP_INPUTS
+
+try:
     from _probe import write_probe
 except ModuleNotFoundError:
     from ._probe import write_probe
@@ -38,7 +43,7 @@ class MonkezTextInputPlugin(QPyDesignerCustomWidgetPlugin):
         return "MonkezTextInput"
 
     def group(self) -> str:
-        return "Monkez Widgets"
+        return GROUP_INPUTS
 
     def icon(self) -> QIcon:
         return designer_icon("textinput")

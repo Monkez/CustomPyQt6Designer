@@ -17,7 +17,10 @@ $OutputDirectory = "dist\MonkezPyQt6DesignerFull"
     --onedir `
     --console `
     --name MonkezPyQt6DesignerFull `
+    --icon "logo.ico" `
     --paths src `
+    --add-data "logo.png;." `
+    --add-data "logo.ico;." `
     --add-data "src\custom_pyqt6_designer;custom_pyqt6_designer" `
     --add-data ".venv311\Lib\site-packages\PyQt6;PyQt6" `
     --add-data ".venv311\Lib\site-packages\pyqt6_plugins;pyqt6_plugins" `
