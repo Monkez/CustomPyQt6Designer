@@ -35,6 +35,10 @@ $OutputDirectory = "dist\MonkezPyQt6DesignerFull"
     --add-binary "$PythonHome\vcruntime140_1.dll;python_runtime" `
     src\custom_pyqt6_designer\exe_entry.py
 
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller build failed."
+}
+
 $VerificationUi = (Resolve-Path "examples\monkez_widgets_test.ui").Path
 & "$OutputDirectory\MonkezPyQt6DesignerFull.exe" --verify-plugins $VerificationUi
 if ($LASTEXITCODE -ne 0) {

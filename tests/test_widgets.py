@@ -75,16 +75,19 @@ class WidgetTests(unittest.TestCase):
         group = MonkezGroupBox()
         group.title = "Account settings"
         group.subtitle = "Manage profile and preferences"
+        group.subtitleVisible = False
         group.checkable = True
         group.checked = True
         group.themeIndex = 5
 
         self.assertEqual(group.subtitle, "Manage profile and preferences")
+        self.assertFalse(group.subtitleVisible)
         self.assertEqual(group.title, "Account settings")
         title_property = group.metaObject().property(group.metaObject().indexOfProperty("title"))
         self.assertTrue(title_property.isDesignable())
         self.assertTrue(title_property.isWritable())
         self.assertGreaterEqual(group.metaObject().indexOfProperty("title"), group.metaObject().propertyOffset())
+        self.assertGreaterEqual(group.metaObject().indexOfProperty("subtitleVisible"), group.metaObject().propertyOffset())
         self.assertEqual(group.themeIndex, 5)
         self.assertGreaterEqual(group.contentsMargins().top(), group.headerHeight)
         self.assertTrue(group.checked)
@@ -94,6 +97,7 @@ class WidgetTests(unittest.TestCase):
         group = MonkezGroupBox()
         group.title = "Rendered title"
         group.subtitle = "Rendered subtitle"
+        group.subtitleVisible = False
         layout = QVBoxLayout(group)
         layout.addWidget(QLabel("Child content"))
         group.resize(320, 220)
@@ -104,6 +108,8 @@ class WidgetTests(unittest.TestCase):
 
         self.assertFalse(pixmap.isNull())
         self.assertEqual(group.title, "Rendered title")
+        self.assertEqual(group.subtitle, "Rendered subtitle")
+        self.assertFalse(group.subtitleVisible)
         group.close()
         group.deleteLater()
 

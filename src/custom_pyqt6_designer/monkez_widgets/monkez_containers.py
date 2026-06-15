@@ -110,6 +110,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         self._accent_color = QColor()
         self._shadow_color = QColor()
         self._subtitle = ""
+        self._subtitle_visible = True
         self._radius = 12
         self._border_width = 1
         self._header_height = 54
@@ -238,7 +239,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
             Qt.TextElideMode.ElideRight,
             int(text_width),
         )
-        subtitle = self._subtitle.strip()
+        subtitle = self._subtitle.strip() if self._subtitle_visible else ""
         if subtitle:
             title_y = card_rect.top() + 12
             painter.drawText(QRectF(text_left, title_y, text_width, 20), Qt.AlignmentFlag.AlignVCenter, title)
@@ -356,6 +357,13 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         self._subtitle = value or ""
         self._update_style()
 
+    def getSubtitleVisible(self) -> bool:
+        return self._subtitle_visible
+
+    def setSubtitleVisible(self, value: bool) -> None:
+        self._subtitle_visible = bool(value)
+        self.update()
+
     def getSubtitleColor(self) -> QColor:
         return QColor(self._subtitle_color)
 
@@ -423,6 +431,7 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
     borderColor = pyqtProperty(QColor, getBorderColor, setBorderColor)
     titleColor = pyqtProperty(QColor, getTitleColor, setTitleColor)
     subtitle = pyqtProperty(str, getSubtitle, setSubtitle)
+    subtitleVisible = pyqtProperty(bool, getSubtitleVisible, setSubtitleVisible)
     subtitleColor = pyqtProperty(QColor, getSubtitleColor, setSubtitleColor)
     accentColor = pyqtProperty(QColor, getAccentColor, setAccentColor)
     radius = pyqtProperty(int, getRadius, setRadius)
