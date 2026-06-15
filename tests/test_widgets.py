@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout
 
 from custom_pyqt6_designer import monkez_widgets
 from custom_pyqt6_designer.monkez_widgets import (
@@ -88,6 +88,23 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(group.themeIndex, 5)
         self.assertGreaterEqual(group.contentsMargins().top(), group.headerHeight)
         self.assertTrue(group.checked)
+        group.deleteLater()
+
+    def test_group_box_renders_with_title_property_and_child_layout(self) -> None:
+        group = MonkezGroupBox()
+        group.title = "Rendered title"
+        group.subtitle = "Rendered subtitle"
+        layout = QVBoxLayout(group)
+        layout.addWidget(QLabel("Child content"))
+        group.resize(320, 220)
+        group.show()
+        self.app.processEvents()
+
+        pixmap = group.grab()
+
+        self.assertFalse(pixmap.isNull())
+        self.assertEqual(group.title, "Rendered title")
+        group.close()
         group.deleteLater()
 
     def test_combo_popup_has_no_native_black_frame_or_shadow(self) -> None:

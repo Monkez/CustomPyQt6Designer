@@ -4,7 +4,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import custom_pyqt6_designer.launcher as launcher
 from custom_pyqt6_designer.launcher import (
     append_path,
     build_env,
@@ -47,6 +49,19 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(env["PYTHONPATH"].split(os.pathsep)[0], str(internal_dir))
             self.assertIn(str(runtime_dir / "Lib"), env["PYTHONPATH"].split(os.pathsep))
             self.assertIn(str(runtime_dir / "DLLs"), env["PATH"].split(os.pathsep))
+
+    def test_plugin_verifier_rejects_designer_that_exits_early(self) -> None:
+        class ExitingProcess:
+            def __init__(self, *args, **kwargs) -> None:
+                self.returncode = 1
+
+            def poll(self):
+                return self.returncode
+
+        with patch.object(launcher.subprocess, "Popen", ExitingProcess):
+            result = launcher.verify_designer_plugins(["designer"], {}, expected_plugins=1)
+
+        self.assertEqual(result, 1)
 
 
 if __name__ == "__main__":

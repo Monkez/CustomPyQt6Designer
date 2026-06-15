@@ -269,6 +269,7 @@ def verify_designer_plugins(command: list[str], env: dict[str, str], expected_pl
         with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
             process = subprocess.Popen(command, env=verify_env, stdout=stdout, stderr=stderr)
             deadline = time.monotonic() + 30
+            stable_since: float | None = None
             initialized: set[str] = set()
             created: set[str] = set()
             while time.monotonic() < deadline and process.poll() is None:
@@ -279,9 +280,17 @@ def verify_designer_plugins(command: list[str], env: dict[str, str], expected_pl
                         elif line.endswith("Plugin.createWidget"):
                             created.add(line)
                     if len(initialized) >= expected_plugins and len(created) >= expected_plugins:
-                        break
+                        if stable_since is None:
+                            stable_since = time.monotonic()
+                        elif time.monotonic() - stable_since >= 3:
+                            break
                 time.sleep(0.2)
 
+            survived_stability_check = (
+                stable_since is not None
+                and time.monotonic() - stable_since >= 3
+                and process.poll() is None
+            )
             if process.poll() is None:
                 process.terminate()
                 try:
@@ -290,13 +299,18 @@ def verify_designer_plugins(command: list[str], env: dict[str, str], expected_pl
                     process.kill()
                     process.wait(timeout=5)
 
-        if len(initialized) == expected_plugins and len(created) >= expected_plugins:
+        if (
+            len(initialized) == expected_plugins
+            and len(created) >= expected_plugins
+            and survived_stability_check
+        ):
             print(f"Plugin verification passed: {len(initialized)} initialized, {len(created)} created.")
             return 0
 
         print(
             f"Plugin verification failed: expected {expected_plugins}, "
-            f"initialized {len(initialized)}, created {len(created)}.",
+            f"initialized {len(initialized)}, created {len(created)}, "
+            f"stable={survived_stability_check}.",
             file=sys.stderr,
         )
         stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace").strip()

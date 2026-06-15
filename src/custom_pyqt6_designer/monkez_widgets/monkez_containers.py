@@ -233,7 +233,11 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         painter.setPen(self._title_color)
 
         title_metrics = painter.fontMetrics()
-        title = title_metrics.elidedText(self.title(), Qt.TextElideMode.ElideRight, int(text_width))
+        title = title_metrics.elidedText(
+            QGroupBox.title(self),
+            Qt.TextElideMode.ElideRight,
+            int(text_width),
+        )
         subtitle = self._subtitle.strip()
         if subtitle:
             title_y = card_rect.top() + 12
