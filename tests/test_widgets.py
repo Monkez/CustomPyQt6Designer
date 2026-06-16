@@ -333,6 +333,20 @@ class WidgetTests(unittest.TestCase):
         dialog.close()
         dialog.deleteLater()
 
+    def test_combo_can_use_compact_designer_height(self) -> None:
+        combo = MonkezComboBox()
+        combo.themeIndex = 1
+        combo.setFixedHeight(24)
+        combo.show()
+        self.app.processEvents()
+
+        self.assertEqual(combo.height(), 24)
+        self.assertLessEqual(combo.minimumHeight(), 24)
+        self.assertNotIn("min-height", combo.styleSheet())
+        self.assertLessEqual(combo._popup.view.sizeHintForRow(0), 32)
+        combo.close()
+        combo.deleteLater()
+
     def test_calendar_exposes_polished_date_colors_and_headers(self) -> None:
         calendar = MonkezCalendarWidget()
 
