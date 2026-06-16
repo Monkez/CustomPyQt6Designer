@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
-from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 from custom_pyqt6_designer import monkez_widgets
 from custom_pyqt6_designer.monkez_widgets import (
@@ -50,18 +50,68 @@ class WidgetTests(unittest.TestCase):
 
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
         button = MonkezButton()
-        button.resize(56, 36)
+        button.setText("X")
+        button.resize(24, 24)
         button.setThemeIndex(0)
         button.show()
         self.app.processEvents()
 
-        self.assertLessEqual(button.minimumSizeHint().width(), 56)
-        self.assertLessEqual(button.minimumSizeHint().height(), 36)
-        self.assertLessEqual(button.minimumWidth(), 56)
-        self.assertLessEqual(button.minimumHeight(), 36)
-        self.assertEqual(button.size().width(), 56)
-        self.assertEqual(button.size().height(), 36)
+        self.assertLessEqual(button.minimumSizeHint().width(), 24)
+        self.assertLessEqual(button.minimumSizeHint().height(), 24)
+        self.assertLessEqual(button.minimumWidth(), 24)
+        self.assertLessEqual(button.minimumHeight(), 24)
+        self.assertEqual(button.paddingX, 4)
+        self.assertEqual(button.paddingY, 2)
+        self.assertEqual(button.size().width(), 24)
+        self.assertEqual(button.size().height(), 24)
         button.close()
+        button.deleteLater()
+
+    def test_button_hover_brightens_current_background_color(self) -> None:
+        button = MonkezButton()
+        active = QColor("#c00000")
+        hovered = active.lighter(112)
+        button.activeColor = active
+        button._hovered = True
+        button._update_style()
+
+        self.assertIn(
+            f"rgba({hovered.red()}, {hovered.green()}, {hovered.blue()}, {hovered.alpha()})",
+            button.styleSheet(),
+        )
+        button.deleteLater()
+
+    def test_button_press_darkens_current_background_color(self) -> None:
+        button = MonkezButton()
+        active = QColor("#c00000")
+        pressed = active.darker(108)
+        button.activeColor = active
+        button._pressed = True
+        button._update_style()
+
+        self.assertIn(
+            f"rgba({pressed.red()}, {pressed.green()}, {pressed.blue()}, {pressed.alpha()})",
+            button.styleSheet(),
+        )
+        button.deleteLater()
+
+    def test_outlined_button_has_hover_and_press_highlight(self) -> None:
+        button = MonkezButton()
+        button.buttonTypeIndex = 1
+        normal_style = button.styleSheet()
+
+        button._hovered = True
+        button._update_style()
+        hover_style = button.styleSheet()
+
+        button._pressed = True
+        button._update_style()
+        pressed_style = button.styleSheet()
+
+        self.assertNotEqual(hover_style, normal_style)
+        self.assertNotEqual(pressed_style, hover_style)
+        self.assertIn("border:", pressed_style)
+        self.assertIn("background-color: rgba", pressed_style)
         button.deleteLater()
 
     def test_image_reuses_scaled_pixmap_until_source_or_size_changes(self) -> None:
@@ -83,6 +133,59 @@ class WidgetTests(unittest.TestCase):
         widget._update_pixmap()
         self.assertNotEqual(widget._scaled_pixmap.cacheKey(), first_key)
         widget.close()
+
+    def test_image_scaling_does_not_lock_window_minimum_size(self) -> None:
+        widget = MonkezImage()
+        pixmap = QPixmap(1200, 800)
+        pixmap.fill(QColor("#1976d2"))
+        widget.set_image(pixmap)
+        widget.resize(720, 480)
+        widget.show()
+        self.app.processEvents()
+        widget._update_pixmap()
+
+        self.assertGreater(widget.image_label.pixmap().width(), 300)
+        self.assertLessEqual(widget.minimumSizeHint().width(), 24)
+        self.assertLessEqual(widget.minimumSizeHint().height(), 24)
+        self.assertLessEqual(widget.image_label.minimumSizeHint().width(), 0)
+        self.assertLessEqual(widget.image_label.minimumSizeHint().height(), 0)
+
+        widget.resize(80, 60)
+        self.app.processEvents()
+        widget._update_pixmap()
+
+        self.assertEqual(widget.size().width(), 80)
+        self.assertEqual(widget.size().height(), 60)
+        self.assertLessEqual(widget.image_label.pixmap().width(), 80)
+        widget.close()
+        widget.deleteLater()
+
+    def test_image_does_not_lock_parent_window_after_growing(self) -> None:
+        window = QWidget()
+        layout = QVBoxLayout(window)
+        widget = MonkezImage()
+        layout.addWidget(widget)
+        pixmap = QPixmap(1600, 1000)
+        pixmap.fill(QColor("#38bdf8"))
+        widget.set_image(pixmap)
+
+        window.resize(900, 600)
+        window.show()
+        self.app.processEvents()
+        widget._update_pixmap()
+        large_width = widget.image_label.pixmap().width()
+
+        window.resize(180, 120)
+        self.app.processEvents()
+        widget._update_pixmap()
+
+        self.assertGreater(large_width, 500)
+        self.assertLessEqual(window.layout().totalMinimumSize().width(), 48)
+        self.assertLessEqual(window.layout().totalMinimumSize().height(), 48)
+        self.assertLessEqual(widget.image_label.pixmap().width(), 180)
+        window.close()
+        widget.deleteLater()
+        window.deleteLater()
 
     def test_camera_display_fps_and_fast_scaling(self) -> None:
         camera = MonkezUSBCamera()

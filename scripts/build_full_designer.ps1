@@ -7,7 +7,7 @@ $Python = ".\.venv311\Scripts\python.exe"
 $PyInstaller = ".\.venv311\Scripts\pyinstaller.exe"
 $Version = & $Python -c "from custom_pyqt6_designer import __version__; print(__version__)"
 $PythonHome = & $Python -c "import sys; print(sys.base_prefix)"
-$OutputDirectory = "dist\MonkezPyQt6DesignerFull"
+$OutputDirectory = "dist\MonkezDesigner"
 
 & $Python -m pip install pyinstaller
 
@@ -16,7 +16,7 @@ $OutputDirectory = "dist\MonkezPyQt6DesignerFull"
     --noconfirm `
     --onedir `
     --console `
-    --name MonkezPyQt6DesignerFull `
+    --name MonkezDesigner `
     --icon "logo.ico" `
     --paths src `
     --add-data "logo.png;." `
@@ -43,9 +43,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $VerificationUi = (Resolve-Path "examples\monkez_widgets_test.ui").Path
-& "$OutputDirectory\MonkezPyQt6DesignerFull.exe" --verify-plugins $VerificationUi
+& "$OutputDirectory\MonkezDesigner.exe" --verify-plugins $VerificationUi
 if ($LASTEXITCODE -ne 0) {
     throw "Bundled Designer plugin verification failed."
 }
 
-Write-Host "Built: $OutputDirectory\MonkezPyQt6DesignerFull.exe"
+Write-Host "Built: $OutputDirectory\MonkezDesigner.exe"

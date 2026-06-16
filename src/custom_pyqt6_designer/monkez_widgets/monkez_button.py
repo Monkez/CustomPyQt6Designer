@@ -46,13 +46,13 @@ class MonkezButton(QPushButton):
         self._button_type = "filled"
         self._active = True
         self._active_color = QColor(0, 170, 0, 255)
-        self._hover_color = QColor("#00aa00")
-        self._pressed_color = QColor("#007700")
         self._surface_color = QColor("#ffffff")
         self._border_color = QColor("#1976d2")
         self._deactive_color = QColor(170, 0, 0, 255)
         self._text_color = QColor("white")
         self._hover_text_color = QColor(255, 255, 0)
+        self._padding_x = 4
+        self._padding_y = 2
         self._shadow_enabled = True
         self._shadow_blur = 10
         self._shadow_offset_x = 1
@@ -104,47 +104,80 @@ class MonkezButton(QPushButton):
         else:
             self.setGraphicsEffect(None)
 
+    def _hover_background(self, color: QColor) -> QColor:
+        hovered = QColor(color).lighter(112)
+        hovered.setAlpha(color.alpha())
+        return hovered
+
+    def _pressed_background(self, color: QColor) -> QColor:
+        pressed = QColor(color).darker(108)
+        pressed.setAlpha(color.alpha())
+        return pressed
+
+    def _tinted_surface(self, tint: QColor, alpha: int) -> QColor:
+        color = QColor(tint)
+        color.setAlpha(max(0, min(255, alpha)))
+        return color
+
+    def _blend(self, base: QColor, tint: QColor, amount: float) -> QColor:
+        amount = max(0.0, min(1.0, amount))
+        mixed = QColor(
+            round(base.red() * (1.0 - amount) + tint.red() * amount),
+            round(base.green() * (1.0 - amount) + tint.green() * amount),
+            round(base.blue() * (1.0 - amount) + tint.blue() * amount),
+            base.alpha(),
+        )
+        return mixed
+
+    def _rgba(self, color: QColor) -> str:
+        return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
+
     def _update_style(self) -> None:
         bg_color = QColor(self._active_color if self._active else self._deactive_color)
-        hover_color = QColor(self._hover_color if self._active else self._deactive_color)
-        pressed_color = QColor(self._pressed_color if self._active else self._deactive_color)
+        hover_color = self._hover_background(bg_color)
+        pressed_color = self._pressed_background(bg_color)
         bg = pressed_color if self._pressed else hover_color if self._hovered else bg_color
-        text_color = self._hover_text_color if self._hovered else self._text_color
+        text_color = self._hover_text_color if self._hovered or self._pressed else self._text_color
         border_color = self._border_color if self._active else self._deactive_color
-        padding_y = 8 if self._theme in {"fluent", "minimal"} else 10
-        padding_x = 18 if self._theme in {"ios", "material"} else 14
+        padding_y = self._padding_y
+        padding_x = self._padding_x
 
         if self._button_type == "outlined":
+            outline_bg = QColor(self._surface_color)
+            if self._pressed:
+                outline_bg = self._blend(self._surface_color, border_color, 0.16)
+            elif self._hovered:
+                outline_bg = self._blend(self._surface_color, border_color, 0.09)
+            border = self._pressed_background(border_color) if self._pressed else border_color
             self.setStyleSheet(
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
-                f"background-color: {self._surface_color.name()};"
-                f"color: {border_color.name()};"
-                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {border_color.name()};"
+                f"background-color: {self._rgba(outline_bg)};"
+                f"color: {border.name()};"
+                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {border.name()};"
                 f"padding: {padding_y}px {padding_x}px;"
-                "}"
-                "QPushButton:hover {"
-                f"background-color: {theme_color(self._theme, 'control_hover').name()};"
                 "}"
             )
         elif self._button_type == "text":
+            text_bg = QColor(0, 0, 0, 0)
+            if self._pressed:
+                text_bg = self._tinted_surface(border_color, 30)
+            elif self._hovered:
+                text_bg = self._tinted_surface(border_color, 18)
             self.setStyleSheet(
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
-                "background-color: transparent;"
+                f"background-color: {self._rgba(text_bg)};"
                 f"color: {border_color.name()};"
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
-                "}"
-                "QPushButton:hover {"
-                f"background-color: {theme_color(self._theme, 'secondary').name()};"
                 "}"
             )
         else:
             self.setStyleSheet(
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
-                f"background-color: rgba({bg.red()}, {bg.green()}, {bg.blue()}, {bg.alpha()});"
+                f"background-color: {self._rgba(bg)};"
                 f"color: {text_color.name()};"
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
@@ -196,8 +229,6 @@ class MonkezButton(QPushButton):
         previous = self._theme
         self._theme = normalize_theme(value)
         self._active_color = theme_color(self._theme, "primary")
-        self._hover_color = theme_color(self._theme, "primary_hover")
-        self._pressed_color = theme_color(self._theme, "primary_pressed")
         self._surface_color = theme_color(self._theme, "surface")
         self._border_color = theme_color(self._theme, "border_focus")
         self._deactive_color = theme_color(self._theme, "danger")
@@ -271,6 +302,20 @@ class MonkezButton(QPushButton):
         self._hover_text_color = QColor(color)
         self._update_style()
 
+    def getPaddingX(self) -> int:
+        return self._padding_x
+
+    def setPaddingX(self, value: int) -> None:
+        self._padding_x = max(0, int(value))
+        self._update_style()
+
+    def getPaddingY(self) -> int:
+        return self._padding_y
+
+    def setPaddingY(self, value: int) -> None:
+        self._padding_y = max(0, int(value))
+        self._update_style()
+
     def getShadowEnabled(self) -> bool:
         return self._shadow_enabled
 
@@ -323,6 +368,8 @@ class MonkezButton(QPushButton):
     deactiveColor = pyqtProperty(QColor, getDeactiveColor, setDeactiveColor)
     textColor = pyqtProperty(QColor, getTextColor, setTextColor)
     hoverTextColor = pyqtProperty(QColor, getHoverTextColor, setHoverTextColor)
+    paddingX = pyqtProperty(int, getPaddingX, setPaddingX)
+    paddingY = pyqtProperty(int, getPaddingY, setPaddingY)
     shadowEnabled = pyqtProperty(bool, getShadowEnabled, setShadowEnabled)
     shadowBlur = pyqtProperty(int, getShadowBlur, setShadowBlur)
     shadowOffsetX = pyqtProperty(int, getShadowOffsetX, setShadowOffsetX)

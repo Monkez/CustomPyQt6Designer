@@ -1,10 +1,57 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtProperty
-from PyQt6.QtGui import QColor, QImage, QPixmap
+from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .assets import image_path
+
+
+class _ScalableImageLabel(QLabel):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._display_pixmap = QPixmap()
+        self._display_text = ""
+
+    def sizeHint(self) -> QSize:
+        return QSize(120, 100)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+    def setPixmap(self, pixmap: QPixmap) -> None:
+        self._display_pixmap = QPixmap(pixmap)
+        self._display_text = ""
+        self.update()
+
+    def pixmap(self) -> QPixmap:
+        return QPixmap(self._display_pixmap)
+
+    def setText(self, text: str) -> None:
+        self._display_text = text
+        if text:
+            self._display_pixmap = QPixmap()
+        self.update()
+
+    def text(self) -> str:
+        return self._display_text
+
+    def clear(self) -> None:
+        self._display_pixmap = QPixmap()
+        self._display_text = ""
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        if not self._display_pixmap.isNull():
+            x = (self.width() - self._display_pixmap.width()) // 2
+            y = (self.height() - self._display_pixmap.height()) // 2
+            painter.drawPixmap(x, y, self._display_pixmap)
+            return
+        if self._display_text:
+            painter.setPen(self.palette().color(self.foregroundRole()))
+            painter.drawText(self.rect(), self.alignment(), self._display_text)
 
 
 class MonkezImage(QWidget):
@@ -17,6 +64,7 @@ class MonkezImage(QWidget):
         self._scaled_cache_key: tuple[int, int, int, bool] | None = None
         self._scaled_pixmap = QPixmap()
         self._smooth_scaling = True
+        self._resize_update_delay_ms = 16
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
@@ -25,19 +73,28 @@ class MonkezImage(QWidget):
 
         frame_layout = QVBoxLayout(self.frame)
         frame_layout.setContentsMargins(0, 0, 0, 0)
-        self.image_label = QLabel(self.frame)
+        self.image_label = _ScalableImageLabel(self.frame)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.image_label.setMinimumSize(0, 0)
+        self.image_label.setMaximumSize(16777215, 16777215)
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         frame_layout.addWidget(self.image_label)
 
-        self.setMinimumSize(120, 100)
+        self.setMinimumSize(0, 0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setImageFile(self._image_file)
         self._update_style()
         self._schedule_pixmap_update()
 
+    def sizeHint(self) -> QSize:
+        return QSize(180, 120)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(24, 24)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._schedule_pixmap_update()
+        self._schedule_pixmap_update(self._resize_update_delay_ms)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -74,11 +131,11 @@ class MonkezImage(QWidget):
         )
         self._schedule_pixmap_update()
 
-    def _schedule_pixmap_update(self) -> None:
+    def _schedule_pixmap_update(self, delay_ms: int = 0) -> None:
         if self._pixmap_update_pending:
             return
         self._pixmap_update_pending = True
-        QTimer.singleShot(0, self._flush_pixmap_update)
+        QTimer.singleShot(max(0, delay_ms), self._flush_pixmap_update)
 
     def _flush_pixmap_update(self) -> None:
         self._pixmap_update_pending = False
@@ -86,8 +143,8 @@ class MonkezImage(QWidget):
 
     def _update_pixmap(self) -> None:
         if self._pixmap.isNull():
+            self.image_label.clear()
             self.image_label.setText("No image loaded")
-            self.image_label.setPixmap(QPixmap())
             self._invalidate_scaled_cache()
             return
         size = self._target_pixmap_size()

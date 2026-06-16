@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-pyqt6-designer"
-version = "0.3.0"
+version = "0.3.1"
 description = "Qt Designer launcher and Python custom widget plugins for PyQt6 projects."
 readme = "README.md"
 requires-python = ">=3.10"
