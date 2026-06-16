@@ -160,6 +160,26 @@ class WidgetTests(unittest.TestCase):
         widget.close()
         widget.deleteLater()
 
+    def test_image_uses_physical_pixels_for_high_dpi_scaling(self) -> None:
+        widget = MonkezImage()
+        widget._device_pixel_ratio = lambda: 2.0
+        pixmap = QPixmap(1200, 800)
+        pixmap.fill(QColor("#1976d2"))
+        widget.set_image(pixmap)
+        widget.resize(300, 200)
+        widget.show()
+        self.app.processEvents()
+        widget._update_pixmap()
+
+        rendered = widget.image_label.pixmap()
+
+        self.assertEqual(rendered.devicePixelRatio(), 2.0)
+        self.assertGreaterEqual(rendered.width(), 550)
+        self.assertLessEqual(rendered.deviceIndependentSize().width(), 300)
+        self.assertLessEqual(rendered.deviceIndependentSize().height(), 200)
+        widget.close()
+        widget.deleteLater()
+
     def test_image_does_not_lock_parent_window_after_growing(self) -> None:
         window = QWidget()
         layout = QVBoxLayout(window)

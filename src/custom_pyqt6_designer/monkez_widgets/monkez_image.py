@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtProperty
+from PyQt6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, pyqtProperty
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
@@ -45,9 +45,15 @@ class _ScalableImageLabel(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
         if not self._display_pixmap.isNull():
-            x = (self.width() - self._display_pixmap.width()) // 2
-            y = (self.height() - self._display_pixmap.height()) // 2
-            painter.drawPixmap(x, y, self._display_pixmap)
+            pixmap_size = self._display_pixmap.deviceIndependentSize()
+            target = QRectF(
+                (self.width() - pixmap_size.width()) / 2,
+                (self.height() - pixmap_size.height()) / 2,
+                pixmap_size.width(),
+                pixmap_size.height(),
+            )
+            source = QRectF(0, 0, self._display_pixmap.width(), self._display_pixmap.height())
+            painter.drawPixmap(target, self._display_pixmap, source)
             return
         if self._display_text:
             painter.setPen(self.palette().color(self.foregroundRole()))
@@ -61,7 +67,7 @@ class MonkezImage(QWidget):
         self._image_file = image_file or image_path("MonkezPlaceHolderImage.jpg")
         self._pixmap = QPixmap()
         self._pixmap_update_pending = False
-        self._scaled_cache_key: tuple[int, int, int, bool] | None = None
+        self._scaled_cache_key: tuple[int, int, int, int, int, bool] | None = None
         self._scaled_pixmap = QPixmap()
         self._smooth_scaling = True
         self._resize_update_delay_ms = 16
@@ -151,14 +157,31 @@ class MonkezImage(QWidget):
         if size.width() <= 0 or size.height() <= 0:
             return
 
-        cache_key = (self._pixmap.cacheKey(), size.width(), size.height(), self._smooth_scaling)
+        device_pixel_ratio = self._device_pixel_ratio()
+        physical_size = QSize(
+            max(1, round(size.width() * device_pixel_ratio)),
+            max(1, round(size.height() * device_pixel_ratio)),
+        )
+        cache_key = (
+            self._pixmap.cacheKey(),
+            size.width(),
+            size.height(),
+            physical_size.width(),
+            physical_size.height(),
+            self._smooth_scaling,
+        )
         if self._scaled_cache_key != cache_key:
             transform = (
                 Qt.TransformationMode.SmoothTransformation
                 if self._smooth_scaling
                 else Qt.TransformationMode.FastTransformation
             )
-            self._scaled_pixmap = self._pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, transform)
+            self._scaled_pixmap = self._pixmap.scaled(
+                physical_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                transform,
+            )
+            self._scaled_pixmap.setDevicePixelRatio(device_pixel_ratio)
             self._scaled_cache_key = cache_key
 
         self.image_label.setText("")
@@ -182,6 +205,12 @@ class MonkezImage(QWidget):
             return QSize(size.width() - 4, size.height() - 4)
 
         return QSize()
+
+    def _device_pixel_ratio(self) -> float:
+        window = self.window().windowHandle() if self.window() is not None else None
+        if window is not None and window.screen() is not None:
+            return max(1.0, float(window.screen().devicePixelRatio()))
+        return max(1.0, float(self.image_label.devicePixelRatioF()))
 
     def getBackgroundColor(self) -> QColor:
         return QColor(self._background_color)
