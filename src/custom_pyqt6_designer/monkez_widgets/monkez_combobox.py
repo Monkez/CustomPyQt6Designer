@@ -33,7 +33,7 @@ class MonkezComboItemDelegate(QStyledItemDelegate):
         selected_background = selected_background.lighter(104)
         hover_background = QColor(hover_background)
         hover_background.setAlpha(155)
-        item_rect = QRectF(option.rect.adjusted(6, 2, -6, -2))
+        item_rect = QRectF(option.rect.adjusted(3, 1, -3, -1))
         radius = max(4.0, min(10.0, float(getattr(combo, "_border_radius", 8)) - 2.0))
 
         if option.state & QStyle.StateFlag.State_Selected:
@@ -41,7 +41,7 @@ class MonkezComboItemDelegate(QStyledItemDelegate):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(selected_background)
             painter.drawRoundedRect(item_rect, radius, radius)
-            accent_rect = QRectF(item_rect.left() + 4, item_rect.top() + 7, 3, item_rect.height() - 14)
+            accent_rect = QRectF(item_rect.left() + 5, item_rect.top() + 7, 3, item_rect.height() - 14)
             painter.setBrush(theme_color(combo._theme, "primary"))
             painter.drawRoundedRect(accent_rect, 1.5, 1.5)
             resolved_text_color = hover_text_color
@@ -57,7 +57,7 @@ class MonkezComboItemDelegate(QStyledItemDelegate):
         if icon and not icon.isNull():
             icon_size = 20
             icon_rect = QRect(
-                option.rect.x() + 14,
+                option.rect.x() + 22,
                 option.rect.y() + (option.rect.height() - icon_size) // 2,
                 icon_size,
                 icon_size,
@@ -65,7 +65,7 @@ class MonkezComboItemDelegate(QStyledItemDelegate):
             icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter)
             text_x = icon_rect.right() + 9
         else:
-            text_x = option.rect.x() + 14
+            text_x = option.rect.x() + 22
 
         text_rect = QRect(text_x, option.rect.y(), option.rect.right() - text_x - 10, option.rect.height())
         painter.setPen(resolved_text_color)
@@ -116,7 +116,7 @@ class MonkezComboPopup(QFrame):
         self.view.clicked.connect(self._activate_index)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setContentsMargins(3, 3, 3, 3)
         layout.setSpacing(0)
         layout.addWidget(self.view)
 
@@ -143,8 +143,8 @@ class MonkezComboPopup(QFrame):
         )
         row_height = self.view.sizeHintForRow(0) if row_count else 30
         content_height = visible_rows * max(30, row_height) + max(0, visible_rows - 1) * self.view.spacing()
-        popup_height = content_height + 18
-        popup_width = max(combo.width(), self.view.sizeHintForColumn(combo.modelColumn()) + 36)
+        popup_height = content_height + 10
+        popup_width = max(combo.width(), self.view.sizeHintForColumn(combo.modelColumn()) + 28)
 
         global_position = combo.mapToGlobal(QPoint(0, combo.height() + 4))
         screen = combo.screen()
@@ -313,7 +313,7 @@ class MonkezComboBox(QComboBox):
             "min-height: 24px;"
             "padding: 2px 8px;"
             f"border-radius: {max(3, self._border_radius - 3)}px;"
-            "margin: 0px 4px;"
+            "margin: 0px 2px;"
             "}"
             "QListView::item:hover,"
             "QListView::item:selected {"

@@ -344,6 +344,7 @@ class WidgetTests(unittest.TestCase):
         self.assertLessEqual(combo.minimumHeight(), 24)
         self.assertNotIn("min-height", combo.styleSheet())
         self.assertLessEqual(combo._popup.view.sizeHintForRow(0), 32)
+        self.assertEqual(combo._popup.layout().contentsMargins().left(), 3)
         combo.close()
         combo.deleteLater()
 
