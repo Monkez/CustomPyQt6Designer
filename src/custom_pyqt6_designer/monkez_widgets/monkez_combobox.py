@@ -80,17 +80,18 @@ class MonkezComboListView(QListView):
 class MonkezComboPopup(QFrame):
     def __init__(self, combo) -> None:
         flags = (
-            Qt.WindowType.Tool
+            Qt.WindowType.Popup
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.NoDropShadowWindowHint
         )
-        super().__init__(None, flags)
+        super().__init__(combo.window(), flags)
         self._combo = combo
         self.setObjectName("monkezComboPopup")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
         self.setAutoFillBackground(False)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._event_filter_installed = False
 
         self.view = MonkezComboListView(combo, self)
         self.view.setModel(combo.model())
@@ -106,6 +107,9 @@ class MonkezComboPopup(QFrame):
 
     def sync_and_show(self) -> None:
         combo = self._combo
+        owner = combo.window()
+        if owner is not None and self.parentWidget() is not owner:
+            self.setParent(owner, self.windowFlags())
         self.view.setModel(combo.model())
         self.view.setRootIndex(combo.rootModelIndex())
         self.view.setModelColumn(combo.modelColumn())
@@ -140,11 +144,11 @@ class MonkezComboPopup(QFrame):
         self.resize(popup_width, popup_height)
         self.move(global_position)
         app = QApplication.instance()
-        if app is not None:
+        if app is not None and not self._event_filter_installed:
             app.installEventFilter(self)
+            self._event_filter_installed = True
         self.show()
         self.raise_()
-        self.activateWindow()
         self.view.setFocus(Qt.FocusReason.PopupFocusReason)
         self.update()
 
@@ -152,10 +156,14 @@ class MonkezComboPopup(QFrame):
         if not self.isVisible():
             return
         self.hide()
+
+    def hideEvent(self, event) -> None:
         app = QApplication.instance()
-        if app is not None:
+        if app is not None and self._event_filter_installed:
             app.removeEventFilter(self)
+            self._event_filter_installed = False
         self._combo._popup_hidden()
+        super().hideEvent(event)
 
     def _activate_index(self, index) -> None:
         if index.isValid():

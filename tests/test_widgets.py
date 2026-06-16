@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
-from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout, QWidget
 
 from custom_pyqt6_designer import monkez_widgets
 from custom_pyqt6_designer.monkez_widgets import (
@@ -307,13 +307,31 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground))
         self.assertTrue(popup.windowFlags() & Qt.WindowType.NoDropShadowWindowHint)
         self.assertTrue(popup.windowFlags() & Qt.WindowType.FramelessWindowHint)
-        self.assertTrue(popup.windowFlags() & Qt.WindowType.Tool)
+        self.assertTrue(popup.windowFlags() & Qt.WindowType.Popup)
         self.assertEqual(popup.contentsMargins().left(), 0)
         self.assertEqual(popup.contentsMargins().top(), 0)
         self.assertEqual(popup.contentsMargins().right(), 0)
         self.assertEqual(popup.contentsMargins().bottom(), 0)
         self.assertIs(popup.view.model(), combo.model())
         combo.deleteLater()
+
+    def test_combo_popup_is_owned_by_dialog_window(self) -> None:
+        dialog = QDialog()
+        layout = QVBoxLayout(dialog)
+        combo = MonkezComboBox(dialog)
+        combo.addItems(["A", "B", "C"])
+        layout.addWidget(combo)
+        dialog.show()
+        self.app.processEvents()
+
+        combo.showPopup()
+        self.app.processEvents()
+
+        self.assertIs(combo._popup.parentWidget(), dialog)
+        self.assertTrue(combo._popup.windowFlags() & Qt.WindowType.Popup)
+        combo.hidePopup()
+        dialog.close()
+        dialog.deleteLater()
 
     def test_calendar_exposes_polished_date_colors_and_headers(self) -> None:
         calendar = MonkezCalendarWidget()

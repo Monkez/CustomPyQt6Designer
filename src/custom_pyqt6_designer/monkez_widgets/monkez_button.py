@@ -141,6 +141,9 @@ class MonkezButton(QPushButton):
         border_color = self._border_color if self._active else self._deactive_color
         padding_y = self._padding_y
         padding_x = self._padding_x
+        disabled_bg = self._blend(self._surface_color, QColor("#9ca3af"), 0.20)
+        disabled_text = QColor("#6b7280")
+        disabled_border = QColor("#d1d5db")
 
         if self._button_type == "outlined":
             outline_bg = QColor(self._surface_color)
@@ -157,6 +160,11 @@ class MonkezButton(QPushButton):
                 f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {border.name()};"
                 f"padding: {padding_y}px {padding_x}px;"
                 "}"
+                "QPushButton:disabled {"
+                f"background-color: {self._rgba(disabled_bg)};"
+                f"color: {disabled_text.name()};"
+                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {disabled_border.name()};"
+                "}"
             )
         elif self._button_type == "text":
             text_bg = QColor(0, 0, 0, 0)
@@ -172,6 +180,11 @@ class MonkezButton(QPushButton):
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
                 "}"
+                "QPushButton:disabled {"
+                "background-color: transparent;"
+                f"color: {disabled_text.name()};"
+                "border: none;"
+                "}"
             )
         else:
             self.setStyleSheet(
@@ -181,6 +194,11 @@ class MonkezButton(QPushButton):
                 f"color: {text_color.name()};"
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
+                "}"
+                "QPushButton:disabled {"
+                f"background-color: {self._rgba(disabled_bg)};"
+                f"color: {disabled_text.name()};"
+                "border: none;"
                 "}"
             )
 
