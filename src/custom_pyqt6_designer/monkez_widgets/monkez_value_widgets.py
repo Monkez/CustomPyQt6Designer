@@ -34,6 +34,8 @@ class _SpinBoxStyleMixin(ThemeSupportMixin):
     def _update_style(self) -> None:
         selector = type(self).__name__
         button_width = max(22, self._control_height // 2)
+        hover = theme_color(self._theme, "control_hover").name()
+        radius = max(0, self._radius - 1)
         self.setStyleSheet(
             f"{selector} {{"
             f"background-color: {self._background_color.name()};"
@@ -46,16 +48,24 @@ class _SpinBoxStyleMixin(ThemeSupportMixin):
             f"{selector}:focus {{ border: 2px solid {self._accent_color.name()}; }}"
             f"{selector}::up-button {{"
             f"subcontrol-origin: border; subcontrol-position: top right; width: {button_width}px;"
+            "margin: 1px 1px 0px 0px;"
             f"border-left: 1px solid {self._border_color.name()};"
-            f"border-top-right-radius: {self._radius}px;"
+            "border-top: 1px solid transparent;"
+            "border-right: 1px solid transparent;"
+            f"border-top-right-radius: {radius}px;"
+            "background-color: transparent;"
             "}"
             f"{selector}::down-button {{"
             f"subcontrol-origin: border; subcontrol-position: bottom right; width: {button_width}px;"
+            "margin: 0px 1px 1px 0px;"
             f"border-left: 1px solid {self._border_color.name()};"
-            f"border-bottom-right-radius: {self._radius}px;"
+            "border-right: 1px solid transparent;"
+            "border-bottom: 1px solid transparent;"
+            f"border-bottom-right-radius: {radius}px;"
+            "background-color: transparent;"
             "}"
             f"{selector}::up-button:hover, {selector}::down-button:hover {{"
-            f"background-color: {theme_color(self._theme, 'control_hover').name()};"
+            f"background-color: {hover};"
             "}"
             f"{selector}::up-arrow, {selector}::down-arrow {{ image: none; }}"
         )

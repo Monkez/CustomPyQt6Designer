@@ -52,21 +52,22 @@ Header của custom widget trong file `.ui` phải là:
 
 Bản portable đã chứa Qt Designer, PyQt6 Designer bridge, plugin Python và runtime cần thiết. Máy thiết kế giao diện không cần cài Python.
 
-## Gallery app
+## Docs Lab app
 
-Sau khi cài package, chạy Gallery app để xem demo widget và docs thuộc tính/phương thức:
+Sau khi cài package, chạy Docs Lab để xem docs thuộc tính/phương thức, live preview của từng widget và thử trực tiếp các runtime method:
 
 ```powershell
 monkez-gallery
 ```
 
-Gallery chia thành các tab:
+Docs Lab chỉ tập trung vào tài liệu tương tác:
 
-- **Controls**: button, input, combobox, checkbox, radio, switch.
-- **Values**: slider, progress bar, spinbox, dial, LCD, date/time, calendar.
-- **Media & Containers**: image, camera placeholder, frame, group box, scroll area.
-- **Gauges**: radial, arc và linear gauge.
-- **Docs**: danh sách widget, thuộc tính quan trọng, phương thức/signal và ví dụ dùng nhanh.
+- Danh sách custom widgets.
+- Bảng properties và supported runtime methods được kiểm tra từ implementation hiện tại.
+- Live preview riêng cho widget đang chọn.
+- Ô nhập method như `setThemeIndex(1)`, `setBackground("#2563eb")`, `setColors(accent="#22c55e")`.
+- Bảng màu nhanh, format màu và color picker để copy mã màu tiện dùng.
+- Nút Reset để đưa preview về trạng thái mặc định.
 
 ## Demo project
 
@@ -144,6 +145,7 @@ Output chính:
 
 - [Tích hợp runtime vào ứng dụng](docs/RUNTIME_INTEGRATION.md)
 - [Designer portable và phát triển plugin](docs/DESIGNER_PORTABLE.md)
+- [Monkez custom widget Python API](docs/WIDGET_API.md)
 - [Project demo](demo_project/README.md)
 
 ## License

@@ -1,4 +1,5 @@
 from .app_branding import apply_designer_branding
+from .fluent_api import install_fluent_api
 from .monkez_button import MonkezButton
 from .monkez_checkbox import MonkezCheckBox
 from .monkez_combobox import MonkezComboBox
@@ -42,4 +43,5 @@ __all__ = [
     "MonkezUSBCamera",
 ]
 
+install_fluent_api(globals()[name] for name in __all__)
 apply_designer_branding()

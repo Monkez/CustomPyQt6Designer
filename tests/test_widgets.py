@@ -48,6 +48,48 @@ class WidgetTests(unittest.TestCase):
             self.assertEqual(widget.property("themeIndex"), 5, name)
             widget.deleteLater()
 
+    def test_fluent_api_methods_update_supported_widget_properties(self) -> None:
+        button = MonkezButton()
+        self.assertIs(button.setBackground("#123456"), button)
+        self.assertEqual(button.activeColor, QColor("#123456"))
+        button.setAccent("#654321").setForeground("#ffffff").setContentPadding(7, 3)
+        self.assertEqual(button.activeColor, QColor("#654321"))
+        self.assertEqual(button.textColor, QColor("#ffffff"))
+        self.assertEqual(button.paddingX, 7)
+        self.assertEqual(button.paddingY, 3)
+        button.deleteLater()
+
+        text_input = monkez_widgets.MonkezTextInput()
+        text_input.setColors(background="#101010", text="#f8fafc", border="#334155")
+        self.assertEqual(text_input.backgroundColor, QColor("#101010"))
+        self.assertEqual(text_input.textColor, QColor("#f8fafc"))
+        self.assertEqual(text_input.borderColor, QColor("#334155"))
+        text_input.deleteLater()
+
+        switch = monkez_widgets.MonkezSwitch()
+        switch.setTrack("#222222").setThumb("#eeeeee").setAccent("#22c55e")
+        self.assertEqual(switch.trackColor, QColor("#222222"))
+        self.assertEqual(switch.thumbColor, QColor("#eeeeee"))
+        self.assertEqual(switch.checkedColor, QColor("#22c55e"))
+        switch.deleteLater()
+
+        slider = monkez_widgets.MonkezSlider()
+        slider.setTrack("#dbeafe").setAccent("#2563eb").setThumb((255, 255, 255))
+        self.assertEqual(slider.grooveColor, QColor("#dbeafe"))
+        self.assertEqual(slider.filledColor, QColor("#2563eb"))
+        self.assertEqual(slider.handleColor, QColor(255, 255, 255))
+        slider.deleteLater()
+
+        radio = monkez_widgets.MonkezRadioButton()
+        self.assertIs(radio.setBackground("#2563eb"), radio)
+        self.assertEqual(radio.backgroundColor, QColor("#2563eb"))
+        radio.deleteLater()
+
+        group_box = monkez_widgets.MonkezGroupBox()
+        self.assertIs(group_box.setContentPadding(15), group_box)
+        self.assertEqual(group_box.contentPadding, 15)
+        group_box.deleteLater()
+
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
         button = MonkezButton()
         button.setText("X")
@@ -373,13 +415,35 @@ class WidgetTests(unittest.TestCase):
         combo.close()
         combo.deleteLater()
 
+    def test_stepper_and_date_button_hover_regions_do_not_cover_outer_border(self) -> None:
+        for widget_cls in (
+            monkez_widgets.MonkezDateEdit,
+            monkez_widgets.MonkezDateTimeEdit,
+            monkez_widgets.MonkezTimeEdit,
+            monkez_widgets.MonkezSpinBox,
+            monkez_widgets.MonkezDoubleSpinBox,
+        ):
+            widget = widget_cls()
+            style = widget.styleSheet()
+
+            self.assertIn("margin: 1px", style, widget_cls.__name__)
+            self.assertIn("border-right: 1px solid transparent", style, widget_cls.__name__)
+            self.assertIn("background-color: transparent", style, widget_cls.__name__)
+            self.assertIn("border-left: 1px solid", style, widget_cls.__name__)
+            self.assertNotRegex(style, r":hover \{[^}]*border", widget_cls.__name__)
+            widget.deleteLater()
+
     def test_calendar_exposes_polished_date_colors_and_headers(self) -> None:
         calendar = MonkezCalendarWidget()
+        style = calendar.styleSheet()
 
         self.assertEqual(
             calendar.verticalHeaderFormat(),
             calendar.VerticalHeaderFormat.NoVerticalHeader,
         )
+        self.assertIn("MonkezCalendarWidget QSpinBox::up-button", style)
+        self.assertIn("width: 0px", style)
+        self.assertIn("selection-background-color", style)
         for property_name in ("weekendColor", "todayColor", "outsideMonthColor"):
             self.assertGreaterEqual(calendar.metaObject().indexOfProperty(property_name), 0)
         self.assertGreaterEqual(calendar.sizeHint().width(), 340)

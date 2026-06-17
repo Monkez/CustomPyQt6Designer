@@ -162,6 +162,15 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
 
         return getter, setter
 
+    def getBackgroundColor(self) -> QColor:
+        return QColor(self._indicator_color)
+
+    def setBackgroundColor(self, value: QColor) -> None:
+        color = QColor(value)
+        self._indicator_color = color
+        self._hover_color = color.lighter(108)
+        self.update()
+
     getCheckedColor, setCheckedColor = _color_property("_checked_color")
     getBorderColor, setBorderColor = _color_property("_border_color")
     getTextColor, setTextColor = _color_property("_text_color")
@@ -177,6 +186,7 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
     themeHint = pyqtProperty(str, getThemeOptions, setThemeOptions, stored=False)
     radioStyle = pyqtProperty(int, getRadioStyle, setRadioStyle)
     radioStyleHint = pyqtProperty(str, getRadioStyleHint, setRadioStyleHint, stored=False)
+    backgroundColor = pyqtProperty(QColor, getBackgroundColor, setBackgroundColor)
     checkedColor = pyqtProperty(QColor, getCheckedColor, setCheckedColor)
     borderColor = pyqtProperty(QColor, getBorderColor, setBorderColor)
     textColor = pyqtProperty(QColor, getTextColor, setTextColor)
