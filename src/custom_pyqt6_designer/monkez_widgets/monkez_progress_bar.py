@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QProgressBar
 
@@ -47,9 +47,14 @@ class MonkezProgressBar(QProgressBar):
         self.setRange(0, 100)
         self.setValue(62)
         self.setTextVisible(True)
-        self.setMinimumSize(180, 4)
         self.resize(180, self._bar_height)
         self.setTheme(self._theme)
+
+    def sizeHint(self) -> QSize:
+        return QSize(180, self._bar_height)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(24, 2)
 
     def _update_style(self) -> None:
         radius = min(self._radius, max(1, self._bar_height // 2))
@@ -62,8 +67,6 @@ class MonkezProgressBar(QProgressBar):
             f"background-color: {self._track_color.name()};"
             f"color: {self._text_color.name()};"
             f"font-size: {font_size}px;"
-            f"min-height: {self._bar_height}px;"
-            f"max-height: {self._bar_height}px;"
             "text-align: center;"
             "}"
             "QProgressBar::chunk {"
@@ -147,11 +150,10 @@ class MonkezProgressBar(QProgressBar):
         except (TypeError, ValueError):
             height = 28
         self._bar_height = max(2, height)
-        self.setMinimumHeight(self._bar_height)
-        self.setMaximumHeight(self._bar_height)
         self.resize(max(self.width(), 1), self._bar_height)
         if self._bar_height <= 14:
             self.setTextVisible(False)
+        self.updateGeometry()
         self._update_style()
 
     themeIndex = pyqtProperty(int, getThemeIndex, setThemeIndex)

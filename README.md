@@ -1,21 +1,27 @@
 # Custom PyQt6 Designer
 
-Bộ custom widgets cho PyQt6, plugin cho Qt Designer và bản Designer portable đã cấu hình sẵn.
+Custom PyQt6 Designer cung cấp hai phần tách biệt:
 
-Repository được thiết kế theo hai phần độc lập:
+- **MonkezDesigner.exe**: bản Qt Designer portable đã cấu hình sẵn để load Monkez custom widgets.
+- **Python package**: runtime để ứng dụng PyQt6 load file `.ui` có custom widgets mà không cần mang theo Designer.
 
-- **Thiết kế giao diện:** tải Designer portable từ [GitHub Releases](https://github.com/Monkez/CustomPyQt6Designer/releases).
-- **Chạy ứng dụng:** chỉ cài Python package. Không cần mang theo Designer `.exe`.
+Repo hiện có đủ plugin Designer, widget runtime, Gallery app, demo project và script build release.
 
 ## Cài package cho ứng dụng
 
 Cài trực tiếp từ GitHub:
 
 ```powershell
-python -m pip install "custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+python -m pip install --upgrade "custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
-Sau đó ứng dụng có thể load file `.ui` chứa Monkez widgets:
+Nếu dùng camera:
+
+```powershell
+python -m pip install --upgrade "custom-pyqt6-designer[camera] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+```
+
+Ứng dụng PyQt6 có thể load `.ui` như bình thường:
 
 ```python
 from pathlib import Path
@@ -23,7 +29,7 @@ from pathlib import Path
 from PyQt6 import uic
 from PyQt6.QtWidgets import QApplication
 
-from custom_pyqt6_designer import monkez_widgets  # đăng ký custom widget imports
+from custom_pyqt6_designer import monkez_widgets  # giúp uic tìm custom widget classes
 
 app = QApplication([])
 window = uic.loadUi(Path("ui/main_window.ui"))
@@ -37,36 +43,34 @@ Header của custom widget trong file `.ui` phải là:
 <header>custom_pyqt6_designer.monkez_widgets</header>
 ```
 
-Xem project chạy hoàn chỉnh tại [demo_project](demo_project).
-
 ## Dùng Designer portable
 
-1. Tải thư mục build `MonkezDesigner` hoặc build từ source.
-2. Giữ nguyên toàn bộ cấu trúc thư mục.
+1. Tải thư mục release `MonkezDesigner` từ [GitHub Releases](https://github.com/Monkez/CustomPyQt6Designer/releases).
+2. Giữ nguyên toàn bộ cấu trúc thư mục sau khi giải nén.
 3. Chạy `MonkezDesigner.exe`.
 4. Các widget nằm trong nhóm **Monkez Widgets** của Widget Box.
 
-Bản portable đã chứa Qt Designer, PyQt6 Designer bridge, plugin Python và các runtime cần thiết.
-Máy thiết kế không cần cài Python.
+Bản portable đã chứa Qt Designer, PyQt6 Designer bridge, plugin Python và runtime cần thiết. Máy thiết kế giao diện không cần cài Python.
 
-## Dependency tùy chọn
+## Gallery app
 
-Package mặc định chỉ cài PyQt6. Camera và môi trường phát triển Designer được tách riêng:
+Sau khi cài package, chạy Gallery app để xem demo widget và docs thuộc tính/phương thức:
 
 ```powershell
-# Dùng MonkezUSBCamera
-python -m pip install -e ".[camera]"
-
-# Phát triển plugin bằng Python 3.11
-python -m pip install -e ".[designer]"
-
-# Cài đầy đủ
-python -m pip install -e ".[all]"
+monkez-gallery
 ```
 
-`MonkezUSBCamera` import OpenCV theo nhu cầu, vì vậy các ứng dụng không dùng camera không phải cài OpenCV/Numpy.
+Gallery chia thành các tab:
 
-## Chạy demo
+- **Controls**: button, input, combobox, checkbox, radio, switch.
+- **Values**: slider, progress bar, spinbox, dial, LCD, date/time, calendar.
+- **Media & Containers**: image, camera placeholder, frame, group box, scroll area.
+- **Gauges**: radial, arc và linear gauge.
+- **Docs**: danh sách widget, thuộc tính quan trọng, phương thức/signal và ví dụ dùng nhanh.
+
+## Demo project
+
+Project mẫu ở [demo_project](demo_project) dùng `PyQt6.uic.loadUi()` để chạy `.ui` có Monkez widgets:
 
 ```powershell
 git clone https://github.com/Monkez/CustomPyQt6Designer.git
@@ -76,38 +80,29 @@ python -m venv .venv
 .\.venv\Scripts\python.exe demo_project\main.py
 ```
 
-Demo dùng `PyQt6.uic.loadUi()` và kết nối các widget bằng signal/slot thông thường.
-
 ## Danh sách widgets
 
 | Nhóm | Widgets |
 |---|---|
-| Input | `MonkezTextInput`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
 | Action | `MonkezButton`, `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
+| Input | `MonkezTextInput`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
 | Value | `MonkezSlider`, `MonkezDial`, `MonkezProgressBar`, `MonkezLCDNumber` |
-| Gauge | `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
 | Date/time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
 | Media | `MonkezImage`, `MonkezUSBCamera` |
 | Container | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea` |
+| Gauge | `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
 
 Các widget giao diện hỗ trợ:
 
 - `themeIndex`: `0 Material`, `1 iOS`, `2 Fluent`, `3 Bootstrap`, `4 Minimal`, `5 Dark`.
 - Context menu `Monkez Theme` trong Designer.
-- Tùy chỉnh màu, radius, border, kích thước và các thuộc tính chuyên sâu.
+- Tùy chỉnh màu, radius, border, padding, shadow và các thuộc tính chuyên sâu tùy widget.
 
-`MonkezGroupBox` có header riêng, subtitle, accent, indicator, elevation và padding tùy chỉnh.
+## Ghi chú runtime
 
-## MonkezImage và camera
+`MonkezImage` cache pixmap đã scale theo kích thước widget và device pixel ratio để hiển thị tốt trên màn hình high DPI.
 
-`MonkezImage` cache pixmap đã scale theo source/kích thước và gộp repaint trong cùng event loop.
-
-`MonkezUSBCamera` hỗ trợ:
-
-- Backend: `auto`, `dshow`, `msmf`, `v4l2`, `avfoundation`, `gstreamer`, `ffmpeg`.
-- Camera index/name/source, resolution, capture FPS, display FPS, FourCC và buffer size.
-- Mirror, reconnect, auto start và preview bằng `Ctrl+R`.
-- `displayFps` tách khỏi capture `fps` để giới hạn tải GUI.
+`MonkezUSBCamera` import OpenCV theo nhu cầu, hỗ trợ backend, camera index/source/name, resolution, capture FPS, display FPS, FourCC, buffer size, mirror, reconnect, auto start và preview trong Designer khi bật `previewAutoStart`.
 
 ## Phát triển
 
@@ -120,28 +115,34 @@ py -3.11 -m venv .venv311
 .\.venv311\Scripts\custom-pyqt6-designer.exe
 ```
 
-Chạy kiểm thử:
+Chạy test:
 
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
-python -m unittest discover -s tests -v
+.\.venv311\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
 Build package:
 
 ```powershell
-python -m build
+.\.venv311\Scripts\python.exe -m build
 ```
 
 Build Designer portable:
 
 ```powershell
-.\scripts\build_full_designer.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build_full_designer.ps1
 ```
+
+Output chính:
+
+- `dist\custom_pyqt6_designer-<version>-py3-none-any.whl`
+- `dist\custom_pyqt6_designer-<version>.tar.gz`
+- `dist\MonkezDesigner\MonkezDesigner.exe`
 
 ## Tài liệu
 
-- [Tích hợp package vào ứng dụng](docs/RUNTIME_INTEGRATION.md)
+- [Tích hợp runtime vào ứng dụng](docs/RUNTIME_INTEGRATION.md)
 - [Designer portable và phát triển plugin](docs/DESIGNER_PORTABLE.md)
 - [Project demo](demo_project/README.md)
 

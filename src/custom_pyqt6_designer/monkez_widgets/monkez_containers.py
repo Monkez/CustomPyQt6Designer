@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea, QWidget
 
@@ -20,8 +20,13 @@ class MonkezFrame(QFrame, ThemeSupportMixin):
         self._border_width = 1
         self._elevation = 0
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setMinimumSize(120, 80)
         self.setTheme("material")
+
+    def sizeHint(self) -> QSize:
+        return QSize(120, 80)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(24, 24)
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface")
@@ -118,10 +123,15 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         self._accent_width = 4
         self._elevation = 1
         self._content_padding = 16
-        self.setMinimumSize(180, 120)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.toggled.connect(self.update)
         self.setTheme("material")
+
+    def sizeHint(self) -> QSize:
+        return QSize(180, 120)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(48, 36)
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface")
@@ -498,8 +508,13 @@ class MonkezScrollArea(QScrollArea, ThemeSupportMixin):
         self.setWidget(content)
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setViewportMargins(1, 1, 1, 1)
-        self.setMinimumSize(180, 120)
         self.setTheme("material")
+
+    def sizeHint(self) -> QSize:
+        return QSize(180, 120)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(48, 36)
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface")

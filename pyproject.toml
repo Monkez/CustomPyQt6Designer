@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-pyqt6-designer"
-version = "0.3.5"
+version = "0.3.6"
 description = "Qt Designer launcher and Python custom widget plugins for PyQt6 projects."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,6 +46,7 @@ Issues = "https://github.com/Monkez/CustomPyQt6Designer/issues"
 [project.scripts]
 custom-pyqt6-designer = "custom_pyqt6_designer.launcher:main"
 custom-pyqt6-plugin-info = "custom_pyqt6_designer.plugin_info:main"
+monkez-gallery = "custom_pyqt6_designer.gallery_app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

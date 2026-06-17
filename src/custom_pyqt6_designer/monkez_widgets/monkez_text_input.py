@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import QRect, Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QRect, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QPainter, QPixmap
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLineEdit
 
@@ -61,9 +61,14 @@ class MonkezTextInput(QLineEdit):
         self.trailing_rect = QRect()
 
         self.setPlaceholderText("Monkez input text...")
-        self.setMinimumSize(200, 30)
         self.setTheme(self._theme)
         self._update_style()
+
+    def sizeHint(self) -> QSize:
+        return QSize(200, theme_int(self._theme, "control_height"))
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(32, 18)
 
     def mousePressEvent(self, event) -> None:
         if not self.trailing_rect.isNull() and self.trailing_rect.contains(event.pos()):
@@ -200,7 +205,6 @@ class MonkezTextInput(QLineEdit):
         self._shadow_blur = 14 if self._theme in {"ios", "material"} else 6
         self._shadow_offset_x = 0
         self._shadow_offset_y = 3 if self._theme in {"ios", "material"} else 1
-        self.setMinimumHeight(theme_int(self._theme, "control_height"))
         self._update_style()
         if previous != self._theme:
             self.themePresetChanged.emit(self.getThemePreset())

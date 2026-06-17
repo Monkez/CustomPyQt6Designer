@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from enum import IntEnum
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QDial, QDoubleSpinBox, QSpinBox
 
@@ -34,7 +34,6 @@ class _SpinBoxStyleMixin(ThemeSupportMixin):
     def _update_style(self) -> None:
         selector = type(self).__name__
         button_width = max(22, self._control_height // 2)
-        self.setMinimumHeight(self._control_height)
         self.setStyleSheet(
             f"{selector} {{"
             f"background-color: {self._background_color.name()};"
@@ -114,6 +113,7 @@ class _SpinBoxStyleMixin(ThemeSupportMixin):
 
     def setControlHeight(self, value: int) -> None:
         self._control_height = min(96, max(24, int(value)))
+        self.updateGeometry()
         self._update_style()
 
 
@@ -199,8 +199,13 @@ class MonkezDial(QDial, ThemeSupportMixin, ShadowSupportMixin):
         self.setRange(0, 100)
         self.setValue(35)
         self.setNotchesVisible(False)
-        self.setMinimumSize(96, 96)
         self.setTheme("material")
+
+    def sizeHint(self) -> QSize:
+        return QSize(96, 96)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(32, 32)
 
     def _apply_theme(self) -> None:
         self._track_color = theme_color(self._theme, "surface_alt")

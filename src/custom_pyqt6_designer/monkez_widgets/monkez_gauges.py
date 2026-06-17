@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QAbstractSlider
 
@@ -130,7 +130,12 @@ class MonkezRadialGauge(_GaugeBase):
         self._show_scale_labels = True
         self._start_angle = 225
         self._span_angle = 270
-        self.setMinimumSize(180, 180)
+
+    def sizeHint(self) -> QSize:
+        return QSize(180, 180)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(48, 48)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -247,7 +252,12 @@ class MonkezArcGauge(_GaugeBase):
         self._danger_threshold = 90
         self._segmented = False
         self._segment_count = 24
-        self.setMinimumSize(180, 130)
+
+    def sizeHint(self) -> QSize:
+        return QSize(180, 130)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(48, 36)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -339,7 +349,12 @@ class MonkezLinearGauge(_GaugeBase):
         self._target_value = 82
         self._show_target = True
         self._rounded = True
-        self.setMinimumSize(240, 80)
+
+    def sizeHint(self) -> QSize:
+        return QSize(240, 80)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(48, 24)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)

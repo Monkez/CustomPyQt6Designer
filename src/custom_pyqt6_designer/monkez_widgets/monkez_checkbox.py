@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QCheckBox
 
@@ -46,8 +46,14 @@ class MonkezCheckBox(QCheckBox):
         self._indicator_size = 18
 
         self.setText("Monkez CheckBox")
-        self.setMinimumHeight(30)
         self.setTheme(self._theme)
+
+    def sizeHint(self) -> QSize:
+        metrics = self.fontMetrics()
+        return QSize(metrics.horizontalAdvance(self.text()) + self._indicator_size + 18, max(30, metrics.height() + 10))
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(18, 18)
 
     def _update_style(self) -> None:
         mark_color = theme_color(self._theme, "on_primary").name()

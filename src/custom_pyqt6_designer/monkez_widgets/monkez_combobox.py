@@ -255,7 +255,7 @@ class MonkezComboBox(QComboBox):
         self._popup = MonkezComboPopup(self)
         self.destroyed.connect(self._popup.deleteLater)
         self.addItems(["Option 1", "Option 2", "Option 3"])
-        self.setMinimumSize(80, 0)
+        self.setMinimumSize(0, 0)
         self.setTheme(self._theme)
         self._update_style()
 

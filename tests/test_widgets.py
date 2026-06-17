@@ -67,6 +67,31 @@ class WidgetTests(unittest.TestCase):
         button.close()
         button.deleteLater()
 
+    def test_widgets_do_not_set_large_hard_minimum_sizes(self) -> None:
+        allowed_explicit_minimums = {"MonkezImage", "MonkezUSBCamera"}
+        for name in monkez_widgets.__all__:
+            widget = getattr(monkez_widgets, name)()
+            if widget.metaObject().indexOfProperty("themeIndex") >= 0:
+                widget.setProperty("themeIndex", 1)
+
+            minimum = widget.minimumSize()
+            self.assertLessEqual(minimum.width(), 48, name)
+            self.assertLessEqual(minimum.height(), 36, name)
+            if name not in allowed_explicit_minimums:
+                self.assertEqual(minimum.width(), 0, name)
+                self.assertEqual(minimum.height(), 0, name)
+            widget.deleteLater()
+
+    def test_progress_bar_height_does_not_lock_widget_geometry(self) -> None:
+        progress = monkez_widgets.MonkezProgressBar()
+        progress.barHeight = 4
+
+        self.assertEqual(progress.minimumHeight(), 0)
+        self.assertEqual(progress.maximumHeight(), 16777215)
+        self.assertNotIn("min-height", progress.styleSheet())
+        self.assertNotIn("max-height", progress.styleSheet())
+        progress.deleteLater()
+
     def test_button_hover_brightens_current_background_color(self) -> None:
         button = MonkezButton()
         active = QColor("#c00000")
@@ -290,7 +315,7 @@ class WidgetTests(unittest.TestCase):
 
         for gauge in gauges:
             gauge.shadowEnabled = True
-            gauge.resize(gauge.minimumSize())
+            gauge.resize(gauge.sizeHint())
             gauge.show()
             self.app.processEvents()
             self.assertFalse(gauge.grab().isNull())
@@ -357,8 +382,10 @@ class WidgetTests(unittest.TestCase):
         )
         for property_name in ("weekendColor", "todayColor", "outsideMonthColor"):
             self.assertGreaterEqual(calendar.metaObject().indexOfProperty(property_name), 0)
-        self.assertGreaterEqual(calendar.minimumWidth(), 340)
-        self.assertGreaterEqual(calendar.minimumHeight(), 280)
+        self.assertGreaterEqual(calendar.sizeHint().width(), 340)
+        self.assertGreaterEqual(calendar.sizeHint().height(), 280)
+        self.assertLessEqual(calendar.minimumSizeHint().width(), 120)
+        self.assertLessEqual(calendar.minimumSizeHint().height(), 100)
         calendar.deleteLater()
 
 

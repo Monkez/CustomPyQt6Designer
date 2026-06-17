@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QSlider
 
@@ -39,8 +39,13 @@ class MonkezSlider(QSlider):
 
         self.setRange(0, 100)
         self.setValue(35)
-        self.setMinimumSize(180, 34)
         self.setTheme(self._theme)
+
+    def sizeHint(self) -> QSize:
+        return QSize(180, max(28, self._handle_size + 10))
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(32, 12)
 
     def _update_style(self) -> None:
         radius = max(1, self._radius)

@@ -42,7 +42,6 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
         self._content_padding = 10
         self.setText("Monkez Radio")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(34)
         self.setTheme("material")
 
     def sizeHint(self) -> QSize:
@@ -53,6 +52,9 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
             width += 18
             height = max(height, 44)
         return QSize(width, height)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(18, 18)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)

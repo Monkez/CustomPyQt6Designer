@@ -42,13 +42,15 @@ class MonkezSwitch(QAbstractButton):
 
         self.setCheckable(True)
         self.setChecked(False)
-        self.setMinimumSize(self.sizeHint())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggled.connect(self.update)
         self.setTheme(self._theme)
 
     def sizeHint(self) -> QSize:
         return QSize(104 if self._show_text else 58, 34 if self._show_text else 30)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(24, 16)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -168,7 +170,7 @@ class MonkezSwitch(QAbstractButton):
 
     def setShowText(self, value: bool) -> None:
         self._show_text = bool(value)
-        self.setMinimumSize(self.sizeHint())
+        self.updateGeometry()
         self.update()
 
     def getOnText(self) -> str:

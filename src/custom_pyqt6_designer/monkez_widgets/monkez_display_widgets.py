@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QFrame, QLCDNumber
 
@@ -22,8 +22,13 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         self.setSegmentStyle(QLCDNumber.SegmentStyle.Flat)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.display(123.45)
-        self.setMinimumSize(160, 64)
         self.setTheme("material")
+
+    def sizeHint(self) -> QSize:
+        return QSize(160, 64)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(40, 24)
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface_alt")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QDate, QDateTime, QPointF, QRectF, Qt, QTime, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QDate, QDateTime, QPointF, QRectF, QSize, Qt, QTime, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPen
 from PyQt6.QtWidgets import (
     QCalendarWidget,
@@ -38,7 +38,6 @@ class _DateTimeStyleMixin(ThemeSupportMixin):
     def _update_style(self) -> None:
         selector = type(self).__name__
         button_width = max(28, self._control_height - 4)
-        self.setMinimumHeight(self._control_height)
         base = (
             f"{selector} {{"
             f"background-color: {self._background_color.name()};"
@@ -142,6 +141,7 @@ class _DateTimeStyleMixin(ThemeSupportMixin):
 
     def setControlHeight(self, value: int) -> None:
         self._control_height = min(96, max(24, int(value)))
+        self.updateGeometry()
         self._update_style()
 
 
@@ -244,7 +244,6 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
         self.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
         self.setHorizontalHeaderFormat(QCalendarWidget.HorizontalHeaderFormat.ShortDayNames)
         self.setNavigationBarVisible(True)
-        self.setMinimumSize(340, 280)
         for object_name, text in (
             ("qt_calendar_prevmonth", "‹"),
             ("qt_calendar_nextmonth", "›"),
@@ -262,6 +261,12 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
             view.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.setTheme("material")
+
+    def sizeHint(self) -> QSize:
+        return QSize(340, 280)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(120, 100)
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface")
@@ -291,7 +296,6 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             f"border-top-right-radius: {self._radius}px;"
             f"border-bottom: 1px solid {border};"
             "padding: 8px 10px;"
-            "min-height: 38px;"
             "}"
             "MonkezCalendarWidget QToolButton {"
             f"color: {self._text_color.name()};"
@@ -313,7 +317,6 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             f"color: {self._accent_color.name()};"
             "font-size: 22px;"
             "font-weight: 500;"
-            "min-width: 30px;"
             "}"
             "MonkezCalendarWidget QToolButton#qt_calendar_monthbutton {"
             "padding-right: 4px;"
