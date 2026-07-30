@@ -4,7 +4,7 @@ Updated: 2026-07-30
 
 ## Current version
 
-- Working version: 0.4.4 (Designer ComboBox font support).
+- Working version: 0.4.5 (empty-by-default Designer ComboBox).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -30,15 +30,22 @@ Updated: 2026-07-30
   creation workflows.
 - `MonkezComboBox` honors the inherited Designer `font` property for both its
   closed control and custom popup items, including large-font row sizing.
+- New `MonkezComboBox` instances contain no placeholder items; Designer forms
+  and runtime code add only the application-specific choices they need.
+- `MonkezImage` renders directly in its outer widget without a fixed-style
+  child frame, so Designer stylesheets can control its visible background,
+  border and radius.
 
 ## Latest verification
 
-- 59 automated tests pass on Python 3.11.15.
-- The 0.4.4 wheel and source distribution build successfully and contain the
-  ComboBox font fix plus standalone splash template.
-- The 0.4.4 portable executable passes `--doctor`, creates a new splash form
+- 62 automated tests pass on Python 3.11.15, including rendered-pixel checks
+  that Designer styles reach the visible `MonkezImage` container.
+- The 0.4.5 wheel and source distribution build successfully and contain the
+  empty-by-default ComboBox behavior, font fix and outer-container Image
+  stylesheet fix.
+- The 0.4.5 portable executable passes `--doctor`, creates a new splash form
   through `--new-splash`, and opens it during the 25-plugin verification.
-- `MonkezDesigner-0.4.4-windows-x64.zip` contains 7,569 entries, includes all
+- `MonkezDesigner-0.4.5-windows-x64.zip` contains 7,569 entries, includes all
   three portable launcher/onboarding files at its root and passes a full CRC
   integrity check.
 - Splash startup benchmark on the release workstation: import median 97.3 ms
@@ -59,7 +66,7 @@ Updated: 2026-07-30
   noisy `Compress-Archive` progress loop.
 - Unpacked portable builds use versioned output directories so an older
   running Designer does not block a new release build.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.4
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.5
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt

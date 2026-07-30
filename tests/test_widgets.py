@@ -6,7 +6,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QPixmap
+from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout, QWidget
 
 from custom_pyqt6_designer import monkez_widgets
@@ -200,6 +200,48 @@ class WidgetTests(unittest.TestCase):
         widget._update_pixmap()
         self.assertNotEqual(widget._scaled_pixmap.cacheKey(), first_key)
         widget.close()
+
+    def test_image_stylesheet_targets_the_visible_container(self) -> None:
+        widget = MonkezImage()
+        custom_style = (
+            "background-color: #123456;"
+            "border: 4px solid #ef4444;"
+            "border-radius: 17px;"
+        )
+
+        widget.set_image(QPixmap())
+        widget.resize(120, 80)
+        widget.setStyleSheet(custom_style)
+        widget.show()
+        self.app.processEvents()
+        rendered = QImage(widget.size(), QImage.Format.Format_ARGB32)
+        rendered.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(rendered)
+        widget.render(painter)
+        painter.end()
+
+        self.assertIs(widget.frame, widget)
+        self.assertEqual(widget.layout().contentsMargins().left(), 0)
+        self.assertEqual(widget.styleSheet(), custom_style)
+        self.assertIn("background: transparent", widget.image_label.styleSheet())
+        self.assertIn("border: none", widget.image_label.styleSheet())
+        self.assertEqual(rendered.pixelColor(60, 1), QColor("#ef4444"))
+        self.assertEqual(rendered.pixelColor(60, 20), QColor("#123456"))
+        widget.close()
+
+    def test_image_background_property_does_not_replace_custom_stylesheet(self) -> None:
+        widget = MonkezImage()
+        custom_style = "MonkezImage { border: 3px solid #22c55e; }"
+        widget.setStyleSheet(custom_style)
+
+        widget.setBackgroundColor(QColor("#020617"))
+
+        self.assertEqual(widget.styleSheet(), custom_style)
+        self.assertEqual(
+            widget.palette().color(widget.backgroundRole()),
+            QColor("#020617"),
+        )
+        widget.deleteLater()
 
     def test_image_scaling_does_not_lock_window_minimum_size(self) -> None:
         widget = MonkezImage()
@@ -402,6 +444,7 @@ class WidgetTests(unittest.TestCase):
 
     def test_combo_can_use_compact_designer_height(self) -> None:
         combo = MonkezComboBox()
+        combo.addItem("Compact item")
         combo.themeIndex = 1
         combo.setFixedHeight(24)
         combo.show()
@@ -417,6 +460,7 @@ class WidgetTests(unittest.TestCase):
 
     def test_combo_designer_font_applies_to_control_and_popup(self) -> None:
         combo = MonkezComboBox()
+        combo.addItem("Large font item")
         font = combo.font()
         font.setFamily("Arial")
         font.setPointSize(18)
@@ -431,6 +475,13 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(combo._popup.view.font(), combo.font())
         self.assertNotIn("font-size", combo.styleSheet())
         self.assertGreater(combo._popup.view.sizeHintForRow(0), 30)
+        combo.deleteLater()
+
+    def test_combo_starts_without_placeholder_items(self) -> None:
+        combo = MonkezComboBox()
+
+        self.assertEqual(combo.count(), 0)
+        self.assertEqual(combo.currentIndex(), -1)
         combo.deleteLater()
 
     def test_stepper_and_date_button_hover_regions_do_not_cover_outer_border(self) -> None:

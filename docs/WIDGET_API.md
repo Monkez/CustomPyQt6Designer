@@ -163,6 +163,9 @@ search.trailingIconClicked.connect(search.clear)
 
 ### MonkezComboBox
 
+`MonkezComboBox` mặc định không có item. Thêm item trong Designer bằng editor
+`items` hoặc gọi `addItem()`/`addItems()` ở runtime.
+
 | Property | Type | Description |
 |---|---|---|
 | `themeIndex` | `int` | Numeric theme preset. |
@@ -347,6 +350,19 @@ box.setSubtitleVisible(False)
 | `setImageFile(path)` | Loads an image file. |
 | `set_image(QPixmap | QImage | str)` | Loads image data directly. |
 | `startCamera()` / `stopCamera()` / `restartCamera()` | Camera lifecycle. |
+
+`styleSheet` của `MonkezImage` được áp dụng trực tiếp lên vùng hiển thị ngoài
+cùng, không còn một `QFrame` con có style cố định che lên. Trong Designer có
+thể nhập trực tiếp các khai báo hoặc dùng selector `MonkezImage` để đặt border,
+nền và bo góc, ví dụ:
+
+```css
+MonkezImage {
+    background-color: #020617;
+    border: 2px solid #38bdf8;
+    border-radius: 16px;
+}
+```
 
 ```python
 image = MonkezImage()

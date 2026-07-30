@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, pyqtProperty
-from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
-from PyQt6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor, QImage, QPainter, QPalette, QPixmap
+from PyQt6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .assets import image_path
 
@@ -72,19 +72,21 @@ class MonkezImage(QWidget):
         self._smooth_scaling = True
         self._resize_update_delay_ms = 16
 
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        self.frame = QFrame(self)
-        layout.addWidget(self.frame)
-
-        frame_layout = QVBoxLayout(self.frame)
-        frame_layout.setContentsMargins(0, 0, 0, 0)
-        self.image_label = _ScalableImageLabel(self.frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.image_label = _ScalableImageLabel(self)
+        self.image_label.setObjectName("monkezImageContent")
+        self.image_label.setStyleSheet(
+            "background: transparent;"
+            "border: none;"
+            "border-radius: 0;"
+        )
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(0, 0)
         self.image_label.setMaximumSize(16777215, 16777215)
         self.image_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        frame_layout.addWidget(self.image_label)
+        layout.addWidget(self.image_label)
 
         self.setMinimumSize(0, 0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -94,6 +96,11 @@ class MonkezImage(QWidget):
 
     def sizeHint(self) -> QSize:
         return QSize(180, 120)
+
+    @property
+    def frame(self) -> QWidget:
+        """Compatibility alias for the visible outer image container."""
+        return self
 
     def minimumSizeHint(self) -> QSize:
         return QSize(24, 24)
@@ -129,12 +136,11 @@ class MonkezImage(QWidget):
         self._schedule_pixmap_update()
 
     def _update_style(self) -> None:
-        self.frame.setStyleSheet(
-            "QFrame {"
-            f"background-color: {self._background_color.name()};"
-            "border-radius: 5px;"
-            "}"
-        )
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Window, self._background_color)
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
+        self.update()
         self._schedule_pixmap_update()
 
     def _schedule_pixmap_update(self, delay_ms: int = 0) -> None:
