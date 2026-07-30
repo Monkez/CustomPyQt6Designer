@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,23 @@ from custom_pyqt6_designer.launcher import (
 
 
 class LauncherTests(unittest.TestCase):
+    def test_version_command_does_not_try_to_launch_designer(self) -> None:
+        with patch("sys.stdout", new_callable=io.StringIO) as output:
+            result = launcher.main(["--version"])
+
+        self.assertEqual(result, 0)
+        self.assertRegex(output.getvalue().strip(), r"^\d+\.\d+\.\d+$")
+
+    def test_doctor_command_delegates_to_diagnostics(self) -> None:
+        with patch(
+            "custom_pyqt6_designer.diagnostics.run_doctor",
+            return_value=0,
+        ) as doctor:
+            result = launcher.main(["--doctor"])
+
+        self.assertEqual(result, 0)
+        doctor.assert_called_once_with()
+
     def test_source_logo_is_exposed_to_designer_process(self) -> None:
         icon_path = app_icon_path()
 

@@ -4,7 +4,10 @@
 
 1. Lấy nguyên thư mục `MonkezDesigner`.
 2. Giữ nguyên thư mục `_internal` cạnh file chạy.
-3. Chạy `MonkezDesigner.exe`.
+3. Chạy `Open Monkez Designer.bat` hoặc `MonkezDesigner.exe`.
+
+Release ZIP có `START_HERE.txt` để người dùng mới biết ngay file cần mở và cách
+mở trực tiếp một file `.ui`.
 
 Không di chuyển riêng file `.exe` ra khỏi thư mục vì Qt, Python bridge và plugin nằm trong `_internal`.
 

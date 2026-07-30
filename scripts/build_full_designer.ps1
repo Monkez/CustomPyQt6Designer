@@ -54,6 +54,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed."
 }
 
+$PortableFiles = @(
+    "packaging\portable\Open Monkez Designer.bat",
+    "packaging\portable\START_HERE.txt"
+)
+foreach ($PortableFile in $PortableFiles) {
+    Copy-Item -LiteralPath $PortableFile -Destination $OutputDirectory -Force
+}
+
 $VerificationUi = (Resolve-Path "examples\monkez_widgets_test.ui").Path
 $Verification = Start-Process `
     -FilePath "$OutputDirectory\MonkezDesigner.exe" `
@@ -96,7 +104,13 @@ Wait-FileUnlocked -Path $BaseLibrary
 if (Test-Path $ArchivePath) {
     Remove-Item -LiteralPath $ArchivePath -Force
 }
-Compress-Archive -Path "$OutputDirectory\*" -DestinationPath $ArchivePath -CompressionLevel Optimal
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    (Resolve-Path $OutputDirectory).Path,
+    (Join-Path $Root $ArchivePath),
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+)
 
 Write-Host "Built: $OutputDirectory\MonkezDesigner.exe"
 Write-Host "Archive: $ArchivePath"

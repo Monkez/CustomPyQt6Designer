@@ -31,10 +31,22 @@ class PackagingTests(unittest.TestCase):
             "build.bat",
             "build_splash_demo.bat",
             "run_splash_exe_demo.bat",
+            "install_designer.bat",
+            "uninstall_designer.bat",
         }
         self.assertEqual(
             {path.name for path in ROOT.glob("*.bat")} & expected,
             expected,
+        )
+
+    def test_portable_release_contains_onboarding_files(self) -> None:
+        portable_files = ROOT / "packaging" / "portable"
+        self.assertTrue((portable_files / "START_HERE.txt").is_file())
+        self.assertTrue((portable_files / "Open Monkez Designer.bat").is_file())
+
+    def test_module_launcher_is_packaged(self) -> None:
+        self.assertTrue(
+            (ROOT / "src" / "custom_pyqt6_designer" / "__main__.py").is_file()
         )
 
 

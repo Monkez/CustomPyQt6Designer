@@ -34,6 +34,19 @@ Because widgets are lazy-imported, the build must keep the explicit
 `Start-Process -Wait -PassThru`; invoking a windowed executable directly does
 not provide reliable completion or exit-code checking in this PowerShell flow.
 
+For installation changes, verify:
+
+1. `python -m custom_pyqt6_designer --doctor` succeeds in `.venv311`.
+2. PowerShell installer/uninstaller scripts parse without syntax errors.
+3. The portable build root contains `START_HERE.txt` and
+   `Open Monkez Designer.bat`.
+4. Never test the per-user installer against the developer's real
+   `%LOCALAPPDATA%`; use static checks or an explicitly isolated test account.
+
+The portable ZIP is created with `System.IO.Compression.ZipFile`. Keep
+`includeBaseDirectory` disabled so the executable and onboarding files remain
+at the archive root.
+
 ## Documentation
 
 - User-facing behavior belongs in `README.md` or `docs`.

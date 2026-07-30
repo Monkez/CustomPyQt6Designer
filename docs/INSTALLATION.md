@@ -1,5 +1,71 @@
 # Cài đặt và sử dụng
 
+## Chọn cách nhanh nhất
+
+### Cách 1 — Portable, không cần Python
+
+1. Tải `MonkezDesigner-<version>-windows-x64.zip`.
+2. Giải nén toàn bộ ZIP.
+3. Double-click `Open Monkez Designer.bat`.
+
+Đây là cách phù hợp nhất cho người chỉ cần thiết kế `.ui`. File
+`START_HERE.txt` trong thư mục portable chứa hướng dẫn ngắn. Không di chuyển
+riêng `MonkezDesigner.exe` ra khỏi thư mục `_internal`.
+
+### Cách 2 — Cài vào tài khoản Windows
+
+Yêu cầu Python 3.11. Tải source ZIP hoặc clone repository, sau đó double-click:
+
+```text
+install_designer.bat
+```
+
+Script sẽ tự động:
+
+1. kiểm tra Python 3.11;
+2. tạo môi trường cô lập trong `%LOCALAPPDATA%\MonkezDesigner`;
+3. cài package cùng Designer bridge;
+4. chạy kiểm tra môi trường;
+5. tạo shortcut Desktop và Start Menu cho Designer, Docs Lab và Uninstall;
+6. mở Designer.
+
+Không cần quyền Administrator và không làm thay đổi virtual environment của
+project. Có thể nâng cấp bằng cách chạy lại cùng file. Gỡ bằng shortcut
+`Uninstall Monkez Designer` hoặc `uninstall_designer.bat`.
+
+### Cách 3 — Cài package vào project Python
+
+Nếu app chỉ cần chạy file `.ui`, cài runtime:
+
+```powershell
+python -m pip install --upgrade "custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+```
+
+Nếu muốn mở Designer từ cùng virtual environment, dùng Python 3.11 và extra
+`designer`:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade "custom-pyqt6-designer[designer] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+.\.venv\Scripts\python.exe -m custom_pyqt6_designer --doctor
+.\.venv\Scripts\python.exe -m custom_pyqt6_designer
+```
+
+Lệnh module hoạt động ngay cả khi thư mục `Scripts` chưa có trong `PATH`.
+
+## Tự kiểm tra cài đặt
+
+```powershell
+python -m custom_pyqt6_designer --doctor
+```
+
+Doctor kiểm tra phiên bản package/Python, đủ 25 plugin, vị trí Qt Designer và
+Python plugin bridge. Mỗi lỗi đều kèm hướng khắc phục. Xem phiên bản nhanh:
+
+```powershell
+python -m custom_pyqt6_designer --version
+```
+
 ## Chọn đúng thành phần
 
 Custom PyQt6 Designer có hai thành phần độc lập:

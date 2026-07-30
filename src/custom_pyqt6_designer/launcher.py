@@ -349,6 +349,12 @@ def verify_designer_plugins(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Launch Qt Designer with Custom PyQt6 Designer plugins.")
     parser.add_argument("ui_file", nargs="?", help="Optional .ui file to open.")
+    parser.add_argument("--version", action="store_true", help="Print the installed package version.")
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Check Python, Designer, plugin and bridge installation.",
+    )
     parser.add_argument("--designer", help=f"Path to designer executable. Overrides {ENV_DESIGNER_EXE}.")
     parser.add_argument("--debug", action="store_true", help="Enable Qt plugin debug output.")
     parser.add_argument("--print-env", action="store_true", help="Print environment values without launching.")
@@ -358,6 +364,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Launch Designer briefly and fail unless all bundled custom plugins load.",
     )
     args = parser.parse_args(argv)
+
+    if args.version:
+        from . import __version__
+
+        print(__version__)
+        return 0
+
+    if args.doctor:
+        from .diagnostics import run_doctor
+
+        return run_doctor()
 
     if args.designer:
         os.environ[ENV_DESIGNER_EXE] = args.designer

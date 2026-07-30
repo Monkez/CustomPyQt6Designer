@@ -1,0 +1,17 @@
+MONKEZ DESIGNER - START HERE
+============================
+
+1. Keep this entire folder together.
+2. Double-click "Open Monkez Designer.bat" or "MonkezDesigner.exe".
+3. Find widgets under "Monkez 01 Controls" through "Monkez 07 Media".
+4. Save your interface as a .ui file.
+
+Open an existing UI:
+  Drag the .ui file onto "Open Monkez Designer.bat"
+
+Important:
+  Do not move MonkezDesigner.exe away from the _internal folder.
+  This portable Designer does not require Python to be installed.
+
+Runtime package installation and examples:
+  https://github.com/Monkez/CustomPyQt6Designer

@@ -7,6 +7,28 @@ Custom PyQt6 Designer cung cấp hai phần tách biệt:
 
 Repo hiện có đủ plugin Designer, widget runtime, Gallery app, demo project và script build release.
 
+## Cài đặt dễ nhất
+
+Chọn đúng một trong ba cách:
+
+| Nhu cầu | Cách thực hiện |
+|---|---|
+| Chỉ thiết kế UI, không muốn cài Python | Tải `MonkezDesigner-<version>-windows-x64.zip`, giải nén và mở `Open Monkez Designer.bat`. |
+| Cài Designer vào Windows hiện tại | Tải source ZIP, giải nén và double-click `install_designer.bat`. Không cần quyền admin. |
+| Chỉ chạy Monkez widget trong app Python | Cài runtime package bằng `pip`; không cần cài Designer. |
+
+Bộ cài theo user tự tạo môi trường Python cô lập trong
+`%LOCALAPPDATA%\MonkezDesigner`, kiểm tra dependency và tạo shortcut cho
+Designer, Docs Lab và Uninstall. Sau khi cài package, có thể kiểm tra bất kỳ lúc
+nào:
+
+```powershell
+python -m custom_pyqt6_designer --doctor
+python -m custom_pyqt6_designer
+```
+
+Xem [hướng dẫn cài đặt đầy đủ](docs/INSTALLATION.md).
+
 ## Splash screen khởi động nhanh
 
 Phiên bản 0.4 bổ sung `MonkezSplashScreen` và controller tối ưu startup:
@@ -56,6 +78,8 @@ Các script tiện dụng:
 | Script | Chức năng |
 |---|---|
 | `setup.bat` | Tạo `.venv311` và cài đầy đủ dependency đã kiểm soát phiên bản. |
+| `install_designer.bat` | Cài Designer theo user, kiểm tra và tạo shortcut; không cần quyền admin. |
+| `uninstall_designer.bat` | Gỡ bản Designer đã cài theo user. |
 | `run.bat` | Mở Qt Designer cùng Monkez plugins. |
 | `gallery.bat` | Mở Docs Lab. |
 | `demo.bat` | Chạy project mẫu. |

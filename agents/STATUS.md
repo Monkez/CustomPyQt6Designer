@@ -4,7 +4,7 @@ Updated: 2026-07-30
 
 ## Current version
 
-- Working release version: 0.4.1.
+- Working version: 0.4.2 (installation usability improvements).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -20,15 +20,20 @@ Updated: 2026-07-30
   `agents/SPLASHSCREEN_DESIGN.md`.
 - Startup-only duplicate launch protection that releases when initialization
   completes, allowing intentional additional instances afterward.
+- Module-based launcher and actionable `--doctor` diagnostics.
+- No-admin per-user Designer installer with Desktop/Start Menu shortcuts and
+  guarded uninstall.
+- Portable release onboarding files at the archive root.
 
 ## Latest verification
 
-- 47 automated tests pass on Python 3.11.15.
-- The 0.4.1 wheel and source distribution build successfully; the wheel
-  contains `startup_guard.py`.
-- The 0.4.1 portable executable passes its 25-plugin verification.
-- `MonkezDesigner-0.4.1-windows-x64.zip` contains 7,597 entries and passes a
-  full CRC integrity check.
+- 53 automated tests pass on Python 3.11.15.
+- The 0.4.2 wheel and source distribution build successfully and include the
+  module launcher plus diagnostics.
+- The 0.4.2 portable executable passes `--doctor` and its 25-plugin
+  verification.
+- `MonkezDesigner-0.4.2-windows-x64.zip` contains 7,565 entries, includes both
+  portable onboarding files at its root and passes a full CRC integrity check.
 - Splash startup benchmark on the release workstation: import median 97.3 ms
   and first-paint median 133.8 ms.
 - A standalone `SplashHeavyDemo.exe` exercises 48 MB of asset processing and a
@@ -43,7 +48,9 @@ Updated: 2026-07-30
 - The build verifies all Designer plugins before creating the release ZIP.
 - The release script waits for the verified Designer process to release its
   embedded Python archive before compression.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.1
+- The portable archive is created with the .NET ZIP API to avoid the slow,
+  noisy `Compress-Archive` progress loop.
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.2
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt
