@@ -23,6 +23,9 @@ build.bat
 
 The portable build is valid only after all 25 plugins initialize, create their
 widgets and remain stable during verification.
+The windowed Designer verifier must be started with
+`Start-Process -Wait -PassThru`; a direct PowerShell invocation can return
+before the GUI process releases its embedded Python archive.
 
 For the standalone heavy splash demo, run `build_splash_demo.bat`. Its packaged
 `--verify` run must exit successfully before the demo ZIP is accepted.

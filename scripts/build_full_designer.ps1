@@ -55,8 +55,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $VerificationUi = (Resolve-Path "examples\monkez_widgets_test.ui").Path
-& "$OutputDirectory\MonkezDesigner.exe" --verify-plugins $VerificationUi
-if ($LASTEXITCODE -ne 0) {
+$Verification = Start-Process `
+    -FilePath "$OutputDirectory\MonkezDesigner.exe" `
+    -ArgumentList "--verify-plugins `"$VerificationUi`"" `
+    -Wait `
+    -PassThru
+if ($Verification.ExitCode -ne 0) {
     throw "Bundled Designer plugin verification failed."
 }
 

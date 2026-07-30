@@ -21,10 +21,10 @@ from PyQt6.QtWidgets import (
 )
 
 from custom_pyqt6_designer.splash import SplashConfig, SplashController
+from custom_pyqt6_designer.startup_guard import StartupInstanceGuard
 
 
 APP_NAME = "Monkez Heavy Startup Demo"
-VERIFY_FLAG = "--verify"
 
 
 def resource_path(name: str) -> Path:
@@ -138,8 +138,13 @@ class MetricCard(QFrame):
 
 
 class DemoWindow(QMainWindow):
-    def __init__(self, verification_mode: bool = False) -> None:
+    def __init__(
+        self,
+        startup_guard: StartupInstanceGuard,
+        verification_mode: bool = False,
+    ) -> None:
         super().__init__()
+        self.startup_guard = startup_guard
         self.verification_mode = verification_mode
         self.max_frame_gap_ms = 0.0
         self._last_heartbeat = perf_counter()
@@ -277,6 +282,9 @@ class DemoWindow(QMainWindow):
     def start_loading(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             return
+        if not self.startup_guard.try_acquire():
+            self.result_label.setText("Another application instance is starting")
+            return
 
         self.max_frame_gap_ms = 0.0
         self._last_heartbeat = perf_counter()
@@ -324,6 +332,7 @@ class DemoWindow(QMainWindow):
             f"Asset SHA-256: {result['asset_digest']}"
         )
         self.run_again_button.setEnabled(True)
+        self.startup_guard.release()
         if self._splash is not None:
             self._splash.finish(self)
         if self.verification_mode:
@@ -334,6 +343,7 @@ class DemoWindow(QMainWindow):
         self.activity_label.setText(f"Startup failed:\n{message}")
         self.result_label.setText("Initialization failed")
         self.run_again_button.setEnabled(True)
+        self.startup_guard.release()
         if self._splash is not None:
             self._splash.finish(self)
         if self.verification_mode:
@@ -346,17 +356,22 @@ class DemoWindow(QMainWindow):
         self.max_frame_gap_ms = max(self.max_frame_gap_ms, gap_ms)
 
 
-def main() -> int:
-    verification_mode = VERIFY_FLAG in sys.argv
-    app = QApplication([argument for argument in sys.argv if argument != VERIFY_FLAG])
+def run_app(
+    startup_guard: StartupInstanceGuard,
+    *,
+    verification_mode: bool = False,
+) -> int:
+    app = QApplication([sys.argv[0]])
     app.setApplicationName(APP_NAME)
     app.setFont(QFont("Segoe UI", 10))
 
-    window = DemoWindow(verification_mode)
+    window = DemoWindow(startup_guard, verification_mode)
     QTimer.singleShot(0, window.start_loading)
     exit_code = app.exec()
     return 2 if window._verification_failed else exit_code
 
 
 if __name__ == "__main__":
+    from splash_heavy_demo.launcher import main
+
     raise SystemExit(main())

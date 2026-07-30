@@ -52,3 +52,14 @@ would make the first visible frame slower.
 
 The build script runs the packaged app in a short verification mode before
 creating `dist\SplashHeavyDemo-windows-x64.zip`.
+
+## Accidental double-click protection
+
+The executable acquires a cross-process startup lock before importing the main
+Qt interface. A second launch exits immediately while the current instance is
+showing its splash or loading data. The lock is released at 100% startup
+progress, so another instance can then be launched intentionally even while the
+first window remains open.
+
+The packaged build verifies this behavior with two real processes before it
+runs the normal splash verification and creates the ZIP.

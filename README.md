@@ -37,7 +37,9 @@ Xem [hướng dẫn splash screen](docs/SPLASHSCREEN.md) và
 Demo tải nền nặng có sẵn dưới dạng Windows executable. Chạy
 `run_splash_exe_demo.bat`, hoặc tự build lại bằng `build_splash_demo.bat`.
 Ứng dụng xử lý dữ liệu và CPU trên worker thread trong khi splash vẫn nhận
-tiến trình và animation mượt. Xem
+tiến trình và animation mượt. Khóa khởi động liên tiến trình ngăn double-click
+mở trùng trong lúc đang tải, nhưng tự nhả khi app sẵn sàng để cho phép mở thêm
+instance có chủ đích. Xem
 [hướng dẫn Heavy Splash Demo](docs/HEAVY_SPLASH_DEMO.md).
 
 ## Bắt đầu nhanh trên Windows

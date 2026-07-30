@@ -29,10 +29,43 @@ if ($LASTEXITCODE -ne 0) {
     --paths src `
     --add-data "logo.png;." `
     --hidden-import "custom_pyqt6_designer.monkez_widgets.monkez_splash_screen" `
-    splash_heavy_demo\app.py
+    splash_heavy_demo\launcher.py
 
 if ($LASTEXITCODE -ne 0) {
     throw "Splash demo build failed."
+}
+
+$LockHolder = Start-Process `
+    -FilePath $Executable `
+    -ArgumentList "--verify-startup-lock" `
+    -PassThru
+$StartupLockPath = & $Python -c "from custom_pyqt6_designer.startup_guard import StartupInstanceGuard; print(StartupInstanceGuard('com.monkez.splash-heavy-demo').lock_path)"
+$LockDeadline = (Get-Date).AddSeconds(10)
+while (-not (Test-Path -LiteralPath $StartupLockPath)) {
+    $LockHolder.Refresh()
+    if ($LockHolder.HasExited) {
+        throw "The startup-lock holder exited before acquiring its lock."
+    }
+    if ((Get-Date) -ge $LockDeadline) {
+        $LockHolder.Kill()
+        throw "Timed out waiting for the packaged startup lock."
+    }
+    Start-Sleep -Milliseconds 50
+}
+$BlockedDuplicate = Start-Process `
+    -FilePath $Executable `
+    -ArgumentList "--verify-startup-lock" `
+    -Wait `
+    -PassThru
+if ($BlockedDuplicate.ExitCode -ne 73) {
+    if (-not $LockHolder.HasExited) {
+        $LockHolder.Kill()
+    }
+    throw "A concurrent startup was not blocked by the packaged executable."
+}
+$LockHolder.WaitForExit()
+if ($LockHolder.ExitCode -ne 0) {
+    throw "The packaged startup-lock holder failed."
 }
 
 $Verification = Start-Process `

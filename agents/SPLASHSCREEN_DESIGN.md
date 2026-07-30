@@ -43,6 +43,18 @@ A dataclass containing app identity, image, initial message, timing, animation a
 window options. `SplashController.create()` and `SplashController.from_ui()` are
 the two primary constructors.
 
+### `StartupInstanceGuard`
+
+A small `QLockFile` wrapper imported before the application's heavy UI modules.
+The application owns the cross-process lock only from process entry until its
+startup worker reports ready. Accidental concurrent launches exit without
+creating another splash. Releasing at ready permits intentional additional
+instances while earlier windows remain open.
+
+The guard is deliberately separate from `SplashController`: startup ownership
+must be decided before importing and constructing the GUI, and applications
+need explicit control over the exact definition of "ready".
+
 ## Performance policy
 
 - No OpenCV, QFluentWidgets, C++ or Rust runtime dependency.

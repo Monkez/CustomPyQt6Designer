@@ -40,6 +40,44 @@ sys.exit(app.exec())
 
 Phải giữ reference `splash` cho đến khi gọi `finish()`.
 
+## Chặn double-click trong lúc khởi động
+
+`StartupInstanceGuard` chỉ khóa giai đoạn khởi động, không khóa toàn bộ vòng đời
+ứng dụng. Hãy acquire trước khi import giao diện nặng và release ngay khi ứng
+dụng sẵn sàng:
+
+```python
+from custom_pyqt6_designer.startup_guard import StartupInstanceGuard
+
+startup_guard = StartupInstanceGuard("com.example.my-application")
+if not startup_guard.try_acquire():
+    raise SystemExit(0)  # Một process khác vẫn đang khởi động.
+
+try:
+    # Tạo QApplication, hiện splash và bắt đầu tải nền...
+    ...
+
+    # Gọi tại callback Ready, trước hoặc sau splash.finish(window).
+    startup_guard.release()
+
+    # Process hiện tại vẫn chạy, nhưng người dùng đã có thể mở instance mới.
+    ...
+finally:
+    # An toàn khi gọi lại; giúp nhả khóa nếu khởi động gặp exception.
+    startup_guard.release()
+```
+
+Mỗi sản phẩm cần một `application_id` ổn định và duy nhất. Hai lần mở cùng ID
+trong lúc startup sẽ không chạy song song. Sau `release()`, một instance mới có
+thể acquire khóa dù các cửa sổ cũ vẫn đang hoạt động.
+
+Khóa nằm trong thư mục tạm của hệ điều hành và dùng `QLockFile`, vì vậy không
+cần socket, service hoặc DLL bổ sung. Qt có thể nhận diện lock cũ của process đã
+crash. Có thể truyền `lock_directory` và `stale_lock_ms` nếu ứng dụng cần chính
+sách riêng. Mặc định `stale_lock_ms=0` để một startup hợp lệ kéo dài không bị
+coi là stale chỉ vì thời gian; Qt vẫn dùng thông tin process trong lock để xử lý
+trường hợp owner không còn hoạt động.
+
 ## Cấu hình đầy đủ
 
 ```python
