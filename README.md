@@ -7,6 +7,33 @@ Custom PyQt6 Designer cung cấp hai phần tách biệt:
 
 Repo hiện có đủ plugin Designer, widget runtime, Gallery app, demo project và script build release.
 
+## Splash screen khởi động nhanh
+
+Phiên bản 0.4 bổ sung `MonkezSplashScreen` và controller tối ưu startup:
+
+- Hiển thị tên/phiên bản ứng dụng và trạng thái khởi động.
+- PNG trong suốt, background cover/contain/stretch.
+- Progress animation, spinner, fade in/out và minimum display time.
+- Cập nhật thuận tiện, an toàn từ worker thread.
+- Thiết kế lại bằng Monkez Designer và nạp file `.ui`.
+- Lazy-loading, không nạp camera/OpenCV/Gallery trên đường khởi động splash.
+
+```python
+from PyQt6.QtWidgets import QApplication
+from custom_pyqt6_designer.splash import show_splash
+
+app = QApplication([])
+splash = show_splash(
+    app_name="Monkez Studio",
+    app_version="Version 0.4",
+    background_image="assets/splash.png",
+)
+splash.set_progress(40, "Loading plugins...")
+```
+
+Xem [hướng dẫn splash screen](docs/SPLASHSCREEN.md) và
+[template Designer](examples/splash_screen.ui).
+
 ## Bắt đầu nhanh trên Windows
 
 Nếu phát triển trực tiếp từ repository, cài Python 3.11 rồi chạy:
@@ -24,6 +51,8 @@ Các script tiện dụng:
 | `run.bat` | Mở Qt Designer cùng Monkez plugins. |
 | `gallery.bat` | Mở Docs Lab. |
 | `demo.bat` | Chạy project mẫu. |
+| `splash_demo.bat` | Chạy demo splash screen thiết kế bằng Designer. |
+| `benchmark_splash.bat` | Đo thời gian import và paint đầu. |
 | `test.bat` | Chạy toàn bộ test ở chế độ không cần màn hình. |
 | `build.bat` | Build package, Designer portable, kiểm tra plugin và tạo ZIP. |
 
@@ -112,6 +141,7 @@ python -m venv .venv
 | Media | `MonkezImage`, `MonkezUSBCamera` |
 | Container | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea` |
 | Gauge | `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
+| Startup | `MonkezSplashScreen` |
 
 Các widget giao diện hỗ trợ:
 
@@ -169,6 +199,7 @@ Output chính:
 - [Monkez custom widget Python API](docs/WIDGET_API.md)
 - [Project demo](demo_project/README.md)
 - [Hướng dẫn cài đặt và sử dụng](docs/INSTALLATION.md)
+- [Splash screen khởi động nhanh](docs/SPLASHSCREEN.md)
 
 ## License
 

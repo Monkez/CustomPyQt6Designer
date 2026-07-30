@@ -1,47 +1,56 @@
+"""Public custom widget exports with startup-friendly lazy imports."""
+
+from __future__ import annotations
+
+from importlib import import_module
+
 from .app_branding import apply_designer_branding
 from .fluent_api import install_fluent_api
-from .monkez_button import MonkezButton
-from .monkez_checkbox import MonkezCheckBox
-from .monkez_combobox import MonkezComboBox
-from .monkez_containers import MonkezFrame, MonkezGroupBox, MonkezScrollArea
-from .monkez_datetime_widgets import MonkezCalendarWidget, MonkezDateEdit, MonkezDateTimeEdit, MonkezTimeEdit
-from .monkez_display_widgets import MonkezLCDNumber
-from .monkez_gauges import MonkezArcGauge, MonkezLinearGauge, MonkezRadialGauge
-from .monkez_image import MonkezImage
-from .monkez_progress_bar import MonkezProgressBar
-from .monkez_radio_button import MonkezRadioButton
-from .monkez_slider import MonkezSlider
-from .monkez_switch import MonkezSwitch
-from .monkez_text_input import MonkezTextInput
-from .monkez_usb_camera import MonkezUSBCamera
-from .monkez_value_widgets import MonkezDial, MonkezDoubleSpinBox, MonkezSpinBox
 
-__all__ = [
-    "MonkezButton",
-    "MonkezArcGauge",
-    "MonkezCheckBox",
-    "MonkezCalendarWidget",
-    "MonkezComboBox",
-    "MonkezDateEdit",
-    "MonkezDateTimeEdit",
-    "MonkezDial",
-    "MonkezDoubleSpinBox",
-    "MonkezFrame",
-    "MonkezGroupBox",
-    "MonkezImage",
-    "MonkezLCDNumber",
-    "MonkezLinearGauge",
-    "MonkezProgressBar",
-    "MonkezRadioButton",
-    "MonkezRadialGauge",
-    "MonkezScrollArea",
-    "MonkezSlider",
-    "MonkezSpinBox",
-    "MonkezSwitch",
-    "MonkezTextInput",
-    "MonkezTimeEdit",
-    "MonkezUSBCamera",
-]
 
-install_fluent_api(globals()[name] for name in __all__)
+_WIDGET_MODULES = {
+    "MonkezButton": ".monkez_button",
+    "MonkezCheckBox": ".monkez_checkbox",
+    "MonkezComboBox": ".monkez_combobox",
+    "MonkezFrame": ".monkez_containers",
+    "MonkezGroupBox": ".monkez_containers",
+    "MonkezScrollArea": ".monkez_containers",
+    "MonkezCalendarWidget": ".monkez_datetime_widgets",
+    "MonkezDateEdit": ".monkez_datetime_widgets",
+    "MonkezDateTimeEdit": ".monkez_datetime_widgets",
+    "MonkezTimeEdit": ".monkez_datetime_widgets",
+    "MonkezLCDNumber": ".monkez_display_widgets",
+    "MonkezArcGauge": ".monkez_gauges",
+    "MonkezLinearGauge": ".monkez_gauges",
+    "MonkezRadialGauge": ".monkez_gauges",
+    "MonkezImage": ".monkez_image",
+    "MonkezProgressBar": ".monkez_progress_bar",
+    "MonkezRadioButton": ".monkez_radio_button",
+    "MonkezSlider": ".monkez_slider",
+    "MonkezSplashScreen": ".monkez_splash_screen",
+    "MonkezSwitch": ".monkez_switch",
+    "MonkezTextInput": ".monkez_text_input",
+    "MonkezUSBCamera": ".monkez_usb_camera",
+    "MonkezDial": ".monkez_value_widgets",
+    "MonkezDoubleSpinBox": ".monkez_value_widgets",
+    "MonkezSpinBox": ".monkez_value_widgets",
+}
+
+__all__ = list(_WIDGET_MODULES)
+
+
+def __getattr__(name: str):
+    module_name = _WIDGET_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    widget_type = getattr(import_module(module_name, __name__), name)
+    install_fluent_api((widget_type,))
+    globals()[name] = widget_type
+    return widget_type
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
+
+
 apply_designer_branding()

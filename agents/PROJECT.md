@@ -16,6 +16,7 @@ Do not make the runtime application depend on the portable Designer.
 - `src/custom_pyqt6_designer/designer_plugins`: Qt Designer plugin adapters.
 - `src/custom_pyqt6_designer/launcher.py`: Designer discovery and environment setup.
 - `src/custom_pyqt6_designer/gallery_app.py`: interactive widget documentation.
+- `src/custom_pyqt6_designer/splash.py`: startup-optimized splash controller.
 - `demo_project`: end-to-end runtime example.
 - `scripts/build_full_designer.ps1`: reproducible portable build and plugin verification.
 - `tests`: offscreen widget, plugin, launcher, gallery, packaging and demo tests.
@@ -27,3 +28,5 @@ The canonical `.ui` header is:
 ```
 
 Python 3.11 is required for the pinned `pyqt6-tools` Designer bridge.
+Public widget classes are lazy-loaded from `monkez_widgets`; preserve this behavior
+so importing the splash path does not load unrelated widgets or optional backends.

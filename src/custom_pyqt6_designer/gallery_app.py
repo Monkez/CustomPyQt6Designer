@@ -52,6 +52,7 @@ from .monkez_widgets import (
     MonkezRadialGauge,
     MonkezScrollArea,
     MonkezSlider,
+    MonkezSplashScreen,
     MonkezSpinBox,
     MonkezSwitch,
     MonkezTextInput,
@@ -281,6 +282,22 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         "camera = MonkezUSBCamera(); camera.setCameraIndex(0); camera.startCamera()",
     ),
     WidgetDoc(
+        "MonkezSplashScreen",
+        "Container",
+        "Splash screen khoi dong nhanh, PNG trong suot, progress muot va spinner.",
+        (
+            "appName, appVersion, statusText, progress",
+            "backgroundImage, transparentBackground, imageMode",
+            "showProgress, showSpinner, animationEnabled, animationDuration",
+        ),
+        (
+            "setProgress(value)",
+            "setStatusText(text)",
+            "SplashController.from_ui(path)",
+        ),
+        "splash = MonkezSplashScreen(); splash.setAppName('Monkez Studio'); splash.setProgress(35)",
+    ),
+    WidgetDoc(
         "MonkezFrame",
         "Container",
         "Frame theme-aware dung lam panel, card noi dung hoac wrapper.",
@@ -433,6 +450,13 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("setResolutionHeight(height)", "Set capture height.", "setResolutionHeight(720)", lambda widget: widget.setResolutionHeight(720)),
         ("setDisplayFps(fps)", "Set preview display FPS.", "setDisplayFps(20)", lambda widget: widget.setDisplayFps(20)),
         ("setMirror(value)", "Mirror the preview.", "setMirror(True)", lambda widget: widget.setMirror(True)),
+    ),
+    "MonkezSplashScreen": (
+        ("setAppName(text)", "Set the application name.", 'setAppName("Monkez Studio")', lambda widget: widget.setAppName("Monkez Studio")),
+        ("setAppVersion(text)", "Set the version text.", 'setAppVersion("Version 2.0")', lambda widget: widget.setAppVersion("Version 2.0")),
+        ("setStatusText(text)", "Set startup status text.", 'setStatusText("Loading modules...")', lambda widget: widget.setStatusText("Loading modules...")),
+        ("setProgress(value)", "Set startup progress.", "setProgress(72)", lambda widget: widget.setProgress(72)),
+        ("setShowSpinner(value)", "Show or hide the animated spinner.", "setShowSpinner(True)", lambda widget: widget.setShowSpinner(True)),
     ),
     "MonkezFrame": (
         ("setElevation(value)", "Set frame elevation/shadow depth.", "setElevation(2)", lambda widget: widget.setElevation(2)),
@@ -594,7 +618,7 @@ class GalleryWindow(QMainWindow):
         title_box.addWidget(subtitle)
         layout.addLayout(title_box, 1)
 
-        for label, value in (("Widgets", "24"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
+        for label, value in (("Widgets", "25"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
             layout.addWidget(self._metric(label, value))
         return header
 
@@ -1677,6 +1701,17 @@ def _linear_gauge_preview() -> QWidget:
     return widget
 
 
+def _splash_preview() -> QWidget:
+    widget = MonkezSplashScreen()
+    widget.setAppName("Monkez Studio")
+    widget.setAppVersion("Version 0.4")
+    widget.setStatusText("Loading workspace...")
+    widget.setProgress(64)
+    widget.setShowSpinner(True)
+    widget.setMinimumSize(360, 210)
+    return widget
+
+
 _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
     "MonkezButton": _button_preview,
     "MonkezTextInput": _text_input_preview,
@@ -1696,6 +1731,7 @@ _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
     "MonkezLCDNumber": _lcd_preview,
     "MonkezImage": _image_preview,
     "MonkezUSBCamera": _camera_preview,
+    "MonkezSplashScreen": _splash_preview,
     "MonkezFrame": _frame_preview,
     "MonkezGroupBox": _group_preview,
     "MonkezScrollArea": _scroll_preview,

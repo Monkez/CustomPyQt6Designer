@@ -356,6 +356,37 @@ camera.setDisplayFps(20)
 camera.setMirror(True)
 ```
 
+### MonkezSplashScreen
+
+`MonkezSplashScreen` là container splash nhẹ, hỗ trợ nội dung mặc định được paint
+trực tiếp hoặc child widgets thiết kế bằng Qt Designer.
+
+| Property | Mô tả |
+|---|---|
+| `appName`, `appVersion`, `statusText` | Thông tin ứng dụng và trạng thái |
+| `progress`, `showProgress` | Giá trị và hiển thị tiến trình |
+| `backgroundImage`, `imageMode` | PNG background; cover/contain/stretch |
+| `transparentBackground` | Cho phép alpha của cửa sổ |
+| `showSpinner`, `spinnerInterval` | Spinner và tốc độ animation |
+| `animationEnabled`, `animationDuration` | Animation progress mặc định |
+| `defaultContentVisible` | Dùng UI paint sẵn hoặc child widgets tùy biến |
+| `backgroundColor`, `textColor`, `accentColor`, `trackColor` | Màu giao diện |
+
+```python
+from custom_pyqt6_designer.splash import SplashConfig, SplashController
+
+splash = SplashController.create(
+    SplashConfig(
+        app_name="Monkez Studio",
+        app_version="Version 0.4",
+        background_image="assets/splash.png",
+    )
+).show()
+splash.set_progress(60, "Loading workspace...")
+```
+
+Xem `docs/SPLASHSCREEN.md` để dùng worker thread và file `.ui` tùy biến.
+
 ## Full Example
 
 ```python

@@ -37,6 +37,7 @@ THEMED_CLASS_NAMES = {
     "MonkezRadialGauge",
     "MonkezScrollArea",
     "MonkezSlider",
+    "MonkezSplashScreen",
     "MonkezSpinBox",
     "MonkezTextInput",
     "MonkezTimeEdit",

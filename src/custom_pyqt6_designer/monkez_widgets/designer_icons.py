@@ -112,6 +112,19 @@ def _draw_progress(painter: QPainter) -> None:
     painter.drawRoundedRect(QRectF(6, 25, 34, 14), 7, 7)
 
 
+def _draw_splash(painter: QPainter) -> None:
+    painter.setBrush(QColor("#0f172a"))
+    painter.drawRoundedRect(QRectF(5, 12, 54, 40), 8, 8)
+    painter.setPen(QPen(Qt.GlobalColor.white, 3))
+    painter.drawLine(14, 23, 39, 23)
+    painter.setPen(QPen(MUTED, 2))
+    painter.drawLine(14, 31, 31, 31)
+    painter.setPen(QPen(QColor("#334155"), 5, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawLine(14, 43, 50, 43)
+    painter.setPen(QPen(ACCENT, 5, cap=Qt.PenCapStyle.RoundCap))
+    painter.drawLine(14, 43, 38, 43)
+
+
 def _draw_image(painter: QPainter) -> None:
     _rounded_box(painter, QRectF(8, 10, 48, 44), 5)
     painter.setPen(Qt.PenStyle.NoPen)
@@ -269,6 +282,7 @@ _DRAWERS = {
     "combobox": _draw_combo,
     "image": _draw_image,
     "progress": _draw_progress,
+    "splash": _draw_splash,
     "radio": _draw_radio,
     "slider": _draw_slider,
     "switch": _draw_switch,

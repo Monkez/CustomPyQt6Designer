@@ -74,6 +74,15 @@ build.bat
 `run.bat`, `gallery.bat`, `demo.bat`, `test.bat` và `build.bat` sẽ tự gọi
 `setup.bat` nếu môi trường chưa được tạo.
 
+Chạy demo và benchmark splash screen:
+
+```powershell
+splash_demo.bat
+benchmark_splash.bat
+```
+
+Chi tiết API và cách thiết kế lại splash nằm trong [SPLASHSCREEN.md](SPLASHSCREEN.md).
+
 ## Xử lý lỗi thường gặp
 
 ### Designer không có Monkez widget

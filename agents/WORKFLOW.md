@@ -21,7 +21,7 @@ For release-affecting changes, also run:
 build.bat
 ```
 
-The portable build is valid only after all 24 plugins initialize, create their
+The portable build is valid only after all 25 plugins initialize, create their
 widgets and remain stable during verification.
 
 ## Documentation
