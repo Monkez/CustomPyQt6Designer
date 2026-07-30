@@ -25,6 +25,16 @@ reuse a project virtual environment.
 The installed Start Menu group contains Designer, Docs Lab and Uninstall.
 Uninstall is guarded to remove only the exact per-user install root.
 
+It also contains `New Monkez Splash Screen`, which runs `--new-splash` from the
+user's Documents directory.
+
+### Standalone splash form
+
+The splash runtime plugin remains installed so Designer can render top-level
+`MonkezSplashScreen` forms, but its empty `domXml()` hides it from the Widget
+Box. `new_splash.bat`, the portable launcher and the installed shortcut all
+create/open the packaged template as an independent `.ui` form.
+
 ### Project runtime
 
 Applications install the base package only. They do not depend on Designer or

@@ -140,7 +140,16 @@ paint trước mỗi bước.
 
 ## Thiết kế bằng Monkez Designer
 
-1. Mở [splash_screen.ui](../examples/splash_screen.ui) bằng `run.bat`.
+1. Double-click `new_splash.bat`, hoặc chạy:
+
+```powershell
+python -m custom_pyqt6_designer --new-splash ui/splash_screen.ui
+```
+
+Lệnh tạo một file `.ui` có `MonkezSplashScreen` làm form gốc rồi mở trực tiếp
+trong Designer. Nếu file đích đã tồn tại, lệnh chỉ mở lại và không ghi đè thiết
+kế của người dùng.
+
 2. Thay layout, label, màu, font, progress bar hoặc background tùy ý.
 3. Giữ lại các `objectName` cần cập nhật:
 
@@ -160,9 +169,11 @@ splash = SplashController.from_ui(
 ).show()
 ```
 
-`MonkezSplashScreen` nằm trong nhóm `Monkez 06 Containers` và là container, vì
-vậy có thể đặt thêm widget con. Property `defaultContentVisible` chọn giữa phần
-giao diện mặc định được paint tối ưu và nội dung tùy biến bằng Designer.
+`MonkezSplashScreen` không xuất hiện trong Widget Box để tránh kéo nhầm vào một
+container hoặc form chính. Plugin vẫn được Designer nạp để mở template độc lập,
+hiển thị property và cho phép đặt widget con trực tiếp lên form splash.
+Property `defaultContentVisible` chọn giữa phần giao diện mặc định được paint
+tối ưu và nội dung tùy biến bằng Designer.
 
 ## Ảnh PNG trong suốt
 

@@ -13,7 +13,8 @@ if (-not (Test-Path $Python)) {
 
 $Version = & $Python -c "from custom_pyqt6_designer import __version__; print(__version__)"
 $PythonHome = & $Python -c "import sys; print(sys.base_prefix)"
-$OutputDirectory = "dist\MonkezDesigner"
+$PortableBuildRoot = "dist\portable\$Version"
+$OutputDirectory = Join-Path $PortableBuildRoot "MonkezDesigner"
 $ArchivePath = "dist\MonkezDesigner-$Version-windows-x64.zip"
 
 & $Python -m pip install "pyinstaller==$PyInstallerVersion"
@@ -27,6 +28,7 @@ if ($LASTEXITCODE -ne 0) {
     --onedir `
     --windowed `
     --name MonkezDesigner `
+    --distpath $PortableBuildRoot `
     --icon "logo.ico" `
     --paths src `
     --add-data "logo.png;." `
@@ -55,6 +57,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $PortableFiles = @(
+    "packaging\portable\New Splash Screen.bat",
     "packaging\portable\Open Monkez Designer.bat",
     "packaging\portable\START_HERE.txt"
 )
@@ -62,7 +65,7 @@ foreach ($PortableFile in $PortableFiles) {
     Copy-Item -LiteralPath $PortableFile -Destination $OutputDirectory -Force
 }
 
-$VerificationUi = (Resolve-Path "examples\monkez_widgets_test.ui").Path
+$VerificationUi = (Resolve-Path "src\custom_pyqt6_designer\templates\monkez_splash_screen.ui").Path
 $Verification = Start-Process `
     -FilePath "$OutputDirectory\MonkezDesigner.exe" `
     -ArgumentList "--verify-plugins `"$VerificationUi`"" `

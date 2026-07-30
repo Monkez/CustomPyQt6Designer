@@ -36,6 +36,7 @@ class PluginSpec:
     themed: bool = True
     properties_xml: str = ""
     group: str = GROUP_CONTROLS
+    palette_visible: bool = True
 
 
 def create_plugin(spec: PluginSpec, module_name: str):
@@ -80,6 +81,8 @@ def create_plugin(spec: PluginSpec, module_name: str):
         return "custom_pyqt6_designer.monkez_widgets"
 
     def dom_xml(self) -> str:
+        if not spec.palette_visible:
+            return ""
         properties = spec.properties_xml.strip()
         if properties:
             properties = f"\n{properties}"

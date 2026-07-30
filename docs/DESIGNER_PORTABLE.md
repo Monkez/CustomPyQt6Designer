@@ -9,7 +9,14 @@
 Release ZIP có `START_HERE.txt` để người dùng mới biết ngay file cần mở và cách
 mở trực tiếp một file `.ui`.
 
+Để thiết kế splash độc lập, chạy `New Splash Screen.bat`. Splash được tạo thành
+một form `.ui` riêng; không cần và không nên kéo nó vào một container khác.
+
 Không di chuyển riêng file `.exe` ra khỏi thư mục vì Qt, Python bridge và plugin nằm trong `_internal`.
+
+Khi tự build, thư mục giải nén được tạo tại
+`dist\portable\<version>\MonkezDesigner`; file ZIP phát hành vẫn nằm trực tiếp
+trong `dist`.
 
 Các widget được chia thành các nhóm `Monkez 01 Controls` đến `Monkez 07 Media`
 trong Widget Box để dễ tìm kiếm.

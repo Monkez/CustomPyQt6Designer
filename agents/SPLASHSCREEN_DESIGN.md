@@ -12,8 +12,13 @@
 
 ### `MonkezSplashScreen`
 
-A lightweight `QWidget` container. When top-level it uses splash/frameless window
-flags; when embedded in Qt Designer it behaves like a regular container.
+A lightweight `QWidget` container. When top-level it uses splash/frameless
+window flags.
+
+The Designer plugin deliberately returns an empty `domXml()`. Qt Designer keeps
+the plugin available for loading existing forms but omits it from the Widget
+Box. Users create the splash from the packaged standalone template instead of
+embedding it into another form.
 
 It provides a default layout and Designer properties for:
 
@@ -29,6 +34,13 @@ Named child widgets in a custom `.ui` override the default presentation:
 - `splashVersionLabel`
 - `splashStatusLabel`
 - `splashProgressBar`
+
+### Standalone Designer template
+
+`templates/monkez_splash_screen.ui` uses `MonkezSplashScreen` as its top-level
+form. `--new-splash` copies this package resource without overwriting an existing
+file and opens the result in Designer. The source and portable distributions
+also expose one-click batch launchers.
 
 ### `SplashController`
 

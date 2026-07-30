@@ -53,8 +53,15 @@ splash = show_splash(
 splash.set_progress(40, "Loading plugins...")
 ```
 
-Xem [hướng dẫn splash screen](docs/SPLASHSCREEN.md) và
-[template Designer](examples/splash_screen.ui).
+Tạo một form splash độc lập bằng `new_splash.bat` hoặc:
+
+```powershell
+python -m custom_pyqt6_designer --new-splash ui/splash_screen.ui
+```
+
+Splash không xuất hiện trong bảng widget kéo-thả vì nó là một cửa sổ độc lập.
+Plugin vẫn được nạp để Designer có thể hiển thị và chỉnh sửa template đúng như
+lúc chạy. Xem [hướng dẫn splash screen](docs/SPLASHSCREEN.md).
 
 Demo tải nền nặng có sẵn dưới dạng Windows executable. Chạy
 `run_splash_exe_demo.bat`, hoặc tự build lại bằng `build_splash_demo.bat`.
@@ -81,6 +88,7 @@ Các script tiện dụng:
 | `install_designer.bat` | Cài Designer theo user, kiểm tra và tạo shortcut; không cần quyền admin. |
 | `uninstall_designer.bat` | Gỡ bản Designer đã cài theo user. |
 | `run.bat` | Mở Qt Designer cùng Monkez plugins. |
+| `new_splash.bat` | Tạo và mở một form splash độc lập, không lồng trong container khác. |
 | `gallery.bat` | Mở Docs Lab. |
 | `demo.bat` | Chạy project mẫu. |
 | `splash_demo.bat` | Chạy demo splash screen thiết kế bằng Designer. |

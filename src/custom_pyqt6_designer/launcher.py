@@ -355,6 +355,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Check Python, Designer, plugin and bridge installation.",
     )
+    parser.add_argument(
+        "--new-splash",
+        nargs="?",
+        const="splash_screen.ui",
+        metavar="OUTPUT",
+        help="Create a standalone splash form from the bundled template and open it.",
+    )
     parser.add_argument("--designer", help=f"Path to designer executable. Overrides {ENV_DESIGNER_EXE}.")
     parser.add_argument("--debug", action="store_true", help="Enable Qt plugin debug output.")
     parser.add_argument("--print-env", action="store_true", help="Print environment values without launching.")
@@ -375,6 +382,18 @@ def main(argv: list[str] | None = None) -> int:
         from .diagnostics import run_doctor
 
         return run_doctor()
+
+    if args.new_splash is not None:
+        from .splash_template import create_splash_ui
+
+        try:
+            splash_path, created = create_splash_ui(args.new_splash)
+        except (OSError, ValueError) as error:
+            print(f"Could not prepare splash form: {error}", file=sys.stderr)
+            return 2
+        action = "Created" if created else "Opening existing"
+        print(f"{action} standalone splash form: {splash_path}")
+        args.ui_file = str(splash_path)
 
     if args.designer:
         os.environ[ENV_DESIGNER_EXE] = args.designer

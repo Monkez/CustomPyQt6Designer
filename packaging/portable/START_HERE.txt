@@ -6,6 +6,10 @@ MONKEZ DESIGNER - START HERE
 3. Find widgets under "Monkez 01 Controls" through "Monkez 07 Media".
 4. Save your interface as a .ui file.
 
+Create a standalone splash form:
+  Double-click "New Splash Screen.bat".
+  The splash is intentionally not shown in the drag-and-drop widget box.
+
 Open an existing UI:
   Drag the .ui file onto "Open Monkez Designer.bat"
 

@@ -39,13 +39,21 @@ For installation changes, verify:
 1. `python -m custom_pyqt6_designer --doctor` succeeds in `.venv311`.
 2. PowerShell installer/uninstaller scripts parse without syntax errors.
 3. The portable build root contains `START_HERE.txt` and
-   `Open Monkez Designer.bat`.
+   `Open Monkez Designer.bat` plus `New Splash Screen.bat`.
 4. Never test the per-user installer against the developer's real
    `%LOCALAPPDATA%`; use static checks or an explicitly isolated test account.
 
 The portable ZIP is created with `System.IO.Compression.ZipFile`. Keep
 `includeBaseDirectory` disabled so the executable and onboarding files remain
 at the archive root.
+
+PyInstaller writes unpacked builds to `dist/portable/<version>/MonkezDesigner`.
+This versioned location prevents an older running portable Designer from
+locking and breaking a newer release build.
+
+The splash plugin is intentionally hidden from the Widget Box by returning
+empty `domXml()`. Full Designer verification must open the packaged standalone
+splash template so all 25 plugins are both initialized and constructed.
 
 ## Documentation
 

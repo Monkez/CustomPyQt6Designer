@@ -12,6 +12,8 @@
 `START_HERE.txt` trong thư mục portable chứa hướng dẫn ngắn. Không di chuyển
 riêng `MonkezDesigner.exe` ra khỏi thư mục `_internal`.
 
+Double-click `New Splash Screen.bat` để tạo và mở một form splash độc lập.
+
 ### Cách 2 — Cài vào tài khoản Windows
 
 Yêu cầu Python 3.11. Tải source ZIP hoặc clone repository, sau đó double-click:
@@ -26,7 +28,7 @@ Script sẽ tự động:
 2. tạo môi trường cô lập trong `%LOCALAPPDATA%\MonkezDesigner`;
 3. cài package cùng Designer bridge;
 4. chạy kiểm tra môi trường;
-5. tạo shortcut Desktop và Start Menu cho Designer, Docs Lab và Uninstall;
+5. tạo shortcut Desktop và Start Menu cho Designer, New Splash, Docs Lab và Uninstall;
 6. mở Designer.
 
 Không cần quyền Administrator và không làm thay đổi virtual environment của
@@ -52,6 +54,12 @@ py -3.11 -m venv .venv
 ```
 
 Lệnh module hoạt động ngay cả khi thư mục `Scripts` chưa có trong `PATH`.
+
+Tạo form splash độc lập:
+
+```powershell
+python -m custom_pyqt6_designer --new-splash ui/splash_screen.ui
+```
 
 ## Tự kiểm tra cài đặt
 
@@ -87,6 +95,10 @@ cần mang theo Designer.
 
 Property `themeIndex` và menu chuột phải `Monkez Theme` đều hỗ trợ:
 Material, iOS, Fluent, Bootstrap, Minimal và Dark.
+
+Splash screen không nằm trong Widget Box vì đây là cửa sổ độc lập. Hãy dùng
+`New Splash Screen.bat`, shortcut `New Monkez Splash Screen`, hoặc tùy chọn
+`--new-splash` thay vì kéo splash vào một container.
 
 ## Lập trình viên tích hợp runtime
 

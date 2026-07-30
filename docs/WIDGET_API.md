@@ -361,6 +361,10 @@ camera.setMirror(True)
 `MonkezSplashScreen` là container splash nhẹ, hỗ trợ nội dung mặc định được paint
 trực tiếp hoặc child widgets thiết kế bằng Qt Designer.
 
+Đây là widget gốc của một form splash độc lập nên không xuất hiện trong Widget
+Box. Tạo form bằng `new_splash.bat` hoặc tùy chọn `--new-splash`; plugin Designer
+chỉ dùng để mở và chỉnh sửa template đó.
+
 | Property | Mô tả |
 |---|---|
 | `appName`, `appVersion`, `statusText` | Thông tin ứng dụng và trạng thái |

@@ -4,7 +4,7 @@ Updated: 2026-07-30
 
 ## Current version
 
-- Working version: 0.4.2 (installation usability improvements).
+- Working version: 0.4.3 (standalone Designer splash workflow).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -24,16 +24,21 @@ Updated: 2026-07-30
 - No-admin per-user Designer installer with Desktop/Start Menu shortcuts and
   guarded uninstall.
 - Portable release onboarding files at the archive root.
+- Splash Designer plugin hidden from the drag-and-drop Widget Box while
+  remaining available to render standalone splash forms.
+- Packaged splash template with source, portable and installed one-click
+  creation workflows.
 
 ## Latest verification
 
-- 53 automated tests pass on Python 3.11.15.
-- The 0.4.2 wheel and source distribution build successfully and include the
-  module launcher plus diagnostics.
-- The 0.4.2 portable executable passes `--doctor` and its 25-plugin
-  verification.
-- `MonkezDesigner-0.4.2-windows-x64.zip` contains 7,565 entries, includes both
-  portable onboarding files at its root and passes a full CRC integrity check.
+- 58 automated tests pass on Python 3.11.15.
+- The 0.4.3 wheel and source distribution build successfully and contain the
+  standalone splash template.
+- The 0.4.3 portable executable passes `--doctor`, creates a new splash form
+  through `--new-splash`, and opens it during the 25-plugin verification.
+- `MonkezDesigner-0.4.3-windows-x64.zip` contains 7,569 entries, includes all
+  three portable launcher/onboarding files at its root and passes a full CRC
+  integrity check.
 - Splash startup benchmark on the release workstation: import median 97.3 ms
   and first-paint median 133.8 ms.
 - A standalone `SplashHeavyDemo.exe` exercises 48 MB of asset processing and a
@@ -50,7 +55,9 @@ Updated: 2026-07-30
   embedded Python archive before compression.
 - The portable archive is created with the .NET ZIP API to avoid the slow,
   noisy `Compress-Archive` progress loop.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.2
+- Unpacked portable builds use versioned output directories so an older
+  running Designer does not block a new release build.
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.3
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt

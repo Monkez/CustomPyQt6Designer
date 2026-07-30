@@ -37,7 +37,11 @@ class PluginTests(unittest.TestCase):
             widget = plugin.createWidget(None)
             self.assertEqual(plugin.name(), type(widget).__name__)
             self.assertFalse(plugin.icon().isNull(), plugin.name())
-            self.assertIn(plugin.name(), plugin.domXml())
+            if plugin.name() == "MonkezSplashScreen":
+                self.assertEqual(plugin.domXml(), "")
+                self.assertTrue(plugin.isContainer())
+            else:
+                self.assertIn(plugin.name(), plugin.domXml())
             names.append(plugin.name())
             widget.deleteLater()
 

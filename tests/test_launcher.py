@@ -36,6 +36,24 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result, 0)
         doctor.assert_called_once_with()
 
+    def test_new_splash_creates_standalone_form_and_opens_designer(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "startup.ui"
+            designer = Path(temp_dir) / "designer.exe"
+            with (
+                patch.object(launcher, "find_designer", return_value=designer),
+                patch.object(launcher, "build_env", return_value={"TEST": "1"}),
+                patch.object(launcher.subprocess, "call", return_value=0) as call,
+            ):
+                result = launcher.main(["--new-splash", str(target)])
+
+            self.assertEqual(result, 0)
+            self.assertTrue(target.is_file())
+            call.assert_called_once_with(
+                [str(designer), str(target.resolve())],
+                env={"TEST": "1"},
+            )
+
     def test_source_logo_is_exposed_to_designer_process(self) -> None:
         icon_path = app_icon_path()
 

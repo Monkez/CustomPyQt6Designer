@@ -32,6 +32,7 @@ class PackagingTests(unittest.TestCase):
             "build_splash_demo.bat",
             "run_splash_exe_demo.bat",
             "install_designer.bat",
+            "new_splash.bat",
             "uninstall_designer.bat",
         }
         self.assertEqual(
@@ -43,6 +44,18 @@ class PackagingTests(unittest.TestCase):
         portable_files = ROOT / "packaging" / "portable"
         self.assertTrue((portable_files / "START_HERE.txt").is_file())
         self.assertTrue((portable_files / "Open Monkez Designer.bat").is_file())
+        self.assertTrue((portable_files / "New Splash Screen.bat").is_file())
+
+    def test_standalone_splash_template_is_packaged(self) -> None:
+        self.assertTrue(
+            (
+                ROOT
+                / "src"
+                / "custom_pyqt6_designer"
+                / "templates"
+                / "monkez_splash_screen.ui"
+            ).is_file()
+        )
 
     def test_module_launcher_is_packaged(self) -> None:
         self.assertTrue(

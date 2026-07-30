@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QProgressBar
 
 from custom_pyqt6_designer.monkez_widgets import MonkezSplashScreen
 from custom_pyqt6_designer.splash import SplashConfig, SplashController
+from custom_pyqt6_designer.splash_template import bundled_splash_template
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,7 +106,7 @@ class SplashTests(unittest.TestCase):
 
     def test_designer_ui_template_loads_and_receives_progress(self) -> None:
         controller = SplashController.from_ui(
-            ROOT / "examples" / "splash_screen.ui",
+            bundled_splash_template(),
             SplashConfig(
                 app_name="UI Template",
                 app_version="Version 9",

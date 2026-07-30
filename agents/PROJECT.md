@@ -17,6 +17,8 @@ Do not make the runtime application depend on the portable Designer.
 - `src/custom_pyqt6_designer/launcher.py`: Designer discovery and environment setup.
 - `src/custom_pyqt6_designer/gallery_app.py`: interactive widget documentation.
 - `src/custom_pyqt6_designer/splash.py`: startup-optimized splash controller.
+- `src/custom_pyqt6_designer/splash_template.py` and `templates/`: standalone
+  splash form creation and the packaged Designer template.
 - `src/custom_pyqt6_designer/startup_guard.py`: startup-only cross-process lock.
 - `src/custom_pyqt6_designer/diagnostics.py`: actionable installation checks.
 - `demo_project`: end-to-end runtime example.

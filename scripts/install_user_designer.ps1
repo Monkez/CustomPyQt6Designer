@@ -34,12 +34,19 @@ function New-MonkezShortcut {
         [string]$Path,
         [Parameter(Mandatory = $true)]
         [string]$Target,
-        [string]$Description = ""
+        [string]$Description = "",
+        [string]$Arguments = "",
+        [string]$WorkingDirectory = ""
     )
 
     $Shortcut = $Shell.CreateShortcut($Path)
     $Shortcut.TargetPath = $Target
-    $Shortcut.WorkingDirectory = $InstallRoot
+    $Shortcut.Arguments = $Arguments
+    $Shortcut.WorkingDirectory = if ($WorkingDirectory) {
+        $WorkingDirectory
+    } else {
+        $InstallRoot
+    }
     $Shortcut.IconLocation = Join-Path $InstallRoot "MonkezDesigner.ico"
     $Shortcut.Description = $Description
     $Shortcut.Save()
@@ -53,6 +60,14 @@ New-MonkezShortcut `
     -Path (Join-Path $DesktopDirectory "Monkez Designer.lnk") `
     -Target $DesignerExecutable `
     -Description "Open Qt Designer with Monkez custom widgets"
+
+$DocumentsDirectory = [Environment]::GetFolderPath("MyDocuments")
+New-MonkezShortcut `
+    -Path (Join-Path $StartMenuDirectory "New Monkez Splash Screen.lnk") `
+    -Target $DesignerExecutable `
+    -Arguments "--new-splash" `
+    -WorkingDirectory $DocumentsDirectory `
+    -Description "Create and edit a standalone Monkez splash form"
 
 if (Test-Path -LiteralPath $GalleryExecutable) {
     New-MonkezShortcut `

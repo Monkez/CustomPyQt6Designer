@@ -26,8 +26,9 @@ MonkezSplashScreenPlugin = create_plugin(
   <property name="progress"><number>25</number></property>
   <property name="showProgress"><bool>true</bool></property>
   <property name="showSpinner"><bool>true</bool></property>
-""",
+        """,
         group=GROUP_CONTAINERS,
+        palette_visible=False,
     ),
     __name__,
 )
