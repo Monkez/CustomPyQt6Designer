@@ -172,6 +172,10 @@ search.trailingIconClicked.connect(search.clear)
 | `textColor` | `QColor` | Text color. |
 | `hoverTextColor` | `QColor` | Hover/selected text color. |
 | `borderRadius` | `int` | Control and popup radius. |
+| `font` | `QFont` | Font family, point size, weight and style for both the control and popup items. |
+
+Trong Designer, mở property `font` rồi chỉnh `Point Size`; preview của control
+và danh sách popup sẽ cùng dùng giá trị này.
 
 | Method | Description |
 |---|---|
@@ -185,6 +189,9 @@ search.trailingIconClicked.connect(search.clear)
 combo = MonkezComboBox()
 combo.clear()
 combo.addItems(["Auto", "Manual", "Disabled"])
+font = combo.font()
+font.setPointSize(14)
+combo.setFont(font)
 combo.setColors(background="#f8fafc", text="#111827", border="#94a3b8")
 ```
 

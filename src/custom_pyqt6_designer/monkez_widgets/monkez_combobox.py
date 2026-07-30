@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import IntEnum
 
 from PyQt6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QColor, QFontMetrics, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication, QComboBox, QFrame, QListView, QStyle, QStyledItemDelegate, QVBoxLayout
 
 from .themes import (
@@ -69,12 +69,13 @@ class MonkezComboItemDelegate(QStyledItemDelegate):
 
         text_rect = QRect(text_x, option.rect.y(), option.rect.right() - text_x - 10, option.rect.height())
         painter.setPen(resolved_text_color)
-        painter.setFont(QFont("Segoe UI", 10))
+        painter.setFont(combo.font())
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, str(text))
 
     def sizeHint(self, option, index) -> QSize:
         hint = super().sizeHint(option, index)
-        return QSize(hint.width(), max(30, hint.height()))
+        font_height = QFontMetrics(self._combo.font()).height()
+        return QSize(hint.width(), max(30, hint.height(), font_height + 12))
 
 
 class MonkezComboListView(QListView):
@@ -253,6 +254,7 @@ class MonkezComboBox(QComboBox):
         self._border_radius = 8
 
         self._popup = MonkezComboPopup(self)
+        self._sync_popup_font()
         self.destroyed.connect(self._popup.deleteLater)
         self.addItems(["Option 1", "Option 2", "Option 3"])
         self.setMinimumSize(0, 0)
@@ -274,6 +276,17 @@ class MonkezComboBox(QComboBox):
         self.is_opened = False
         self._update_style()
 
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange and hasattr(self, "_popup"):
+            self._sync_popup_font()
+
+    def _sync_popup_font(self) -> None:
+        self._popup.view.setFont(self.font())
+        self._popup.view.doItemsLayout()
+        self._popup.view.updateGeometry()
+        self._popup.view.viewport().update()
+
     def _update_style(self) -> None:
         self.setStyleSheet(
             "QComboBox {"
@@ -283,7 +296,6 @@ class MonkezComboBox(QComboBox):
             "padding-right: 32px;"
             f"background-color: {self._background_color.name()};"
             f"color: {self._text_color.name()};"
-            f"font-size: {theme_int(self._theme, 'font_size')}px;"
             "}"
             "QComboBox:hover {"
             f"background-color: {self._hover_background_color.name()};"

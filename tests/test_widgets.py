@@ -415,6 +415,24 @@ class WidgetTests(unittest.TestCase):
         combo.close()
         combo.deleteLater()
 
+    def test_combo_designer_font_applies_to_control_and_popup(self) -> None:
+        combo = MonkezComboBox()
+        font = combo.font()
+        font.setFamily("Arial")
+        font.setPointSize(18)
+        font.setBold(True)
+
+        combo.setFont(font)
+        self.app.processEvents()
+
+        self.assertEqual(combo.font().pointSize(), 18)
+        self.assertEqual(combo.font().family(), "Arial")
+        self.assertTrue(combo.font().bold())
+        self.assertEqual(combo._popup.view.font(), combo.font())
+        self.assertNotIn("font-size", combo.styleSheet())
+        self.assertGreater(combo._popup.view.sizeHintForRow(0), 30)
+        combo.deleteLater()
+
     def test_stepper_and_date_button_hover_regions_do_not_cover_outer_border(self) -> None:
         for widget_cls in (
             monkez_widgets.MonkezDateEdit,
