@@ -1,10 +1,10 @@
 # Current engineering status
 
-Updated: 2026-07-30
+Updated: 2026-07-31
 
 ## Current version
 
-- Working version: 0.4.5 (empty-by-default Designer ComboBox).
+- Working version: 0.4.6 (Designer Image scale modes).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -35,17 +35,26 @@ Updated: 2026-07-30
 - `MonkezImage` renders directly in its outer widget without a fixed-style
   child frame, so Designer stylesheets can control its visible background,
   border and radius.
+- `MonkezImage.scaleModeIndex` is a stable Designer property with task-menu
+  choices for Fit, Fill, Stretch and Original; every mode recalculates against
+  the outer container size.
+- `MonkezScrollArea` registers a fixed-page Designer container extension so
+  widgets can be dropped onto and saved inside `scrollAreaWidgetContents`.
 
 ## Latest verification
 
-- 62 automated tests pass on Python 3.11.15, including rendered-pixel checks
-  that Designer styles reach the visible `MonkezImage` container.
-- The 0.4.5 wheel and source distribution build successfully and contain the
-  empty-by-default ComboBox behavior, font fix and outer-container Image
-  stylesheet fix.
-- The 0.4.5 portable executable passes `--doctor`, creates a new splash form
+- 68 automated tests pass on Python 3.11.15, including all Image scale modes,
+  Designer property UI loading, ScrollArea container-extension routing, ScrollArea
+  child UI loading and rendered-pixel stylesheet checks.
+- The 0.4.6 wheel and source distribution include the Image scale-mode and
+  ScrollArea Designer-container fixes.
+- The 0.4.6 portable executable passes `--doctor`, creates a new splash form
   through `--new-splash`, and opens it during the 25-plugin verification.
-- `MonkezDesigner-0.4.5-windows-x64.zip` contains 7,569 entries, includes all
+- A real portable Designer session accepts a `QLabel` dropped into
+  `MonkezScrollArea.scrollAreaWidgetContents`.
+- A real portable Designer session exposes all four Image scale actions from
+  the `MonkezImage` context menu.
+- `MonkezDesigner-0.4.6-windows-x64.zip` contains 7,571 entries, includes all
   three portable launcher/onboarding files at its root and passes a full CRC
   integrity check.
 - Splash startup benchmark on the release workstation: import median 97.3 ms
@@ -66,7 +75,7 @@ Updated: 2026-07-30
   noisy `Compress-Archive` progress loop.
 - Unpacked portable builds use versioned output directories so an older
   running Designer does not block a new release build.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.5
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.6
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt

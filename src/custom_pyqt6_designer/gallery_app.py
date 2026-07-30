@@ -265,8 +265,8 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         "MonkezImage",
         "Media",
         "Image viewer auto-scale, cache pixmap va high-DPI aware.",
-        ("imageFile", "backgroundColor", "smoothScaling"),
-        ("setImageFile(path)", "set_image(QPixmap | QImage | str)"),
+        ("imageFile", "backgroundColor", "scaleModeIndex, smoothScaling"),
+        ("setImageFile(path)", "setScaleMode(mode)", "set_image(QPixmap | QImage | str)"),
         "image = MonkezImage(); image.setImageFile('assets/photo.png')",
     ),
     WidgetDoc(
@@ -440,6 +440,7 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("setDigitCount(count)", "Set digit count.", "setDigitCount(4)", lambda widget: widget.setDigitCount(4)),
     ),
     "MonkezImage": (
+        ("setScaleMode(mode)", "Set Fit, Fill, Stretch or Original scaling.", "setScaleMode(MonkezImage.ScaleMode.Fill)", lambda widget: widget.setScaleMode(MonkezImage.ScaleMode.Fill)),
         ("setSmoothScaling(value)", "Enable or disable smooth scaling.", "setSmoothScaling(True)", lambda widget: widget.setSmoothScaling(True)),
         ("set_image(QPixmap)", "Set image from a pixmap.", "set_image(_demo_pixmap())", lambda widget: widget.set_image(_demo_pixmap())),
     ),

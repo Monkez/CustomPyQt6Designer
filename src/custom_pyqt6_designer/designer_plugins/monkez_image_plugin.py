@@ -16,6 +16,11 @@ try:
 except ModuleNotFoundError:
     from ._probe import write_probe
 
+try:
+    from theme_task_menu import register_theme_task_menu
+except ModuleNotFoundError:
+    from .theme_task_menu import register_theme_task_menu
+
 
 class MonkezImagePlugin(QPyDesignerCustomWidgetPlugin):
     def __init__(self, parent=None) -> None:
@@ -24,6 +29,9 @@ class MonkezImagePlugin(QPyDesignerCustomWidgetPlugin):
         write_probe("MonkezImagePlugin.__init__")
 
     def initialize(self, core) -> None:
+        if self.initialized:
+            return
+        register_theme_task_menu(core, self)
         self.initialized = True
 
     def isInitialized(self) -> bool:
@@ -46,7 +54,10 @@ class MonkezImagePlugin(QPyDesignerCustomWidgetPlugin):
         return "Monkez image"
 
     def whatsThis(self) -> str:
-        return "Image display widget with configurable background color and image file."
+        return (
+            "Image display widget with configurable background, image file, "
+            "and Fit, Fill, Stretch or Original scale modes."
+        )
 
     def isContainer(self) -> bool:
         return False

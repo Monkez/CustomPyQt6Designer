@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from PyQt6.QtDesigner import QPyDesignerCustomWidgetPlugin
 
@@ -37,6 +38,7 @@ class PluginSpec:
     properties_xml: str = ""
     group: str = GROUP_CONTROLS
     palette_visible: bool = True
+    extra_initializer: Callable[[object, object], None] | None = None
 
 
 def create_plugin(spec: PluginSpec, module_name: str):
@@ -50,6 +52,8 @@ def create_plugin(spec: PluginSpec, module_name: str):
             return
         if spec.themed:
             register_theme_task_menu(core, self)
+        if spec.extra_initializer is not None:
+            spec.extra_initializer(core, self)
         self._initialized = True
 
     def is_initialized(self) -> bool:

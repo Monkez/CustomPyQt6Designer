@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import unittest
 
@@ -8,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout, QWidget
+from PyQt6 import uic
 
 from custom_pyqt6_designer import monkez_widgets
 from custom_pyqt6_designer.monkez_widgets import (
@@ -288,6 +290,119 @@ class WidgetTests(unittest.TestCase):
         self.assertLessEqual(rendered.deviceIndependentSize().height(), 200)
         widget.close()
         widget.deleteLater()
+
+    def test_image_scale_modes_follow_the_outer_container(self) -> None:
+        widget = MonkezImage()
+        widget._device_pixel_ratio = lambda: 1.0
+        pixmap = QPixmap(400, 200)
+        pixmap.fill(QColor("#1976d2"))
+        widget.set_image(pixmap)
+        widget.resize(100, 100)
+        widget.show()
+        self.app.processEvents()
+
+        expected_sizes = {
+            MonkezImage.ScaleMode.Fit: (100, 50),
+            MonkezImage.ScaleMode.Fill: (200, 100),
+            MonkezImage.ScaleMode.Stretch: (100, 100),
+            MonkezImage.ScaleMode.Original: (400, 200),
+        }
+        for mode, expected in expected_sizes.items():
+            widget.setScaleMode(mode)
+            widget._update_pixmap()
+            rendered_size = widget.image_label.pixmap().deviceIndependentSize()
+            self.assertEqual(
+                (round(rendered_size.width()), round(rendered_size.height())),
+                expected,
+                mode.name,
+            )
+
+        widget.setScaleMode(MonkezImage.ScaleMode.Fit)
+        widget.resize(160, 90)
+        self.app.processEvents()
+        widget._update_pixmap()
+        resized = widget.image_label.pixmap().deviceIndependentSize()
+        self.assertEqual((round(resized.width()), round(resized.height())), (160, 80))
+        widget.close()
+
+    def test_image_scale_mode_is_a_designer_integer_property(self) -> None:
+        property_index = MonkezImage.staticMetaObject.indexOfProperty("scaleModeIndex")
+        scale_property = MonkezImage.staticMetaObject.property(property_index)
+
+        self.assertGreaterEqual(property_index, 0)
+        self.assertFalse(scale_property.isEnumType())
+        self.assertEqual(scale_property.typeName(), "int")
+        widget = MonkezImage()
+        self.assertTrue(scale_property.write(widget, 1))
+        self.assertEqual(widget.getScaleMode(), MonkezImage.ScaleMode.Fill)
+        widget.deleteLater()
+
+    def test_image_scale_mode_loads_from_designer_ui(self) -> None:
+        ui_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="MonkezImage" name="image">
+   <property name="scaleModeIndex">
+    <number>1</number>
+   </property>
+  </widget>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MonkezImage</class>
+   <extends>QWidget</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+        form = uic.loadUi(io.StringIO(ui_xml))
+
+        self.assertEqual(form.image.getScaleMode(), MonkezImage.ScaleMode.Fill)
+        form.deleteLater()
+
+    def test_scroll_area_loads_designer_children_into_its_content_page(self) -> None:
+        ui_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="MonkezScrollArea" name="scroll">
+   <widget class="QWidget" name="scrollAreaWidgetContents">
+    <layout class="QVBoxLayout" name="contentLayout">
+     <item>
+      <widget class="QLabel" name="inside">
+       <property name="text">
+        <string>Inside scroll area</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MonkezScrollArea</class>
+   <extends>QScrollArea</extends>
+   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+        form = uic.loadUi(io.StringIO(ui_xml))
+
+        self.assertIs(form.scroll.widget(), form.scrollAreaWidgetContents)
+        self.assertIs(form.inside.parentWidget(), form.scrollAreaWidgetContents)
+        self.assertEqual(form.inside.text(), "Inside scroll area")
+        form.deleteLater()
 
     def test_image_does_not_lock_parent_window_after_growing(self) -> None:
         window = QWidget()

@@ -8,7 +8,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtDesigner import QPyDesignerCustomWidgetPlugin
+from PyQt6.QtDesigner import QExtensionManager, QPyDesignerCustomWidgetPlugin
 from PyQt6.QtWidgets import QApplication
 
 
@@ -59,6 +59,46 @@ class PluginTests(unittest.TestCase):
             [entry[3] for entry in theme_task_menu.THEME_LABELS],
             list(range(6)),
         )
+        image = importlib.import_module(
+            "custom_pyqt6_designer.monkez_widgets"
+        ).MonkezImage()
+        menu = theme_task_menu.MonkezThemeTaskMenu(image)
+        self.assertEqual(
+            [action.text() for action in menu.taskActions() if action.text().startswith("Image Scale:")],
+            [
+                "Image Scale: Fit",
+                "Image Scale: Fill",
+                "Image Scale: Stretch",
+                "Image Scale: Original",
+            ],
+        )
+        image.deleteLater()
+
+    def test_image_plugin_registers_its_designer_task_menu(self) -> None:
+        image_plugin = importlib.import_module("monkez_image_plugin")
+        theme_task_menu = importlib.import_module("theme_task_menu")
+        manager = QExtensionManager()
+
+        class DesignerCore:
+            def extensionManager(self):
+                return manager
+
+        plugin = image_plugin.MonkezImagePlugin()
+        plugin.initialize(DesignerCore())
+        image = plugin.createWidget(None)
+        menu = manager.extension(image, theme_task_menu.TASK_MENU_IID)
+
+        self.assertIsNotNone(menu)
+        self.assertEqual(
+            [action.text() for action in menu.taskActions() if action.text().startswith("Image Scale:")],
+            [
+                "Image Scale: Fit",
+                "Image Scale: Fill",
+                "Image Scale: Stretch",
+                "Image Scale: Original",
+            ],
+        )
+        image.deleteLater()
 
     def test_plugins_are_arranged_in_logical_palette_groups(self) -> None:
         expected_groups = {
@@ -83,6 +123,28 @@ class PluginTests(unittest.TestCase):
             groups.add(plugin_class().group())
 
         self.assertEqual(groups, expected_groups)
+
+    def test_scroll_area_exposes_its_content_page_to_designer(self) -> None:
+        scroll_plugin = importlib.import_module("monkez_scroll_area_plugin")
+        container_support = importlib.import_module("scroll_area_container")
+        manager = QExtensionManager()
+
+        class DesignerCore:
+            def extensionManager(self):
+                return manager
+
+        plugin = scroll_plugin.MonkezScrollAreaPlugin()
+        plugin.initialize(DesignerCore())
+        widget = plugin.createWidget(None)
+        extension = manager.extension(widget, container_support.CONTAINER_IID)
+
+        self.assertIsNotNone(extension)
+        self.assertEqual(extension.count(), 1)
+        self.assertEqual(extension.currentIndex(), 0)
+        self.assertIs(extension.widget(0), widget.widget())
+        self.assertFalse(extension.canAddWidget())
+        self.assertFalse(extension.canRemove(0))
+        widget.deleteLater()
 
 
 if __name__ == "__main__":

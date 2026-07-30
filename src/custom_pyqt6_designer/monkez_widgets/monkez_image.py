@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import Enum
+
 from PyQt6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, pyqtProperty
 from PyQt6.QtGui import QColor, QImage, QPainter, QPalette, QPixmap
 from PyQt6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
@@ -61,14 +63,26 @@ class _ScalableImageLabel(QLabel):
 
 
 class MonkezImage(QWidget):
+    class ScaleMode(Enum):
+        Fit = 0
+        Fill = 1
+        Stretch = 2
+        Original = 3
+
+    Fit = ScaleMode.Fit
+    Fill = ScaleMode.Fill
+    Stretch = ScaleMode.Stretch
+    Original = ScaleMode.Original
+
     def __init__(self, parent=None, background_color=(255, 255, 255), image_file: str = "") -> None:
         super().__init__(parent)
         self._background_color = QColor(*background_color)
         self._image_file = image_file or image_path("MonkezPlaceHolderImage.jpg")
         self._pixmap = QPixmap()
         self._pixmap_update_pending = False
-        self._scaled_cache_key: tuple[int, int, int, int, int, bool] | None = None
+        self._scaled_cache_key: tuple[int, int, int, int, int, bool, int] | None = None
         self._scaled_pixmap = QPixmap()
+        self._scale_mode = self.ScaleMode.Fit
         self._smooth_scaling = True
         self._resize_update_delay_ms = 16
 
@@ -175,19 +189,28 @@ class MonkezImage(QWidget):
             physical_size.width(),
             physical_size.height(),
             self._smooth_scaling,
+            self._scale_mode.value,
         )
         if self._scaled_cache_key != cache_key:
-            transform = (
-                Qt.TransformationMode.SmoothTransformation
-                if self._smooth_scaling
-                else Qt.TransformationMode.FastTransformation
-            )
-            self._scaled_pixmap = self._pixmap.scaled(
-                physical_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                transform,
-            )
-            self._scaled_pixmap.setDevicePixelRatio(device_pixel_ratio)
+            if self._scale_mode is self.ScaleMode.Original:
+                self._scaled_pixmap = QPixmap(self._pixmap)
+            else:
+                transform = (
+                    Qt.TransformationMode.SmoothTransformation
+                    if self._smooth_scaling
+                    else Qt.TransformationMode.FastTransformation
+                )
+                aspect_mode = {
+                    self.ScaleMode.Fit: Qt.AspectRatioMode.KeepAspectRatio,
+                    self.ScaleMode.Fill: Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    self.ScaleMode.Stretch: Qt.AspectRatioMode.IgnoreAspectRatio,
+                }[self._scale_mode]
+                self._scaled_pixmap = self._pixmap.scaled(
+                    physical_size,
+                    aspect_mode,
+                    transform,
+                )
+                self._scaled_pixmap.setDevicePixelRatio(device_pixel_ratio)
             self._scaled_cache_key = cache_key
 
         self.image_label.setText("")
@@ -234,6 +257,46 @@ class MonkezImage(QWidget):
         self._invalidate_scaled_cache()
         self._schedule_pixmap_update()
 
+    def getScaleMode(self) -> ScaleMode:
+        return self._scale_mode
+
+    def setScaleMode(self, value: ScaleMode | int | str) -> None:
+        if isinstance(value, self.ScaleMode):
+            mode = value
+        elif isinstance(value, str):
+            normalized = value.strip().lower()
+            mode = {
+                "fit": self.ScaleMode.Fit,
+                "contain": self.ScaleMode.Fit,
+                "fill": self.ScaleMode.Fill,
+                "cover": self.ScaleMode.Fill,
+                "stretch": self.ScaleMode.Stretch,
+                "original": self.ScaleMode.Original,
+                "center": self.ScaleMode.Original,
+            }.get(normalized, self.ScaleMode.Fit)
+        else:
+            try:
+                mode = self.ScaleMode(int(value))
+            except (TypeError, ValueError):
+                mode = self.ScaleMode.Fit
+        if self._scale_mode is mode:
+            return
+        self._scale_mode = mode
+        self._invalidate_scaled_cache()
+        self._schedule_pixmap_update()
+
+    def getScaleModeIndex(self) -> int:
+        return self._scale_mode.value
+
+    def setScaleModeIndex(self, value: int) -> None:
+        self.setScaleMode(value)
+
+    def getScaleModeHint(self) -> str:
+        return "0 Fit | 1 Fill | 2 Stretch | 3 Original"
+
+    def setScaleModeHint(self, value: str) -> None:
+        return None
+
     def getSmoothScaling(self) -> bool:
         return self._smooth_scaling
 
@@ -247,4 +310,6 @@ class MonkezImage(QWidget):
 
     backgroundColor = pyqtProperty(QColor, getBackgroundColor, setBackgroundColor)
     imageFile = pyqtProperty(str, getImageFile, setImageFile)
+    scaleModeIndex = pyqtProperty(int, getScaleModeIndex, setScaleModeIndex)
+    scaleModeHint = pyqtProperty(str, getScaleModeHint, setScaleModeHint, stored=False)
     smoothScaling = pyqtProperty(bool, getSmoothScaling, setSmoothScaling)

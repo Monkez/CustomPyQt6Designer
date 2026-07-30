@@ -193,7 +193,10 @@ Các widget giao diện hỗ trợ:
 
 ## Ghi chú runtime
 
-`MonkezImage` cache pixmap đã scale theo kích thước widget và device pixel ratio để hiển thị tốt trên màn hình high DPI.
+`MonkezImage` cache pixmap theo kích thước widget và device pixel ratio để hiển
+thị tốt trên màn hình high DPI. Menu chuột phải của widget trong Designer có
+bốn lựa chọn scale `Fit`, `Fill`, `Stretch` và `Original`; lựa chọn được lưu
+bằng property `scaleModeIndex`.
 
 `MonkezUSBCamera` import OpenCV theo nhu cầu, hỗ trợ backend, camera index/source/name, resolution, capture FPS, display FPS, FourCC, buffer size, mirror, reconnect, auto start và preview trong Designer khi bật `previewAutoStart`.
 

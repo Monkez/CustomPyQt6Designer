@@ -337,11 +337,16 @@ box.setContentPadding(14)
 box.setSubtitleVisible(False)
 ```
 
+`MonkezScrollArea` là container một trang trong Designer. Kéo widget vào vùng
+`scrollAreaWidgetContents`, sau đó áp dụng layout cho vùng nội dung này. Designer
+sẽ lưu các widget con bên trong `MonkezScrollArea` và runtime vẫn truy cập bằng
+`scroll.widget()`.
+
 ### Media
 
 | Widget | Important Properties |
 |---|---|
-| `MonkezImage` | `imageFile`, `backgroundColor`, `smoothScaling` |
+| `MonkezImage` | `imageFile`, `backgroundColor`, `scaleModeIndex`, `smoothScaling` |
 | `MonkezUSBCamera` | `backend`, `cameraIndex`, `cameraSource`, `cameraName`, `resolutionWidth`, `resolutionHeight`, `fps`, `displayFps`, `fourcc`, `bufferSize`, `mirror`, `autoStart`, `previewAutoStart`, `reconnect`, `stopOnHide` |
 
 | Method | Description |
@@ -349,7 +354,19 @@ box.setSubtitleVisible(False)
 | `setBackground(color)` | Sets image/camera frame background. |
 | `setImageFile(path)` | Loads an image file. |
 | `set_image(QPixmap | QImage | str)` | Loads image data directly. |
+| `setScaleMode(mode)` | Sets `Fit`, `Fill`, `Stretch` or `Original` scaling. |
 | `startCamera()` / `stopCamera()` / `restartCamera()` | Camera lifecycle. |
+
+Trong Designer, nhấp chuột phải vào `MonkezImage` và chọn `Image Scale: Fit`,
+`Fill`, `Stretch` hoặc `Original`. Property `scaleModeIndex` lưu lựa chọn trong
+file `.ui` theo bảng sau:
+
+| Mode | Behavior |
+|---|---|
+| `Fit` | Giữ đúng tỉ lệ, thu/phóng để thấy toàn bộ ảnh trong container. |
+| `Fill` | Giữ đúng tỉ lệ, phủ kín container và cắt phần ảnh dư. |
+| `Stretch` | Kéo ảnh phủ kín container, có thể thay đổi tỉ lệ. |
+| `Original` | Giữ kích thước gốc và căn giữa, phần dư bị cắt. |
 
 `styleSheet` của `MonkezImage` được áp dụng trực tiếp lên vùng hiển thị ngoài
 cùng, không còn một `QFrame` con có style cố định che lên. Trong Designer có
@@ -367,6 +384,7 @@ MonkezImage {
 ```python
 image = MonkezImage()
 image.setBackground("#020617")
+image.setScaleMode(MonkezImage.ScaleMode.Fit)
 image.setSmoothScaling(True)
 image.setImageFile("assets/splash.png")
 

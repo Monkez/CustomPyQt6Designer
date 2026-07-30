@@ -30,6 +30,7 @@ THEMED_CLASS_NAMES = {
     "MonkezDoubleSpinBox",
     "MonkezFrame",
     "MonkezGroupBox",
+    "MonkezImage",
     "MonkezLCDNumber",
     "MonkezLinearGauge",
     "MonkezProgressBar",
@@ -60,6 +61,24 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
             )
             self._actions.append(action)
 
+        if type(widget).__name__ == "MonkezImage":
+            separator = QAction(self)
+            separator.setSeparator(True)
+            self._actions.append(separator)
+            for label, index in (
+                ("Fit", 0),
+                ("Fill", 1),
+                ("Stretch", 2),
+                ("Original", 3),
+            ):
+                action = QAction(f"Image Scale: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, value=index, name=label: self._apply_image_scale(
+                        value, name
+                    )
+                )
+                self._actions.append(action)
+
     def preferredEditAction(self):
         return self._actions[0] if self._actions else None
 
@@ -83,6 +102,19 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
         cursor = form.cursor()
         if cursor is not None:
             cursor.setWidgetProperty(self._widget, "themeIndex", theme_index)
+        form.setDirty(True)
+
+    def _apply_image_scale(self, index: int, name: str) -> None:
+        write_probe(f"MonkezImage.taskMenuScale={index}/{name}")
+        self._widget.setScaleModeIndex(index)
+
+        form = QDesignerFormWindowInterface.findFormWindow(self._widget)
+        if form is None:
+            return
+
+        cursor = form.cursor()
+        if cursor is not None:
+            cursor.setWidgetProperty(self._widget, "scaleModeIndex", index)
         form.setDirty(True)
 
 
