@@ -3,11 +3,9 @@ from custom_pyqt6_designer.monkez_widgets import MonkezScrollArea
 try:
     from plugin_factory import PluginSpec, create_plugin
     from plugin_groups import GROUP_CONTAINERS
-    from scroll_area_container import register_scroll_area_container
 except ModuleNotFoundError:
     from .plugin_factory import PluginSpec, create_plugin
     from .plugin_groups import GROUP_CONTAINERS
-    from .scroll_area_container import register_scroll_area_container
 
 
 MonkezScrollAreaPlugin = create_plugin(
@@ -22,7 +20,18 @@ MonkezScrollAreaPlugin = create_plugin(
         180,
         container=True,
         group=GROUP_CONTAINERS,
-        extra_initializer=register_scroll_area_container,
+        properties_xml="""
+  <property name="widgetResizable"><bool>true</bool></property>
+""",
+        children_xml="""
+  <widget class="QWidget" name="scrollAreaWidgetContents">
+   <property name="geometry">
+    <rect>
+     <x>0</x><y>0</y><width>258</width><height>178</height>
+    </rect>
+   </property>
+  </widget>
+""",
     ),
     __name__,
 )

@@ -499,22 +499,7 @@ class MonkezScrollArea(QScrollArea, ThemeSupportMixin):
         self._scrollbar_track_color = QColor()
         self._radius = 8
         self._scrollbar_width = 10
-        self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget(self)
-        content.setObjectName("scrollAreaWidgetContents")
-        content.setMinimumSize(0, 0)
-        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setWidget(content)
-        self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setViewportMargins(1, 1, 1, 1)
         self.setTheme("material")
-
-    def sizeHint(self) -> QSize:
-        return QSize(180, 120)
-
-    def minimumSizeHint(self) -> QSize:
-        return QSize(48, 36)
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface")
@@ -534,7 +519,7 @@ class MonkezScrollArea(QScrollArea, ThemeSupportMixin):
             f"border-radius: {self._radius}px;"
             "}"
             "MonkezScrollArea > QWidget > QWidget {"
-            "background-color: transparent;"
+            f"background-color: {self._background_color.name()};"
             "}"
             f"QScrollBar:vertical {{ background: {self._scrollbar_track_color.name()}; width: {width}px; margin: 0; }}"
             f"QScrollBar::handle:vertical {{ background: {self._scrollbar_color.name()}; min-height: 24px; border-radius: {handle_radius}px; }}"

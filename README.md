@@ -198,6 +198,11 @@ thị tốt trên màn hình high DPI. Menu chuột phải của widget trong De
 bốn lựa chọn scale `Fit`, `Fill`, `Stretch` và `Original`; lựa chọn được lưu
 bằng property `scaleModeIndex`.
 
+`MonkezScrollArea` dùng nguyên cơ chế container của `QScrollArea`, chỉ bổ sung
+theme và các property màu, border, radius, scrollbar. Trong Designer, kéo widget
+con vào `scrollAreaWidgetContents` như Scroll Area mặc định. Khi tạo bằng Python,
+hãy dùng `setWidget()` và `setWidgetResizable()` theo API chuẩn của Qt.
+
 `MonkezUSBCamera` import OpenCV theo nhu cầu, hỗ trợ backend, camera index/source/name, resolution, capture FPS, display FPS, FourCC, buffer size, mirror, reconnect, auto start và preview trong Designer khi bật `previewAutoStart`.
 
 ## Phát triển

@@ -337,10 +337,16 @@ box.setContentPadding(14)
 box.setSubtitleVisible(False)
 ```
 
-`MonkezScrollArea` là container một trang trong Designer. Kéo widget vào vùng
-`scrollAreaWidgetContents`, sau đó áp dụng layout cho vùng nội dung này. Designer
-sẽ lưu các widget con bên trong `MonkezScrollArea` và runtime vẫn truy cập bằng
-`scroll.widget()`.
+`MonkezScrollArea` giữ nguyên cơ chế của `QScrollArea`; thư viện chỉ bổ sung theme
+và các property giao diện trong bảng trên. Khi tạo trực tiếp bằng Python, widget
+khởi đầu chưa có trang nội dung và giữ mặc định `widgetResizable` của Qt. Hãy tạo
+`QWidget`, gọi `scroll.setWidget(content)` và bật `setWidgetResizable(True)` khi
+ứng dụng cần.
+
+Khi kéo mới trong Designer, plugin tạo cấu trúc chuẩn của Qt gồm trang
+`scrollAreaWidgetContents` và bật `widgetResizable`. Kéo widget con vào trang này,
+áp dụng layout như với `QScrollArea` mặc định; Designer và runtime đều truy cập
+trang bằng `scroll.widget()`.
 
 ### Media
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
-
 from PyQt6.QtDesigner import QPyDesignerCustomWidgetPlugin
 
 from custom_pyqt6_designer.monkez_widgets.designer_icons import designer_icon
@@ -36,9 +34,9 @@ class PluginSpec:
     container: bool = False
     themed: bool = True
     properties_xml: str = ""
+    children_xml: str = ""
     group: str = GROUP_CONTROLS
     palette_visible: bool = True
-    extra_initializer: Callable[[object, object], None] | None = None
 
 
 def create_plugin(spec: PluginSpec, module_name: str):
@@ -52,8 +50,6 @@ def create_plugin(spec: PluginSpec, module_name: str):
             return
         if spec.themed:
             register_theme_task_menu(core, self)
-        if spec.extra_initializer is not None:
-            spec.extra_initializer(core, self)
         self._initialized = True
 
     def is_initialized(self) -> bool:
@@ -90,6 +86,9 @@ def create_plugin(spec: PluginSpec, module_name: str):
         properties = spec.properties_xml.strip()
         if properties:
             properties = f"\n{properties}"
+        children = spec.children_xml.strip()
+        if children:
+            children = f"\n{children}"
         return (
             '<ui language="c++">\n'
             f' <widget class="{spec.class_name}" name="{spec.object_name}">\n'
@@ -98,7 +97,7 @@ def create_plugin(spec: PluginSpec, module_name: str):
             "    <x>0</x><y>0</y>"
             f"<width>{spec.width}</width><height>{spec.height}</height>\n"
             "   </rect>\n"
-            f"  </property>{properties}\n"
+            f"  </property>{properties}{children}\n"
             " </widget>\n"
             "</ui>\n"
         )

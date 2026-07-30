@@ -3,12 +3,13 @@ from __future__ import annotations
 import io
 import os
 import unittest
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QScrollArea, QVBoxLayout, QWidget
 from PyQt6 import uic
 
 from custom_pyqt6_designer import monkez_widgets
@@ -23,6 +24,7 @@ from custom_pyqt6_designer.monkez_widgets import (
     MonkezLinearGauge,
     MonkezRadialGauge,
     MonkezRadioButton,
+    MonkezScrollArea,
     MonkezUSBCamera,
 )
 
@@ -366,43 +368,26 @@ class WidgetTests(unittest.TestCase):
         form.deleteLater()
 
     def test_scroll_area_loads_designer_children_into_its_content_page(self) -> None:
-        ui_xml = """<?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0">
- <class>Form</class>
- <widget class="QWidget" name="Form">
-  <widget class="MonkezScrollArea" name="scroll">
-   <widget class="QWidget" name="scrollAreaWidgetContents">
-    <layout class="QVBoxLayout" name="contentLayout">
-     <item>
-      <widget class="QLabel" name="inside">
-       <property name="text">
-        <string>Inside scroll area</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </widget>
-  </widget>
- </widget>
- <customwidgets>
-  <customwidget>
-   <class>MonkezScrollArea</class>
-   <extends>QScrollArea</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
-   <container>1</container>
-  </customwidget>
- </customwidgets>
- <resources/>
- <connections/>
-</ui>
-"""
+        fixture = Path(__file__).parent / "fixtures" / "designer_scroll_test.ui"
+        form = uic.loadUi(fixture)
 
-        form = uic.loadUi(io.StringIO(ui_xml))
-
-        self.assertIs(form.scroll.widget(), form.scrollAreaWidgetContents)
-        self.assertIs(form.inside.parentWidget(), form.scrollAreaWidgetContents)
-        self.assertEqual(form.inside.text(), "Inside scroll area")
+        self.assertIs(form.monkezScrollArea.widget(), form.scrollAreaWidgetContents)
+        self.assertIs(form.label.parentWidget(), form.scrollAreaWidgetContents)
+        self.assertEqual(form.label.text(), "TextLabel")
+        self.assertTrue(form.monkezScrollArea.widgetResizable())
         form.deleteLater()
+
+    def test_scroll_area_preserves_qscrollarea_runtime_defaults(self) -> None:
+        native = QScrollArea()
+        widget = MonkezScrollArea()
+
+        self.assertIsNone(widget.widget())
+        self.assertEqual(widget.widgetResizable(), native.widgetResizable())
+        self.assertEqual(widget.frameShape(), native.frameShape())
+        self.assertEqual(widget.viewportMargins(), native.viewportMargins())
+
+        widget.deleteLater()
+        native.deleteLater()
 
     def test_image_does_not_lock_parent_window_after_growing(self) -> None:
         window = QWidget()

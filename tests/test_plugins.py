@@ -124,27 +124,20 @@ class PluginTests(unittest.TestCase):
 
         self.assertEqual(groups, expected_groups)
 
-    def test_scroll_area_exposes_its_content_page_to_designer(self) -> None:
+    def test_scroll_area_uses_native_designer_structure(self) -> None:
         scroll_plugin = importlib.import_module("monkez_scroll_area_plugin")
-        container_support = importlib.import_module("scroll_area_container")
-        manager = QExtensionManager()
-
-        class DesignerCore:
-            def extensionManager(self):
-                return manager
-
         plugin = scroll_plugin.MonkezScrollAreaPlugin()
-        plugin.initialize(DesignerCore())
-        widget = plugin.createWidget(None)
-        extension = manager.extension(widget, container_support.CONTAINER_IID)
+        xml = plugin.domXml()
 
-        self.assertIsNotNone(extension)
-        self.assertEqual(extension.count(), 1)
-        self.assertEqual(extension.currentIndex(), 0)
-        self.assertIs(extension.widget(0), widget.widget())
-        self.assertFalse(extension.canAddWidget())
-        self.assertFalse(extension.canRemove(0))
-        widget.deleteLater()
+        self.assertTrue(plugin.isContainer())
+        self.assertIn(
+            '<property name="widgetResizable"><bool>true</bool></property>',
+            xml,
+        )
+        self.assertIn(
+            '<widget class="QWidget" name="scrollAreaWidgetContents">',
+            xml,
+        )
 
 
 if __name__ == "__main__":
