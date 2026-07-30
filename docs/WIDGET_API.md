@@ -358,8 +358,10 @@ trang bằng `scroll.widget()`.
 | Method | Description |
 |---|---|
 | `setBackground(color)` | Sets image/camera frame background. |
-| `setImageFile(path)` | Loads an image file. |
-| `set_image(QPixmap | QImage | str)` | Loads image data directly. |
+| `setImageFile(path)` | Loads an image from `str`, `bytes` or `pathlib.Path`. |
+| `set_image(source, color_order="bgr")` | Loads `QPixmap`, `QImage`, NumPy frame or file path. |
+| `setImage(source, color_order="bgr")` | Qt-style alias of `set_image`. |
+| `setFrame(frame, color_order="bgr")` | Displays a NumPy/OpenCV frame directly. |
 | `setScaleMode(mode)` | Sets `Fit`, `Fill`, `Stretch` or `Original` scaling. |
 | `startCamera()` / `stopCamera()` / `restartCamera()` | Camera lifecycle. |
 
@@ -388,11 +390,27 @@ MonkezImage {
 ```
 
 ```python
+from pathlib import Path
+
 image = MonkezImage()
 image.setBackground("#020617")
 image.setScaleMode(MonkezImage.ScaleMode.Fit)
 image.setSmoothScaling(True)
 image.setImageFile("assets/splash.png")
+
+# File path trực tiếp, bao gồm pathlib.Path
+image.set_image(Path("assets/photo.png"))
+
+# OpenCV trả về uint8 BGR/BGRA nên không cần cvtColor
+ok, frame = camera_capture.read()
+if ok:
+    image.setFrame(frame)
+
+# Frame từ PIL hoặc nguồn RGB/RGBA
+image.set_image(rgb_frame, color_order="rgb")
+
+# Có thể truyền source ngay khi khởi tạo
+preview = MonkezImage(source=frame)
 
 camera = MonkezUSBCamera()
 camera.setBackend("dshow")
@@ -402,6 +420,13 @@ camera.setResolutionHeight(720)
 camera.setDisplayFps(20)
 camera.setMirror(True)
 ```
+
+Frame NumPy phải có `dtype=uint8` và một trong các shape `H×W`, `H×W×1`,
+`H×W×3` hoặc `H×W×4`. Mặc định `color_order="bgr"` phù hợp với OpenCV;
+dùng `"rgb"`/`"rgba"` cho nguồn RGB. Widget sao chép frame sang bộ nhớ Qt,
+vì vậy caller có thể tái sử dụng hoặc thay đổi buffer NumPy ngay sau lời gọi.
+NumPy chỉ được import khi truyền `ndarray`, nên tải ảnh từ file hoặc Qt image
+không làm chậm thời gian import thư viện.
 
 ### MonkezSplashScreen
 

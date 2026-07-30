@@ -198,6 +198,12 @@ thị tốt trên màn hình high DPI. Menu chuột phải của widget trong De
 bốn lựa chọn scale `Fit`, `Fill`, `Stretch` và `Original`; lựa chọn được lưu
 bằng property `scaleModeIndex`.
 
+Widget nhận trực tiếp `QPixmap`, `QImage`, đường dẫn `str`/`pathlib.Path` và
+NumPy `uint8` frame qua `set_image()`. Frame OpenCV BGR/BGRA dùng
+`setFrame(frame)` mà không cần `cv2.cvtColor`; với nguồn RGB dùng
+`set_image(frame, color_order="rgb")`. NumPy được nạp theo nhu cầu nên không
+ảnh hưởng tốc độ khởi động khi chỉ dùng file ảnh.
+
 `MonkezScrollArea` dùng nguyên cơ chế container của `QScrollArea`, chỉ bổ sung
 theme và các property màu, border, radius, scrollbar. Trong Designer, kéo widget
 con vào `scrollAreaWidgetContents` như Scroll Area mặc định. Khi tạo bằng Python,

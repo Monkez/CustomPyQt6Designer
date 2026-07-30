@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import io
 import os
+import tempfile
 import unittest
 from pathlib import Path
+
+import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -204,6 +207,60 @@ class WidgetTests(unittest.TestCase):
         widget._update_pixmap()
         self.assertNotEqual(widget._scaled_pixmap.cacheKey(), first_key)
         widget.close()
+
+    def test_image_accepts_opencv_numpy_bgr_frame_and_detaches_buffer(self) -> None:
+        frame = np.zeros((2, 3, 3), dtype=np.uint8)
+        frame[0, 0] = (255, 0, 0)
+
+        widget = MonkezImage(source=frame)
+        frame[0, 0] = (0, 255, 0)
+        image = widget._pixmap.toImage()
+
+        self.assertEqual(image.size().width(), 3)
+        self.assertEqual(image.size().height(), 2)
+        self.assertEqual(image.pixelColor(0, 0), QColor(0, 0, 255))
+        self.assertEqual(widget.getImageFile(), "")
+        widget.deleteLater()
+
+    def test_image_accepts_numpy_grayscale_rgba_and_non_contiguous_frames(self) -> None:
+        widget = MonkezImage()
+        grayscale = np.array([[0, 127], [200, 255]], dtype=np.uint8)
+        widget.setFrame(grayscale)
+        self.assertEqual(widget._pixmap.toImage().pixelColor(1, 1), QColor(255, 255, 255))
+
+        bgra = np.array([[[30, 20, 10, 255]]], dtype=np.uint8)
+        widget.setFrame(bgra)
+        self.assertEqual(widget._pixmap.toImage().pixelColor(0, 0), QColor(10, 20, 30))
+
+        rgba = np.array([[[10, 20, 30, 40]]], dtype=np.uint8)
+        widget.setImage(rgba, color_order="rgba")
+        rendered_rgba = widget._pixmap.toImage().pixelColor(0, 0)
+        self.assertEqual(rendered_rgba.alpha(), 40)
+        self.assertLessEqual(abs(rendered_rgba.red() - 10), 3)
+        self.assertLessEqual(abs(rendered_rgba.green() - 20), 3)
+        self.assertLessEqual(abs(rendered_rgba.blue() - 30), 3)
+
+        rgb = np.zeros((2, 4, 3), dtype=np.uint8)
+        rgb[:, :, 0] = 90
+        widget.set_image(rgb[:, ::2], color_order="rgb")
+        self.assertEqual(widget._pixmap.width(), 2)
+        self.assertEqual(widget._pixmap.toImage().pixelColor(0, 0), QColor(90, 0, 0))
+        widget.deleteLater()
+
+    def test_image_accepts_pathlib_path_directly(self) -> None:
+        widget = MonkezImage()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "source.png"
+            source = QImage(4, 3, QImage.Format.Format_ARGB32)
+            source.fill(QColor("#38bdf8"))
+            self.assertTrue(source.save(str(path)))
+
+            widget.set_image(path)
+
+            self.assertEqual(widget.getImageFile(), str(path))
+            self.assertEqual(widget._pixmap.size(), source.size())
+            self.assertEqual(widget._pixmap.toImage().pixelColor(0, 0), QColor("#38bdf8"))
+        widget.deleteLater()
 
     def test_image_stylesheet_targets_the_visible_container(self) -> None:
         widget = MonkezImage()

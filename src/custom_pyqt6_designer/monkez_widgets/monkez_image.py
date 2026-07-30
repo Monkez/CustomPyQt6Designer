@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from os import PathLike, fsdecode, fspath
 
 from PyQt6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, pyqtProperty
 from PyQt6.QtGui import QColor, QImage, QPainter, QPalette, QPixmap
@@ -74,10 +75,16 @@ class MonkezImage(QWidget):
     Stretch = ScaleMode.Stretch
     Original = ScaleMode.Original
 
-    def __init__(self, parent=None, background_color=(255, 255, 255), image_file: str = "") -> None:
+    def __init__(
+        self,
+        parent=None,
+        background_color=(255, 255, 255),
+        image_file: str | PathLike[str] = "",
+        source: object | None = None,
+    ) -> None:
         super().__init__(parent)
         self._background_color = QColor(*background_color)
-        self._image_file = image_file or image_path("MonkezPlaceHolderImage.jpg")
+        self._image_file = ""
         self._pixmap = QPixmap()
         self._pixmap_update_pending = False
         self._scaled_cache_key: tuple[int, int, int, int, int, bool, int] | None = None
@@ -104,7 +111,10 @@ class MonkezImage(QWidget):
 
         self.setMinimumSize(0, 0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setImageFile(self._image_file)
+        if source is None:
+            self.setImageFile(image_file)
+        else:
+            self.set_image(source)
         self._update_style()
         self._schedule_pixmap_update()
 
@@ -137,15 +147,111 @@ class MonkezImage(QWidget):
             self._schedule_pixmap_update()
         return handled
 
-    def set_image(self, image) -> None:
+    def set_image(self, image: object, color_order: str = "bgr") -> None:
+        """Display a Qt image, NumPy frame, or local image path.
+
+        NumPy frames default to OpenCV's BGR/BGRA channel order. Pass
+        ``color_order="rgb"`` or ``"rgba"`` for RGB sources such as PIL.
+        """
+        if image is None:
+            self._image_file = ""
+            self._set_source_pixmap(QPixmap())
+            return
         if isinstance(image, QPixmap):
-            self._pixmap = image
+            self._image_file = ""
+            pixmap = QPixmap(image)
         elif isinstance(image, QImage):
-            self._pixmap = QPixmap.fromImage(image)
-        elif isinstance(image, str):
-            self._pixmap = QPixmap(image)
+            self._image_file = ""
+            pixmap = QPixmap.fromImage(image)
+        elif isinstance(image, (str, bytes, PathLike)):
+            self.setImageFile(image)
+            return
         else:
-            self._pixmap = QPixmap()
+            self._image_file = ""
+            pixmap = QPixmap.fromImage(self._qimage_from_numpy(image, color_order))
+        self._set_source_pixmap(pixmap)
+
+    def setImage(self, image: object, color_order: str = "bgr") -> None:
+        """Qt-style alias for :meth:`set_image`."""
+        self.set_image(image, color_order)
+
+    def setFrame(self, frame: object, color_order: str = "bgr") -> None:
+        """Display a NumPy video frame, using OpenCV channel order by default."""
+        self.set_image(frame, color_order)
+
+    @staticmethod
+    def _qimage_from_numpy(frame: object, color_order: str) -> QImage:
+        try:
+            import numpy as np
+        except ModuleNotFoundError as error:
+            raise TypeError(
+                "NumPy must be installed before MonkezImage can display ndarray frames."
+            ) from error
+
+        if not isinstance(frame, np.ndarray):
+            raise TypeError(
+                "MonkezImage accepts QPixmap, QImage, numpy.ndarray, "
+                "str, pathlib.Path, or None."
+            )
+        if frame.size == 0:
+            return QImage()
+        if frame.dtype != np.uint8:
+            raise TypeError(
+                f"NumPy frame dtype must be uint8, received {frame.dtype}."
+            )
+
+        if frame.ndim == 2:
+            height, width = frame.shape
+            contiguous = np.ascontiguousarray(frame)
+            image_format = QImage.Format.Format_Grayscale8
+        elif frame.ndim == 3 and frame.shape[2] == 1:
+            height, width, _ = frame.shape
+            contiguous = np.ascontiguousarray(frame[:, :, 0])
+            image_format = QImage.Format.Format_Grayscale8
+        elif frame.ndim == 3 and frame.shape[2] in {3, 4}:
+            height, width, channels = frame.shape
+            contiguous = np.ascontiguousarray(frame)
+            normalized_order = color_order.strip().lower()
+            if channels == 3:
+                formats = {
+                    "bgr": QImage.Format.Format_BGR888,
+                    "rgb": QImage.Format.Format_RGB888,
+                }
+            else:
+                formats = {
+                    "bgra": QImage.Format.Format_RGBA8888,
+                    "bgr": QImage.Format.Format_RGBA8888,
+                    "rgba": QImage.Format.Format_RGBA8888,
+                    "rgb": QImage.Format.Format_RGBA8888,
+                }
+            try:
+                image_format = formats[normalized_order]
+            except KeyError as error:
+                allowed = "BGR or RGB" if channels == 3 else "BGRA or RGBA"
+                raise ValueError(
+                    f"color_order must be {allowed} for a {channels}-channel frame."
+                ) from error
+        else:
+            raise ValueError(
+                "NumPy frame shape must be HxW, HxWx1, HxWx3, or HxWx4; "
+                f"received {frame.shape}."
+            )
+
+        qimage = QImage(
+            contiguous.data,
+            width,
+            height,
+            contiguous.strides[0],
+            image_format,
+        )
+        if frame.ndim == 3 and frame.shape[2] == 4:
+            normalized_order = color_order.strip().lower()
+            if normalized_order in {"bgr", "bgra"}:
+                qimage = qimage.rgbSwapped()
+        return qimage.copy()
+
+    def _set_source_pixmap(self, pixmap: QPixmap) -> None:
+        self._pixmap = QPixmap(pixmap)
         self._invalidate_scaled_cache()
         self._schedule_pixmap_update()
 
@@ -251,11 +357,10 @@ class MonkezImage(QWidget):
     def getImageFile(self) -> str:
         return self._image_file
 
-    def setImageFile(self, path: str) -> None:
-        self._image_file = path or image_path("MonkezPlaceHolderImage.jpg")
-        self._pixmap = QPixmap(self._image_file)
-        self._invalidate_scaled_cache()
-        self._schedule_pixmap_update()
+    def setImageFile(self, path: str | bytes | PathLike[str]) -> None:
+        normalized_path = fsdecode(fspath(path)) if path else ""
+        self._image_file = normalized_path or image_path("MonkezPlaceHolderImage.jpg")
+        self._set_source_pixmap(QPixmap(self._image_file))
 
     def getScaleMode(self) -> ScaleMode:
         return self._scale_mode

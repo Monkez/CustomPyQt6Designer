@@ -264,10 +264,15 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
     WidgetDoc(
         "MonkezImage",
         "Media",
-        "Image viewer auto-scale, cache pixmap va high-DPI aware.",
+        "Image viewer cho Qt image, file path va NumPy/OpenCV frame.",
         ("imageFile", "backgroundColor", "scaleModeIndex, smoothScaling"),
-        ("setImageFile(path)", "setScaleMode(mode)", "set_image(QPixmap | QImage | str)"),
-        "image = MonkezImage(); image.setImageFile('assets/photo.png')",
+        (
+            "setImageFile(path)",
+            "setScaleMode(mode)",
+            "set_image(Qt image | NumPy frame | path)",
+            "setFrame(frame, color_order='bgr')",
+        ),
+        "image = MonkezImage(); image.setFrame(opencv_frame)",
     ),
     WidgetDoc(
         "MonkezUSBCamera",

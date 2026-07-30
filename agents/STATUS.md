@@ -4,7 +4,7 @@ Updated: 2026-07-31
 
 ## Current version
 
-- Working version: 0.4.7 (native ScrollArea behavior).
+- Working version: 0.4.8 (NumPy frame and direct path image sources).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -38,27 +38,30 @@ Updated: 2026-07-31
 - `MonkezImage.scaleModeIndex` is a stable Designer property with task-menu
   choices for Fit, Fill, Stretch and Original; every mode recalculates against
   the outer container size.
+- `MonkezImage.set_image()` and its `setImage()`/`setFrame()` aliases accept
+  detached `uint8` NumPy frames in grayscale, BGR/BGRA or RGB/RGBA formats,
+  plus `str`, `bytes` and `pathlib.Path` file paths. NumPy remains lazy-loaded.
 - `MonkezScrollArea` preserves the stock `QScrollArea` runtime defaults and
   only adds theme/style properties. Its Designer XML uses Qt's native
   `scrollAreaWidgetContents` structure without a custom fixed-page extension.
 
 ## Latest verification
 
-- 69 automated tests pass on Python 3.11.15, including native ScrollArea
-  defaults, Designer DOM structure and runtime loading of a form saved by
-  Designer with a nested `QLabel`.
-- The 0.4.7 wheel and source distribution omit the former custom ScrollArea
-  extension and include the native Designer page structure.
-- The 0.4.7 portable executable passes `--doctor`; source and packaged plugin
+- 72 automated tests pass on Python 3.11.15, including NumPy BGR, grayscale,
+  RGBA, non-contiguous frame and direct `pathlib.Path` image sources.
+- The 0.4.8 wheel and source distribution include the NumPy/path image API.
+- The 0.4.8 portable executable passes `--doctor`; source and packaged plugin
   checks initialize and create all 25 plugins.
+- Importing `MonkezImage` does not import NumPy. Updating and rendering thirty
+  1280x720 BGR frames averaged 5.0 ms per frame on the release workstation.
+- `MonkezDesigner-0.4.8-windows-x64.zip` contains 7,570 entries, includes all
+  three portable launcher/onboarding files at its root and passes a full CRC
+  integrity check.
 - A real 0.4.7 portable Designer session successfully creates
   `scrollAreaWidgetContents` when `MonkezScrollArea` is dragged onto a blank
   form, then accepts and saves a `QLabel` dropped directly into that page.
 - A real portable Designer session exposes all four Image scale actions from
   the `MonkezImage` context menu.
-- `MonkezDesigner-0.4.7-windows-x64.zip` contains 7,570 entries, includes all
-  three portable launcher/onboarding files at its root and passes a full CRC
-  integrity check.
 - Splash startup benchmark on the release workstation: import median 97.3 ms
   and first-paint median 133.8 ms.
 - A standalone `SplashHeavyDemo.exe` exercises 48 MB of asset processing and a
@@ -77,7 +80,7 @@ Updated: 2026-07-31
   noisy `Compress-Archive` progress loop.
 - Unpacked portable builds use versioned output directories so an older
   running Designer does not block a new release build.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.7
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.8
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt
