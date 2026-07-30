@@ -34,6 +34,12 @@ splash.set_progress(40, "Loading plugins...")
 Xem [hướng dẫn splash screen](docs/SPLASHSCREEN.md) và
 [template Designer](examples/splash_screen.ui).
 
+Demo tải nền nặng có sẵn dưới dạng Windows executable. Chạy
+`run_splash_exe_demo.bat`, hoặc tự build lại bằng `build_splash_demo.bat`.
+Ứng dụng xử lý dữ liệu và CPU trên worker thread trong khi splash vẫn nhận
+tiến trình và animation mượt. Xem
+[hướng dẫn Heavy Splash Demo](docs/HEAVY_SPLASH_DEMO.md).
+
 ## Bắt đầu nhanh trên Windows
 
 Nếu phát triển trực tiếp từ repository, cài Python 3.11 rồi chạy:
@@ -53,6 +59,8 @@ Các script tiện dụng:
 | `demo.bat` | Chạy project mẫu. |
 | `splash_demo.bat` | Chạy demo splash screen thiết kế bằng Designer. |
 | `benchmark_splash.bat` | Đo thời gian import và paint đầu. |
+| `build_splash_demo.bat` | Build và xác minh app EXE demo tải nền nặng. |
+| `run_splash_exe_demo.bat` | Mở app EXE demo tải nền nặng. |
 | `test.bat` | Chạy toàn bộ test ở chế độ không cần màn hình. |
 | `build.bat` | Build package, Designer portable, kiểm tra plugin và tạo ZIP. |
 

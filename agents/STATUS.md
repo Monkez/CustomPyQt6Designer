@@ -21,13 +21,18 @@ Updated: 2026-07-30
 
 ## Latest verification
 
-- 42 automated tests pass on Python 3.11.15.
+- 44 automated tests pass on Python 3.11.15.
 - The 0.4.0 wheel and source distribution build successfully.
 - The 0.4.0 portable executable passes its 25-plugin verification.
 - `MonkezDesigner-0.4.0-windows-x64.zip` contains 7,595 entries and passes a
   full CRC integrity check.
 - Splash startup benchmark on the release workstation: import median 97.3 ms
   and first-paint median 133.8 ms.
+- A standalone `SplashHeavyDemo.exe` exercises 48 MB of asset processing and a
+  multi-stage CPU workload on a worker thread while reporting live splash progress.
+- The full heavy-demo workload completes in approximately 13 seconds on the
+  release workstation. Its 35.1 MB ZIP contains 189 entries and passes CRC
+  integrity verification.
 
 ## Build policy
 

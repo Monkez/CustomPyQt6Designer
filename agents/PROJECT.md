@@ -18,7 +18,9 @@ Do not make the runtime application depend on the portable Designer.
 - `src/custom_pyqt6_designer/gallery_app.py`: interactive widget documentation.
 - `src/custom_pyqt6_designer/splash.py`: startup-optimized splash controller.
 - `demo_project`: end-to-end runtime example.
+- `splash_heavy_demo`: standalone background-loading splash executable demo.
 - `scripts/build_full_designer.ps1`: reproducible portable build and plugin verification.
+- `scripts/build_splash_heavy_demo.ps1`: one-folder executable build and startup verification.
 - `tests`: offscreen widget, plugin, launcher, gallery, packaging and demo tests.
 
 The canonical `.ui` header is:

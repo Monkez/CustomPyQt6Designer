@@ -29,6 +29,8 @@ class PackagingTests(unittest.TestCase):
             "demo.bat",
             "test.bat",
             "build.bat",
+            "build_splash_demo.bat",
+            "run_splash_exe_demo.bat",
         }
         self.assertEqual(
             {path.name for path in ROOT.glob("*.bat")} & expected,

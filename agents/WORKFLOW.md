@@ -24,6 +24,13 @@ build.bat
 The portable build is valid only after all 25 plugins initialize, create their
 widgets and remain stable during verification.
 
+For the standalone heavy splash demo, run `build_splash_demo.bat`. Its packaged
+`--verify` run must exit successfully before the demo ZIP is accepted.
+Because widgets are lazy-imported, the build must keep the explicit
+`monkez_splash_screen` hidden import. GUI verification must use
+`Start-Process -Wait -PassThru`; invoking a windowed executable directly does
+not provide reliable completion or exit-code checking in this PowerShell flow.
+
 ## Documentation
 
 - User-facing behavior belongs in `README.md` or `docs`.
