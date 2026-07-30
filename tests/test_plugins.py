@@ -45,11 +45,15 @@ class PluginTests(unittest.TestCase):
         self.assertNotIn("MetricCard", names)
         self.assertNotIn("StatusBadge", names)
 
-    def test_theme_task_menu_only_exposes_material_and_ios(self) -> None:
+    def test_theme_task_menu_exposes_all_runtime_themes(self) -> None:
         theme_task_menu = importlib.import_module("theme_task_menu")
         self.assertEqual(
             [entry[0] for entry in theme_task_menu.THEME_LABELS],
-            ["Material", "IOS"],
+            ["Material", "iOS", "Fluent", "Bootstrap", "Minimal", "Dark"],
+        )
+        self.assertEqual(
+            [entry[3] for entry in theme_task_menu.THEME_LABELS],
+            list(range(6)),
         )
 
     def test_plugins_are_arranged_in_logical_palette_groups(self) -> None:

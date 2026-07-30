@@ -7,6 +7,26 @@ Custom PyQt6 Designer cung cấp hai phần tách biệt:
 
 Repo hiện có đủ plugin Designer, widget runtime, Gallery app, demo project và script build release.
 
+## Bắt đầu nhanh trên Windows
+
+Nếu phát triển trực tiếp từ repository, cài Python 3.11 rồi chạy:
+
+```powershell
+setup.bat
+run.bat
+```
+
+Các script tiện dụng:
+
+| Script | Chức năng |
+|---|---|
+| `setup.bat` | Tạo `.venv311` và cài đầy đủ dependency đã kiểm soát phiên bản. |
+| `run.bat` | Mở Qt Designer cùng Monkez plugins. |
+| `gallery.bat` | Mở Docs Lab. |
+| `demo.bat` | Chạy project mẫu. |
+| `test.bat` | Chạy toàn bộ test ở chế độ không cần màn hình. |
+| `build.bat` | Build package, Designer portable, kiểm tra plugin và tạo ZIP. |
+
 ## Cài package cho ứng dụng
 
 Cài trực tiếp từ GitHub:
@@ -48,7 +68,7 @@ Header của custom widget trong file `.ui` phải là:
 1. Tải thư mục release `MonkezDesigner` từ [GitHub Releases](https://github.com/Monkez/CustomPyQt6Designer/releases).
 2. Giữ nguyên toàn bộ cấu trúc thư mục sau khi giải nén.
 3. Chạy `MonkezDesigner.exe`.
-4. Các widget nằm trong nhóm **Monkez Widgets** của Widget Box.
+4. Trong Widget Box, tìm các nhóm đánh số từ **Monkez 01 Controls** đến **Monkez 07 Media**.
 
 Bản portable đã chứa Qt Designer, PyQt6 Designer bridge, plugin Python và runtime cần thiết. Máy thiết kế giao diện không cần cài Python.
 
@@ -96,7 +116,7 @@ python -m venv .venv
 Các widget giao diện hỗ trợ:
 
 - `themeIndex`: `0 Material`, `1 iOS`, `2 Fluent`, `3 Bootstrap`, `4 Minimal`, `5 Dark`.
-- Context menu `Monkez Theme` trong Designer.
+- Context menu `Monkez Theme` trong Designer có đủ sáu theme.
 - Tùy chỉnh màu, radius, border, padding, shadow và các thuộc tính chuyên sâu tùy widget.
 
 ## Ghi chú runtime
@@ -132,7 +152,7 @@ Build package:
 Build Designer portable:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_full_designer.ps1
+build.bat
 ```
 
 Output chính:
@@ -140,6 +160,7 @@ Output chính:
 - `dist\custom_pyqt6_designer-<version>-py3-none-any.whl`
 - `dist\custom_pyqt6_designer-<version>.tar.gz`
 - `dist\MonkezDesigner\MonkezDesigner.exe`
+- `dist\MonkezDesigner-<version>-windows-x64.zip`
 
 ## Tài liệu
 
@@ -147,6 +168,7 @@ Output chính:
 - [Designer portable và phát triển plugin](docs/DESIGNER_PORTABLE.md)
 - [Monkez custom widget Python API](docs/WIDGET_API.md)
 - [Project demo](demo_project/README.md)
+- [Hướng dẫn cài đặt và sử dụng](docs/INSTALLATION.md)
 
 ## License
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-pyqt6-designer"
-version = "0.3.7"
+version = "0.3.8"
 description = "Qt Designer launcher and Python custom widget plugins for PyQt6 projects."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,11 +30,13 @@ camera = [
 ]
 designer = [
     "pyqt6-tools==6.4.2.3.3; python_version == '3.11'",
+    "PyQt6-Fluent-Widgets[full]",
     "setuptools<81; python_version == '3.11'",
 ]
 all = [
     "opencv-python>=4.8",
     "pyqt6-tools==6.4.2.3.3; python_version == '3.11'",
+    "PyQt6-Fluent-Widgets[full]",
     "setuptools<81; python_version == '3.11'",
 ]
 

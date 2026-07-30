@@ -21,7 +21,7 @@ python -m pip install "custom-pyqt6-designer @ git+https://github.com/Monkez/Cus
 Nếu dùng camera:
 
 ```powershell
-python -m pip install opencv-python
+python -m pip install "custom-pyqt6-designer[camera] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
 ## Load file UI
@@ -43,6 +43,8 @@ Có thể dùng class đích:
 ```python
 from PyQt6 import uic
 from PyQt6.QtWidgets import QMainWindow
+
+from custom_pyqt6_designer import monkez_widgets
 
 
 class MainWindow(QMainWindow):

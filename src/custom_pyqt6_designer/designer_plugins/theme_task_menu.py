@@ -12,7 +12,11 @@ except ModuleNotFoundError:
 TASK_MENU_IID = "org.qt-project.Qt.Designer.TaskMenu"
 THEME_LABELS = (
     ("Material", "Material", "material", 0),
-    ("IOS", "IOS", "ios", 1),
+    ("iOS", "IOS", "ios", 1),
+    ("Fluent", "Fluent", "fluent", 2),
+    ("Bootstrap", "Bootstrap", "bootstrap", 3),
+    ("Minimal", "Minimal", "minimal", 4),
+    ("Dark", "Dark", "dark", 5),
 )
 THEMED_CLASS_NAMES = {
     "MonkezButton",

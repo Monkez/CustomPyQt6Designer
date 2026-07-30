@@ -8,6 +8,9 @@
 
 Không di chuyển riêng file `.exe` ra khỏi thư mục vì Qt, Python bridge và plugin nằm trong `_internal`.
 
+Các widget được chia thành các nhóm `Monkez 01 Controls` đến `Monkez 07 Media`
+trong Widget Box để dễ tìm kiếm.
+
 Mở trực tiếp một file UI:
 
 ```powershell
@@ -27,7 +30,7 @@ Property `themeIndex`:
 | 4 | Minimal |
 | 5 | Dark |
 
-Cũng có thể click phải widget trên canvas và chọn `Monkez Theme`.
+Cũng có thể click phải widget trên canvas và chọn một trong sáu mục `Monkez Theme`.
 
 ## Camera preview
 
@@ -58,8 +61,9 @@ Kiểm tra đường dẫn plugin:
 Build lại portable:
 
 ```powershell
-.\scripts\build_full_designer.ps1
+build.bat
 ```
 
-Kết quả nằm tại `dist\MonkezDesigner`. Script không tạo file ZIP và sẽ
-tự mở Designer ở chế độ kiểm tra để xác nhận toàn bộ plugin đã được load.
+Kết quả nằm tại `dist\MonkezDesigner` và file ZIP phát hành nằm tại
+`dist\MonkezDesigner-<version>-windows-x64.zip`. Script sẽ tự mở Designer
+ở chế độ kiểm tra để xác nhận toàn bộ plugin đã được load trước khi tạo ZIP.
