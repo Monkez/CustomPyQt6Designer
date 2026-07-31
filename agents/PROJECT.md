@@ -12,15 +12,19 @@ Do not make the runtime application depend on the portable Designer.
 
 ## Architecture
 
-- `src/custom_pyqt6_designer/monkez_widgets`: runtime widget implementations.
-- `src/custom_pyqt6_designer/designer_plugins`: Qt Designer plugin adapters.
-- `src/custom_pyqt6_designer/launcher.py`: Designer discovery and environment setup.
-- `src/custom_pyqt6_designer/gallery_app.py`: interactive widget documentation.
-- `src/custom_pyqt6_designer/splash.py`: startup-optimized splash controller.
-- `src/custom_pyqt6_designer/splash_template.py` and `templates/`: standalone
+- `src/monkez_pyqt6/monkez_widgets`: runtime widget implementations.
+- `src/monkez_pyqt6/designer_plugins`: Qt Designer plugin adapters.
+- `src/monkez_pyqt6/launcher.py`: Designer discovery and environment setup.
+- `src/monkez_pyqt6/gallery_app.py`: interactive widget documentation.
+- `src/monkez_pyqt6/splash.py`: startup-optimized splash controller.
+- `src/monkez_pyqt6/splash_template.py` and `templates/`: standalone
   splash form creation and the packaged Designer template.
-- `src/custom_pyqt6_designer/startup_guard.py`: startup-only cross-process lock.
-- `src/custom_pyqt6_designer/diagnostics.py`: actionable installation checks.
+- `src/monkez_pyqt6/startup_guard.py`: startup-only cross-process lock.
+- `src/monkez_pyqt6/diagnostics.py`: actionable installation checks.
+- `src/monkez_pyqt6/ui_loader.py`: canonical `.ui` loading helpers for new
+  top-level forms, existing widgets and reusable child forms.
+- `src/custom_pyqt6_designer`: compatibility namespace and legacy module
+  launcher retained for projects created before 0.5.
 - `demo_project`: end-to-end runtime example.
 - `splash_heavy_demo`: standalone background-loading splash executable demo.
 - `scripts/build_full_designer.ps1`: reproducible portable build and plugin verification.
@@ -31,8 +35,12 @@ Do not make the runtime application depend on the portable Designer.
 The canonical `.ui` header is:
 
 ```xml
-<header>custom_pyqt6_designer.monkez_widgets</header>
+<header>monkez_pyqt6.monkez_widgets</header>
 ```
+
+The canonical distribution name is `monkez-pyqt6` and the canonical import
+namespace is `monkez_pyqt6`. Keep the compatibility namespace lightweight and
+do not use it in new examples or generated Designer headers.
 
 Python 3.11 is required for the pinned `pyqt6-tools` Designer bridge.
 Public widget classes are lazy-loaded from `monkez_widgets`; preserve this behavior

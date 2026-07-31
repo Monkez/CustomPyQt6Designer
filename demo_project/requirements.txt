@@ -1,1 +1,1 @@
-custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git
+monkez-pyqt6 @ git+https://github.com/Monkez/CustomPyQt6Designer.git

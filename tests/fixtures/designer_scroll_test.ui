@@ -54,7 +54,7 @@
   <customwidget>
    <class>MonkezScrollArea</class>
    <extends>QScrollArea</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

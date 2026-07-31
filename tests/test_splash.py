@@ -14,9 +14,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtGui import QColor, QImage
 from PyQt6.QtWidgets import QApplication, QLabel, QProgressBar
 
-from custom_pyqt6_designer.monkez_widgets import MonkezSplashScreen
-from custom_pyqt6_designer.splash import SplashConfig, SplashController
-from custom_pyqt6_designer.splash_template import bundled_splash_template
+from monkez_pyqt6.monkez_widgets import MonkezSplashScreen
+from monkez_pyqt6.splash import SplashConfig, SplashController
+from monkez_pyqt6.splash_template import bundled_splash_template
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,10 +135,10 @@ class SplashTests(unittest.TestCase):
         script = (
             "import sys,time;"
             "t=time.perf_counter();"
-            "from custom_pyqt6_designer.splash import show_splash;"
+            "from monkez_pyqt6.splash import show_splash;"
             "elapsed=(time.perf_counter()-t)*1000;"
-            "blocked=['custom_pyqt6_designer.gallery_app',"
-            "'custom_pyqt6_designer.monkez_widgets.monkez_usb_camera','cv2'];"
+            "blocked=['monkez_pyqt6.gallery_app',"
+            "'monkez_pyqt6.monkez_widgets.monkez_usb_camera','cv2'];"
             "print(round(elapsed,2));"
             "print(any(name in sys.modules for name in blocked))"
         )

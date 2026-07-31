@@ -24,7 +24,7 @@ python -m venv .venv
 Custom widget classes duoc resolve tu header:
 
 ```xml
-<header>custom_pyqt6_designer.monkez_widgets</header>
+<header>monkez_pyqt6.monkez_widgets</header>
 ```
 
 Khong can copy source widget vao project va khong can dat Designer executable canh ung dung.

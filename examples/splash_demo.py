@@ -6,7 +6,7 @@ from pathlib import Path
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow
 
-from custom_pyqt6_designer.splash import SplashConfig, SplashController
+from monkez_pyqt6.splash import SplashConfig, SplashController
 
 
 ROOT = Path(__file__).resolve().parent

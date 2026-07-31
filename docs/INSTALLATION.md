@@ -40,7 +40,7 @@ project. Có thể nâng cấp bằng cách chạy lại cùng file. Gỡ bằng
 Nếu app chỉ cần chạy file `.ui`, cài runtime:
 
 ```powershell
-python -m pip install --upgrade "custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+python -m pip install --upgrade "monkez-pyqt6 @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
 Nếu muốn mở Designer từ cùng virtual environment, dùng Python 3.11 và extra
@@ -48,9 +48,9 @@ Nếu muốn mở Designer từ cùng virtual environment, dùng Python 3.11 và
 
 ```powershell
 py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade "custom-pyqt6-designer[designer] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
-.\.venv\Scripts\python.exe -m custom_pyqt6_designer --doctor
-.\.venv\Scripts\python.exe -m custom_pyqt6_designer
+.\.venv\Scripts\python.exe -m pip install --upgrade "monkez-pyqt6[designer] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+.\.venv\Scripts\python.exe -m monkez_pyqt6 --doctor
+.\.venv\Scripts\python.exe -m monkez_pyqt6
 ```
 
 Lệnh module hoạt động ngay cả khi thư mục `Scripts` chưa có trong `PATH`.
@@ -58,20 +58,20 @@ Lệnh module hoạt động ngay cả khi thư mục `Scripts` chưa có trong 
 Tạo form splash độc lập:
 
 ```powershell
-python -m custom_pyqt6_designer --new-splash ui/splash_screen.ui
+python -m monkez_pyqt6 --new-splash ui/splash_screen.ui
 ```
 
 ## Tự kiểm tra cài đặt
 
 ```powershell
-python -m custom_pyqt6_designer --doctor
+python -m monkez_pyqt6 --doctor
 ```
 
 Doctor kiểm tra phiên bản package/Python, đủ 25 plugin, vị trí Qt Designer và
 Python plugin bridge. Mỗi lỗi đều kèm hướng khắc phục. Xem phiên bản nhanh:
 
 ```powershell
-python -m custom_pyqt6_designer --version
+python -m monkez_pyqt6 --version
 ```
 
 ## Chọn đúng thành phần
@@ -107,25 +107,24 @@ Tạo môi trường riêng và cài package:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install "custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+.\.venv\Scripts\python.exe -m pip install "monkez-pyqt6 @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
 Nếu dùng camera:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install "custom-pyqt6-designer[camera] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+.\.venv\Scripts\python.exe -m pip install "monkez-pyqt6[camera] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
 Nạp giao diện:
 
 ```python
-from PyQt6 import uic
 from PyQt6.QtWidgets import QApplication
 
-from custom_pyqt6_designer import monkez_widgets
+from monkez_pyqt6 import load_ui
 
 app = QApplication([])
-window = uic.loadUi("ui/main_window.ui")
+window = load_ui("ui/main_window.ui")
 window.show()
 app.exec()
 ```
@@ -133,8 +132,12 @@ app.exec()
 Trong file `.ui`, custom widget phải dùng header:
 
 ```xml
-<header>custom_pyqt6_designer.monkez_widgets</header>
+<header>monkez_pyqt6.monkez_widgets</header>
 ```
+
+Để nạp vào `QMainWindow`/`QWidget` hiện tại, gọi
+`load_ui("ui/main_window.ui", self)`. Project cũ dùng
+`custom_pyqt6_designer` vẫn được hỗ trợ trong giai đoạn chuyển đổi tên.
 
 ## Phát triển repository
 
@@ -169,13 +172,13 @@ Chạy `run.bat` từ repository thay vì mở một bản Qt Designer khác. C�
 đường dẫn plugin bằng:
 
 ```powershell
-.\.venv311\Scripts\custom-pyqt6-plugin-info.exe
+.\.venv311\Scripts\monkez-plugin-info.exe
 ```
 
 ### Ứng dụng không nạp được custom widget
 
 Kiểm tra package đã được cài trong đúng virtual environment, module
-`custom_pyqt6_designer.monkez_widgets` đã được import và header trong `.ui`
+`monkez_pyqt6.monkez_widgets` đã được import và header trong `.ui`
 không bị thay đổi.
 
 ### Camera không hoạt động

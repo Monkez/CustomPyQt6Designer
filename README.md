@@ -23,8 +23,8 @@ Designer, Docs Lab và Uninstall. Sau khi cài package, có thể kiểm tra b�
 nào:
 
 ```powershell
-python -m custom_pyqt6_designer --doctor
-python -m custom_pyqt6_designer
+python -m monkez_pyqt6 --doctor
+python -m monkez_pyqt6
 ```
 
 Xem [hướng dẫn cài đặt đầy đủ](docs/INSTALLATION.md).
@@ -42,7 +42,7 @@ Phiên bản 0.4 bổ sung `MonkezSplashScreen` và controller tối ưu startup
 
 ```python
 from PyQt6.QtWidgets import QApplication
-from custom_pyqt6_designer.splash import show_splash
+from monkez_pyqt6.splash import show_splash
 
 app = QApplication([])
 splash = show_splash(
@@ -56,7 +56,7 @@ splash.set_progress(40, "Loading plugins...")
 Tạo một form splash độc lập bằng `new_splash.bat` hoặc:
 
 ```powershell
-python -m custom_pyqt6_designer --new-splash ui/splash_screen.ui
+python -m monkez_pyqt6 --new-splash ui/splash_screen.ui
 ```
 
 Splash không xuất hiện trong bảng widget kéo-thả vì nó là một cửa sổ độc lập.
@@ -103,36 +103,51 @@ Các script tiện dụng:
 Cài trực tiếp từ GitHub:
 
 ```powershell
-python -m pip install --upgrade "custom-pyqt6-designer @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+python -m pip install --upgrade "monkez-pyqt6 @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
 Nếu dùng camera:
 
 ```powershell
-python -m pip install --upgrade "custom-pyqt6-designer[camera] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
+python -m pip install --upgrade "monkez-pyqt6[camera] @ git+https://github.com/Monkez/CustomPyQt6Designer.git"
 ```
 
-Ứng dụng PyQt6 có thể load `.ui` như bình thường:
+Ứng dụng PyQt6 có thể load `.ui` trực tiếp bằng helper của package:
 
 ```python
 from pathlib import Path
 
-from PyQt6 import uic
 from PyQt6.QtWidgets import QApplication
 
-from custom_pyqt6_designer import monkez_widgets  # giúp uic tìm custom widget classes
+from monkez_pyqt6 import load_ui
 
 app = QApplication([])
-window = uic.loadUi(Path("ui/main_window.ui"))
+window = load_ui(Path("ui/main_window.ui"))
 window.show()
 app.exec()
+```
+
+Để nạp giao diện vào một class có sẵn:
+
+```python
+from PyQt6.QtWidgets import QMainWindow
+from monkez_pyqt6 import load_ui
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        load_ui("ui/main_window.ui", self)
 ```
 
 Header của custom widget trong file `.ui` phải là:
 
 ```xml
-<header>custom_pyqt6_designer.monkez_widgets</header>
+<header>monkez_pyqt6.monkez_widgets</header>
 ```
+
+Các project cũ dùng `custom_pyqt6_designer` vẫn chạy nhờ namespace tương thích,
+nhưng code và form mới nên chuyển sang `monkez_pyqt6`.
 
 ## Dùng Designer portable
 
@@ -162,7 +177,7 @@ Docs Lab chỉ tập trung vào tài liệu tương tác:
 
 ## Demo project
 
-Project mẫu ở [demo_project](demo_project) dùng `PyQt6.uic.loadUi()` để chạy `.ui` có Monkez widgets:
+Project mẫu ở [demo_project](demo_project) dùng `monkez_pyqt6.load_ui()` để chạy `.ui` có Monkez widgets:
 
 ```powershell
 git clone https://github.com/Monkez/CustomPyQt6Designer.git
@@ -223,7 +238,7 @@ Khuyến nghị Python 3.11 khi chạy Designer bridge:
 py -3.11 -m venv .venv311
 .\.venv311\Scripts\python.exe -m pip install --upgrade pip
 .\.venv311\Scripts\python.exe -m pip install -e ".[all]"
-.\.venv311\Scripts\custom-pyqt6-designer.exe
+.\.venv311\Scripts\monkez-pyqt6.exe
 ```
 
 Chạy test:
@@ -247,8 +262,8 @@ build.bat
 
 Output chính:
 
-- `dist\custom_pyqt6_designer-<version>-py3-none-any.whl`
-- `dist\custom_pyqt6_designer-<version>.tar.gz`
+- `dist\monkez_pyqt6-<version>-py3-none-any.whl`
+- `dist\monkez_pyqt6-<version>.tar.gz`
 - `dist\MonkezDesigner\MonkezDesigner.exe`
 - `dist\MonkezDesigner-<version>-windows-x64.zip`
 

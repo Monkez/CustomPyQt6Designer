@@ -4,7 +4,7 @@ Updated: 2026-07-31
 
 ## Current version
 
-- Working version: 0.4.9 (Outlined colors and layout-owned Image geometry).
+- Working version: 0.5.0 (package rename and convenient UI loader).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -13,7 +13,12 @@ Updated: 2026-07-31
 - 25 runtime widgets.
 - 25 Qt Designer plugins.
 - Six themes: Material, iOS, Fluent, Bootstrap, Minimal and Dark.
-- Runtime loading through `PyQt6.uic.loadUi()` and generated `pyuic6` code.
+- Canonical distribution/import names are `monkez-pyqt6` and `monkez_pyqt6`;
+  `custom_pyqt6_designer` remains as a compatibility namespace and launcher.
+- Runtime loading through `monkez_pyqt6.load_ui()`, direct
+  `PyQt6.uic.loadUi()` and generated `pyuic6` code.
+- `load_ui()`, `load_ui_into()` and `UiLoaderMixin` cover new top-level forms,
+  existing `QMainWindow`/`QWidget` instances and parented reusable child forms.
 - Optional OpenCV camera support.
 - Splash screen widget/controller with Designer customization, transparent PNG
   backgrounds, progress updates and animation; see
@@ -52,12 +57,15 @@ Updated: 2026-07-31
 
 ## Latest verification
 
-- All 74 automated tests pass for 0.4.9.
-- The 0.4.9 wheel and source archive build successfully, and the wheel contains
-  the verified Button color and Image geometry implementations.
-- The 0.4.9 portable `MonkezDesigner.exe --doctor` check passes with all 25
+- All 83 automated tests pass for 0.5.0.
+- Canonical and legacy module launchers both report 0.5.0; source doctor
+  verification passes with all 25 Designer plugins.
+- `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated
+  wheel install imports the canonical package, compatibility namespace and all
+  three UI-loading APIs successfully.
+- The 0.5.0 portable `MonkezDesigner.exe --doctor` check passes with all 25
   Designer plugins available.
-- `MonkezDesigner-0.4.9-windows-x64.zip` contains 7,584 entries and passes a
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,586 entries and passes a
   full CRC integrity check.
 - Importing `MonkezImage` does not import NumPy. Updating and rendering thirty
   1280x720 BGR frames averaged 5.0 ms per frame on the release workstation.
@@ -84,7 +92,7 @@ Updated: 2026-07-31
   noisy `Compress-Archive` progress loop.
 - Unpacked portable builds use versioned output directories so an older
   running Designer does not block a new release build.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.9
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.5.0
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt

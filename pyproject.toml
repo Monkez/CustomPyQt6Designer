@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "custom-pyqt6-designer"
-version = "0.4.9"
-description = "Qt Designer launcher and Python custom widget plugins for PyQt6 projects."
+name = "monkez-pyqt6"
+version = "0.5.0"
+description = "Monkez widgets, UI loader and Qt Designer integration for PyQt6 projects."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -46,9 +46,11 @@ Repository = "https://github.com/Monkez/CustomPyQt6Designer.git"
 Issues = "https://github.com/Monkez/CustomPyQt6Designer/issues"
 
 [project.scripts]
-custom-pyqt6-designer = "custom_pyqt6_designer.launcher:main"
-custom-pyqt6-plugin-info = "custom_pyqt6_designer.plugin_info:main"
-monkez-gallery = "custom_pyqt6_designer.gallery_app:main"
+monkez-pyqt6 = "monkez_pyqt6.launcher:main"
+monkez-plugin-info = "monkez_pyqt6.plugin_info:main"
+monkez-gallery = "monkez_pyqt6.gallery_app:main"
+custom-pyqt6-designer = "monkez_pyqt6.launcher:main"
+custom-pyqt6-plugin-info = "monkez_pyqt6.plugin_info:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -57,11 +59,11 @@ where = ["src"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-"custom_pyqt6_designer" = [
+"monkez_pyqt6" = [
     "designer_plugins/*.py",
     "templates/*.ui",
 ]
-"custom_pyqt6_designer.monkez_widgets" = [
+"monkez_pyqt6.monkez_widgets" = [
     "monkez_assets/icons/*",
     "monkez_assets/images/*",
 ]

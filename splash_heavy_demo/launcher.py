@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import time
 
-from custom_pyqt6_designer.startup_guard import StartupInstanceGuard
+from monkez_pyqt6.startup_guard import StartupInstanceGuard
 
 
 APPLICATION_ID = "com.monkez.splash-heavy-demo"

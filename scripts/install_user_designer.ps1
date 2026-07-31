@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $SourceRoot = [System.IO.Path]::GetFullPath($SourceRoot)
-$DesignerExecutable = Join-Path $InstallRoot "venv\Scripts\custom-pyqt6-designer.exe"
+$DesignerExecutable = Join-Path $InstallRoot "venv\Scripts\monkez-pyqt6.exe"
 $GalleryExecutable = Join-Path $InstallRoot "venv\Scripts\monkez-gallery.exe"
 
 if (-not (Test-Path -LiteralPath $DesignerExecutable)) {

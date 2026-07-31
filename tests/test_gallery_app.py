@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtWidgets import QApplication
 
-from custom_pyqt6_designer.gallery_app import (
+from monkez_pyqt6.gallery_app import (
     FLUENT_METHOD_PROBES,
     WIDGET_METHOD_PROBES,
     GalleryWindow,
@@ -16,8 +16,8 @@ from custom_pyqt6_designer.gallery_app import (
     _create_doc_preview_widget,
     _supported_fluent_method_docs,
 )
-from custom_pyqt6_designer.monkez_widgets import MonkezButton, MonkezRadioButton
-from custom_pyqt6_designer.monkez_widgets import __all__ as MONKEZ_WIDGETS
+from monkez_pyqt6.monkez_widgets import MonkezButton, MonkezRadioButton
+from monkez_pyqt6.monkez_widgets import __all__ as MONKEZ_WIDGETS
 
 
 class GalleryAppTests(unittest.TestCase):

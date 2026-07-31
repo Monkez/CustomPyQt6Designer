@@ -42,7 +42,7 @@ the per-user installation. Python 3.10+ remains supported for runtime usage.
 
 ## Diagnostics
 
-`custom_pyqt6_designer.diagnostics` checks:
+`monkez_pyqt6.diagnostics` checks:
 
 - runtime package and Python version;
 - Python 3.11 compatibility for source-based Designer;
@@ -51,5 +51,5 @@ the per-user installation. Python 3.10+ remains supported for runtime usage.
 - available Python Designer bridge.
 
 The same CLI is available through the console script and
-`python -m custom_pyqt6_designer --doctor`. Module invocation avoids common
+`python -m monkez_pyqt6 --doctor`. Module invocation avoids common
 Windows `PATH` issues after pip installation.

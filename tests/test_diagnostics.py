@@ -4,8 +4,8 @@ import io
 import unittest
 from unittest.mock import patch
 
-import custom_pyqt6_designer.diagnostics as diagnostics
-from custom_pyqt6_designer.diagnostics import DiagnosticCheck
+import monkez_pyqt6.diagnostics as diagnostics
+from monkez_pyqt6.diagnostics import DiagnosticCheck
 
 
 class DiagnosticsTests(unittest.TestCase):

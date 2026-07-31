@@ -59,13 +59,13 @@ Python bridge của `pyqt6-tools` ổn định nhất với Python 3.11:
 ```powershell
 py -3.11 -m venv .venv311
 .\.venv311\Scripts\python.exe -m pip install -e ".[all]"
-.\.venv311\Scripts\custom-pyqt6-designer.exe --debug
+.\.venv311\Scripts\monkez-pyqt6.exe --debug
 ```
 
 Kiểm tra đường dẫn plugin:
 
 ```powershell
-.\.venv311\Scripts\custom-pyqt6-plugin-info.exe
+.\.venv311\Scripts\monkez-plugin-info.exe
 ```
 
 Build lại portable:

@@ -3,13 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyQt6 import uic
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 
-# The .ui loader resolves custom widget classes through the header declared in
-# ui/main_window.ui: custom_pyqt6_designer.monkez_widgets.
-from custom_pyqt6_designer import monkez_widgets  # noqa: F401
+from monkez_pyqt6 import load_ui
 
 
 ROOT = Path(__file__).resolve().parent
@@ -18,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 class DemoWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        uic.loadUi(ROOT / "ui" / "main_window.ui", self)
+        load_ui(ROOT / "ui" / "main_window.ui", self)
 
         self._direction = 1
         self._timer = QTimer(self)

@@ -23,8 +23,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6 import uic
 
-from custom_pyqt6_designer import monkez_widgets
-from custom_pyqt6_designer.monkez_widgets import (
+from monkez_pyqt6 import monkez_widgets
+from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
     MonkezCalendarWidget,
     MonkezArcGauge,
@@ -498,7 +498,7 @@ class WidgetTests(unittest.TestCase):
   <customwidget>
    <class>MonkezImage</class>
    <extends>QWidget</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
  </customwidgets>
  <resources/>

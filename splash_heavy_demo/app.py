@@ -20,8 +20,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from custom_pyqt6_designer.splash import SplashConfig, SplashController
-from custom_pyqt6_designer.startup_guard import StartupInstanceGuard
+from monkez_pyqt6.splash import SplashConfig, SplashController
+from monkez_pyqt6.startup_guard import StartupInstanceGuard
 
 
 APP_NAME = "Monkez Heavy Startup Demo"

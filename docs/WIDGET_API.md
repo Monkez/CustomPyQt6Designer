@@ -6,7 +6,7 @@ All examples assume:
 
 ```python
 from PyQt6.QtGui import QColor
-from custom_pyqt6_designer.monkez_widgets import (
+from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
     MonkezTextInput,
     MonkezComboBox,
@@ -464,7 +464,7 @@ chỉ dùng để mở và chỉnh sửa template đó.
 | `backgroundColor`, `textColor`, `accentColor`, `trackColor` | Màu giao diện |
 
 ```python
-from custom_pyqt6_designer.splash import SplashConfig, SplashController
+from monkez_pyqt6.splash import SplashConfig, SplashController
 
 splash = SplashController.create(
     SplashConfig(
@@ -482,7 +482,7 @@ Xem `docs/SPLASHSCREEN.md` để dùng worker thread và file `.ui` tùy biến.
 
 ```python
 from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
-from custom_pyqt6_designer.monkez_widgets import MonkezButton, MonkezTextInput, MonkezProgressBar
+from monkez_pyqt6.monkez_widgets import MonkezButton, MonkezTextInput, MonkezProgressBar
 
 app = QApplication([])
 window = QWidget()

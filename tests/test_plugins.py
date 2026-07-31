@@ -12,7 +12,7 @@ from PyQt6.QtDesigner import QExtensionManager, QPyDesignerCustomWidgetPlugin
 from PyQt6.QtWidgets import QApplication
 
 
-PLUGIN_DIR = Path(__file__).resolve().parents[1] / "src" / "custom_pyqt6_designer" / "designer_plugins"
+PLUGIN_DIR = Path(__file__).resolve().parents[1] / "src" / "monkez_pyqt6" / "designer_plugins"
 
 
 class PluginTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class PluginTests(unittest.TestCase):
             list(range(6)),
         )
         image = importlib.import_module(
-            "custom_pyqt6_designer.monkez_widgets"
+            "monkez_pyqt6.monkez_widgets"
         ).MonkezImage()
         menu = theme_task_menu.MonkezThemeTaskMenu(image)
         self.assertEqual(

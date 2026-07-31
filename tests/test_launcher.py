@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import custom_pyqt6_designer.launcher as launcher
-from custom_pyqt6_designer.launcher import (
+import monkez_pyqt6.launcher as launcher
+from monkez_pyqt6.launcher import (
     ENV_APP_ICON,
     append_path,
     app_icon_path,
@@ -28,7 +28,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_doctor_command_delegates_to_diagnostics(self) -> None:
         with patch(
-            "custom_pyqt6_designer.diagnostics.run_doctor",
+            "monkez_pyqt6.diagnostics.run_doctor",
             return_value=0,
         ) as doctor:
             result = launcher.main(["--doctor"])

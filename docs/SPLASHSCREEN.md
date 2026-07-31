@@ -16,7 +16,7 @@ bằng `benchmark_splash.bat`.
 import sys
 
 from PyQt6.QtWidgets import QApplication, QMainWindow
-from custom_pyqt6_designer.splash import show_splash
+from monkez_pyqt6.splash import show_splash
 
 app = QApplication(sys.argv)
 
@@ -47,7 +47,7 @@ Phải giữ reference `splash` cho đến khi gọi `finish()`.
 dụng sẵn sàng:
 
 ```python
-from custom_pyqt6_designer.startup_guard import StartupInstanceGuard
+from monkez_pyqt6.startup_guard import StartupInstanceGuard
 
 startup_guard = StartupInstanceGuard("com.example.my-application")
 if not startup_guard.try_acquire():
@@ -81,7 +81,7 @@ trường hợp owner không còn hoạt động.
 ## Cấu hình đầy đủ
 
 ```python
-from custom_pyqt6_designer.splash import SplashConfig, SplashController
+from monkez_pyqt6.splash import SplashConfig, SplashController
 
 config = SplashConfig(
     app_name="Monkez Studio",
@@ -143,7 +143,7 @@ paint trước mỗi bước.
 1. Double-click `new_splash.bat`, hoặc chạy:
 
 ```powershell
-python -m custom_pyqt6_designer --new-splash ui/splash_screen.ui
+python -m monkez_pyqt6 --new-splash ui/splash_screen.ui
 ```
 
 Lệnh tạo một file `.ui` có `MonkezSplashScreen` làm form gốc rồi mở trực tiếp

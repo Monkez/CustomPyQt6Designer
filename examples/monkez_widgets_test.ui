@@ -237,125 +237,125 @@
   <customwidget>
    <class>MonkezButton</class>
    <extends>QPushButton</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezComboBox</class>
    <extends>QComboBox</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezTextInput</class>
    <extends>QLineEdit</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezCheckBox</class>
    <extends>QCheckBox</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezRadioButton</class>
    <extends>QRadioButton</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezSwitch</class>
    <extends>QAbstractButton</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezSlider</class>
    <extends>QSlider</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezProgressBar</class>
    <extends>QProgressBar</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezImage</class>
    <extends>QWidget</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezUSBCamera</class>
    <extends>QWidget</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezFrame</class>
    <extends>QFrame</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
    <container>1</container>
   </customwidget>
   <customwidget>
    <class>MonkezGroupBox</class>
    <extends>QGroupBox</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
    <container>1</container>
   </customwidget>
   <customwidget>
    <class>MonkezScrollArea</class>
    <extends>QScrollArea</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
    <container>1</container>
   </customwidget>
   <customwidget>
    <class>MonkezSpinBox</class>
    <extends>QSpinBox</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezDoubleSpinBox</class>
    <extends>QDoubleSpinBox</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezDial</class>
    <extends>QDial</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezDateEdit</class>
    <extends>QDateEdit</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezTimeEdit</class>
    <extends>QTimeEdit</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezDateTimeEdit</class>
    <extends>QDateTimeEdit</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezCalendarWidget</class>
    <extends>QCalendarWidget</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezLCDNumber</class>
    <extends>QLCDNumber</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezRadialGauge</class>
    <extends>QAbstractSlider</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezArcGauge</class>
    <extends>QAbstractSlider</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
   <customwidget>
    <class>MonkezLinearGauge</class>
    <extends>QAbstractSlider</extends>
-   <header>custom_pyqt6_designer.monkez_widgets</header>
+   <header>monkez_pyqt6.monkez_widgets</header>
   </customwidget>
  </customwidgets>
  <resources/>

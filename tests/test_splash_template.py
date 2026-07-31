@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from custom_pyqt6_designer.splash_template import (
+from monkez_pyqt6.splash_template import (
     bundled_splash_template,
     create_splash_ui,
 )

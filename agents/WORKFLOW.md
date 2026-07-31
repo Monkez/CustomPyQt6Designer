@@ -5,7 +5,7 @@
 1. Read `README.md`, the relevant file under `docs`, and `agents/STATUS.md`.
 2. Inspect `git status` and preserve unrelated user changes.
 3. Keep package versions synchronized between `pyproject.toml` and
-   `src/custom_pyqt6_designer/__init__.py`.
+   `src/monkez_pyqt6/__init__.py`.
 
 ## Validation
 
@@ -36,11 +36,13 @@ not provide reliable completion or exit-code checking in this PowerShell flow.
 
 For installation changes, verify:
 
-1. `python -m custom_pyqt6_designer --doctor` succeeds in `.venv311`.
-2. PowerShell installer/uninstaller scripts parse without syntax errors.
-3. The portable build root contains `START_HERE.txt` and
+1. `python -m monkez_pyqt6 --doctor` succeeds in `.venv311`.
+2. `python -m custom_pyqt6_designer --version` still succeeds as the legacy
+   compatibility launcher.
+3. PowerShell installer/uninstaller scripts parse without syntax errors.
+4. The portable build root contains `START_HERE.txt` and
    `Open Monkez Designer.bat` plus `New Splash Screen.bat`.
-4. Never test the per-user installer against the developer's real
+5. Never test the per-user installer against the developer's real
    `%LOCALAPPDATA%`; use static checks or an explicitly isolated test account.
 
 The portable ZIP is created with `System.IO.Compression.ZipFile`. Keep

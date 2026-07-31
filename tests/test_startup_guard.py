@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from custom_pyqt6_designer.startup_guard import (
+from monkez_pyqt6.startup_guard import (
     StartupAlreadyRunningError,
     StartupInstanceGuard,
 )

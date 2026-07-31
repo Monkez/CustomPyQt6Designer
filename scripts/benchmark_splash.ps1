@@ -15,14 +15,14 @@ for ($Index = 0; $Index -lt 7; $Index++) {
     $ImportSamples += [double](& $Python -c @"
 from time import perf_counter
 t = perf_counter()
-from custom_pyqt6_designer.splash import show_splash
+from monkez_pyqt6.splash import show_splash
 print((perf_counter() - t) * 1000)
 "@)
     $PaintSamples += [double](& $Python -c @"
 from time import perf_counter
 t = perf_counter()
 from PyQt6.QtWidgets import QApplication
-from custom_pyqt6_designer.splash import show_splash
+from monkez_pyqt6.splash import show_splash
 app = QApplication([])
 splash = show_splash(animation_enabled=False, minimum_visible_ms=0)
 app.processEvents()

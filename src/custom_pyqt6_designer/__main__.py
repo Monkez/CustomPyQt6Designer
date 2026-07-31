@@ -1,6 +1,6 @@
-from __future__ import annotations
+"""Backward-compatible module launcher."""
 
-from .launcher import main
+from monkez_pyqt6.launcher import main
 
 
 if __name__ == "__main__":

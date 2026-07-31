@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) {
     --icon "logo.ico" `
     --paths src `
     --add-data "logo.png;." `
-    --hidden-import "custom_pyqt6_designer.monkez_widgets.monkez_splash_screen" `
+    --hidden-import "monkez_pyqt6.monkez_widgets.monkez_splash_screen" `
     splash_heavy_demo\launcher.py
 
 if ($LASTEXITCODE -ne 0) {
@@ -39,7 +39,7 @@ $LockHolder = Start-Process `
     -FilePath $Executable `
     -ArgumentList "--verify-startup-lock" `
     -PassThru
-$StartupLockPath = & $Python -c "from custom_pyqt6_designer.startup_guard import StartupInstanceGuard; print(StartupInstanceGuard('com.monkez.splash-heavy-demo').lock_path)"
+$StartupLockPath = & $Python -c "from monkez_pyqt6.startup_guard import StartupInstanceGuard; print(StartupInstanceGuard('com.monkez.splash-heavy-demo').lock_path)"
 $LockDeadline = (Get-Date).AddSeconds(10)
 while (-not (Test-Path -LiteralPath $StartupLockPath)) {
     $LockHolder.Refresh()

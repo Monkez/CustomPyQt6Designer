@@ -11,7 +11,7 @@ if (-not (Test-Path $Python)) {
     throw "Python 3.11 environment not found. Run setup.bat first."
 }
 
-$Version = & $Python -c "from custom_pyqt6_designer import __version__; print(__version__)"
+$Version = & $Python -c "from monkez_pyqt6 import __version__; print(__version__)"
 $PythonHome = & $Python -c "import sys; print(sys.base_prefix)"
 $PortableBuildRoot = "dist\portable\$Version"
 $OutputDirectory = Join-Path $PortableBuildRoot "MonkezDesigner"
@@ -33,7 +33,7 @@ if ($LASTEXITCODE -ne 0) {
     --paths src `
     --add-data "logo.png;." `
     --add-data "logo.ico;." `
-    --add-data "src\custom_pyqt6_designer;custom_pyqt6_designer" `
+    --add-data "src\monkez_pyqt6;monkez_pyqt6" `
     --add-data ".venv311\Lib\site-packages\PyQt6;PyQt6" `
     --add-data ".venv311\Lib\site-packages\pyqt6_plugins;pyqt6_plugins" `
     --add-data ".venv311\Lib\site-packages\qt6_applications;qt6_applications" `
@@ -50,7 +50,7 @@ if ($LASTEXITCODE -ne 0) {
     --add-binary "$PythonHome\python311.dll;python_runtime" `
     --add-binary "$PythonHome\vcruntime140.dll;python_runtime" `
     --add-binary "$PythonHome\vcruntime140_1.dll;python_runtime" `
-    src\custom_pyqt6_designer\exe_entry.py
+    src\monkez_pyqt6\exe_entry.py
 
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed."
@@ -65,7 +65,7 @@ foreach ($PortableFile in $PortableFiles) {
     Copy-Item -LiteralPath $PortableFile -Destination $OutputDirectory -Force
 }
 
-$VerificationUi = (Resolve-Path "src\custom_pyqt6_designer\templates\monkez_splash_screen.ui").Path
+$VerificationUi = (Resolve-Path "src\monkez_pyqt6\templates\monkez_splash_screen.ui").Path
 $Verification = Start-Process `
     -FilePath "$OutputDirectory\MonkezDesigner.exe" `
     -ArgumentList "--verify-plugins `"$VerificationUi`"" `

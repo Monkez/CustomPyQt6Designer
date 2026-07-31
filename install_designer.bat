@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 set "INSTALL_ROOT=%LOCALAPPDATA%\MonkezDesigner"
 set "INSTALL_PYTHON=%INSTALL_ROOT%\venv\Scripts\python.exe"
-set "DESIGNER_EXE=%INSTALL_ROOT%\venv\Scripts\custom-pyqt6-designer.exe"
+set "DESIGNER_EXE=%INSTALL_ROOT%\venv\Scripts\monkez-pyqt6.exe"
 
 echo.
 echo Monkez Designer - per-user installation
