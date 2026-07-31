@@ -105,9 +105,9 @@ property.
 | `themeIndex` | `int` | Numeric theme preset. |
 | `buttonTypeIndex` | `int` | `0 Filled`, `1 Outlined`, `2 Text`. |
 | `active` | `bool` | Switches between active and deactive color. |
-| `activeColor` | `QColor` | Filled button background/accent color. |
+| `activeColor` | `QColor` | Filled background; Outlined border/accent color. |
 | `deactiveColor` | `QColor` | Disabled-like custom inactive color. |
-| `textColor` | `QColor` | Text color. |
+| `textColor` | `QColor` | Normal text color, including Outlined mode. |
 | `hoverTextColor` | `QColor` | Text color while hover/pressed. |
 | `paddingX`, `paddingY` | `int` | Internal button padding. |
 | `radius` | `int` | Corner radius. |
@@ -129,6 +129,11 @@ button.setButtonTypeIndex(1)  # outlined
 button.setAccent("#ef4444").setForeground("#ef4444")
 button.setContentPadding(8, 4).setSizeTokens(radius=10)
 ```
+
+Ở chế độ `Outlined`, viền luôn lấy từ `activeColor` khi `active=True`
+(`deactiveColor` khi `active=False`), còn chữ lấy từ `textColor`.
+Khi hover/pressed, chữ dùng `hoverTextColor` và viền vẫn được dẫn xuất từ
+`activeColor`.
 
 ### MonkezTextInput
 
@@ -427,6 +432,16 @@ dùng `"rgb"`/`"rgba"` cho nguồn RGB. Widget sao chép frame sang bộ nhớ Q
 vì vậy caller có thể tái sử dụng hoặc thay đổi buffer NumPy ngay sau lời gọi.
 NumPy chỉ được import khi truyền `ndarray`, nên tải ảnh từ file hoặc Qt image
 không làm chậm thời gian import thư viện.
+
+`MonkezImage` dùng size policy `Ignored` theo cả hai chiều và minimum size hint
+`0×0`. Vì vậy kích thước nguồn ảnh và scale mode không được phép làm thay đổi
+geometry của widget: layout/container bên ngoài cấp kích thước trước, sau đó
+`Fit`, `Fill`, `Stretch` hoặc `Original` chỉ scale pixmap bên trong vùng đó.
+
+Để widget tự co giãn khi cửa sổ/container đổi kích thước trong Designer, hãy đặt
+`MonkezImage` vào layout của container (Vertical, Horizontal, Grid hoặc Form).
+Một child widget không nằm trong layout sẽ giữ geometry cố định theo cơ chế chuẩn
+của Qt và không thể tự bám theo parent.
 
 ### MonkezSplashScreen
 

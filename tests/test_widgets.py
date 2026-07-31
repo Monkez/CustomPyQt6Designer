@@ -10,9 +10,17 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, QSizeF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QLabel,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 from PyQt6 import uic
 
 from custom_pyqt6_designer import monkez_widgets
@@ -188,6 +196,38 @@ class WidgetTests(unittest.TestCase):
         self.assertIn("background-color: rgba", pressed_style)
         button.deleteLater()
 
+    def test_outlined_button_uses_active_and_text_designer_colors(self) -> None:
+        button = MonkezButton()
+        active = QColor(12, 34, 56, 210)
+        text = QColor(220, 230, 240, 190)
+        hover_text = QColor(250, 200, 40, 180)
+        button.buttonTypeIndex = 1
+        button.activeColor = active
+        button.textColor = text
+        button.hoverTextColor = hover_text
+
+        normal_style = button.styleSheet()
+        self.assertIn(
+            f"border: 1px solid rgba({active.red()}, {active.green()}, "
+            f"{active.blue()}, {active.alpha()})",
+            normal_style,
+        )
+        self.assertIn(
+            f"color: rgba({text.red()}, {text.green()}, "
+            f"{text.blue()}, {text.alpha()})",
+            normal_style,
+        )
+
+        button._hovered = True
+        button._update_style()
+        hover_style = button.styleSheet()
+        self.assertIn(
+            f"color: rgba({hover_text.red()}, {hover_text.green()}, "
+            f"{hover_text.blue()}, {hover_text.alpha()})",
+            hover_style,
+        )
+        button.deleteLater()
+
     def test_image_reuses_scaled_pixmap_until_source_or_size_changes(self) -> None:
         widget = MonkezImage()
         widget.resize(320, 180)
@@ -329,6 +369,53 @@ class WidgetTests(unittest.TestCase):
         self.assertLessEqual(widget.image_label.pixmap().width(), 80)
         widget.close()
         widget.deleteLater()
+
+    def test_image_outer_layout_owns_geometry_before_pixmap_scaling(self) -> None:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        widget = MonkezImage()
+        widget._device_pixel_ratio = lambda: 1.0
+        layout.addWidget(widget)
+
+        pixmap = QPixmap(400, 100)
+        pixmap.fill(QColor("#1976d2"))
+        widget.set_image(pixmap)
+        widget.setScaleMode(MonkezImage.ScaleMode.Fit)
+        container.resize(300, 180)
+        container.show()
+        self.app.processEvents()
+        widget._update_pixmap()
+
+        self.assertEqual(widget.size(), container.contentsRect().size())
+        self.assertEqual(widget.image_label.size(), widget.contentsRect().size())
+        self.assertEqual(
+            widget.sizePolicy().horizontalPolicy(),
+            QSizePolicy.Policy.Ignored,
+        )
+        self.assertEqual(
+            widget.sizePolicy().verticalPolicy(),
+            QSizePolicy.Policy.Ignored,
+        )
+        self.assertEqual(widget.minimumSizeHint(), QSize(0, 0))
+        self.assertEqual(
+            widget.image_label.pixmap().deviceIndependentSize(),
+            QSizeF(300, 75),
+        )
+
+        widget.setScaleMode(MonkezImage.ScaleMode.Fill)
+        container.resize(150, 300)
+        self.app.processEvents()
+        widget._update_pixmap()
+
+        self.assertEqual(widget.size(), QSize(150, 300))
+        self.assertEqual(widget.image_label.size(), QSize(150, 300))
+        self.assertEqual(
+            widget.image_label.pixmap().deviceIndependentSize(),
+            QSizeF(1200, 300),
+        )
+        container.close()
+        container.deleteLater()
 
     def test_image_uses_physical_pixels_for_high_dpi_scaling(self) -> None:
         widget = MonkezImage()

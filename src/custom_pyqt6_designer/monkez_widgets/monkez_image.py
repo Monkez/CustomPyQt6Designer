@@ -110,7 +110,7 @@ class MonkezImage(QWidget):
         layout.addWidget(self.image_label)
 
         self.setMinimumSize(0, 0)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         if source is None:
             self.setImageFile(image_file)
         else:
@@ -127,7 +127,7 @@ class MonkezImage(QWidget):
         return self
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(24, 24)
+        return QSize(0, 0)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

@@ -204,6 +204,10 @@ NumPy `uint8` frame qua `set_image()`. Frame OpenCV BGR/BGRA dùng
 `set_image(frame, color_order="rgb")`. NumPy được nạp theo nhu cầu nên không
 ảnh hưởng tốc độ khởi động khi chỉ dùng file ảnh.
 
+Khi nằm trong layout, `MonkezImage` luôn nhận toàn bộ kích thước do container
+ngoài cấp; kích thước ảnh nguồn không chi phối geometry của widget. Các mode
+`Fit`, `Fill`, `Stretch`, `Original` chỉ thay đổi pixmap hiển thị bên trong.
+
 `MonkezScrollArea` dùng nguyên cơ chế container của `QScrollArea`, chỉ bổ sung
 theme và các property màu, border, radius, scrollbar. Trong Designer, kéo widget
 con vào `scrollAreaWidgetContents` như Scroll Area mặc định. Khi tạo bằng Python,

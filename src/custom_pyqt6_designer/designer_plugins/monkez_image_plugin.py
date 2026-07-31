@@ -56,7 +56,7 @@ class MonkezImagePlugin(QPyDesignerCustomWidgetPlugin):
     def whatsThis(self) -> str:
         return (
             "Image display widget with configurable background, image file, "
-            "and Fit, Fill, Stretch or Original scale modes."
+            "layout-owned geometry, and Fit, Fill, Stretch or Original scale modes."
         )
 
     def isContainer(self) -> bool:

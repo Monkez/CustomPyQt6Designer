@@ -138,7 +138,8 @@ class MonkezButton(QPushButton):
         pressed_color = self._pressed_background(bg_color)
         bg = pressed_color if self._pressed else hover_color if self._hovered else bg_color
         text_color = self._hover_text_color if self._hovered or self._pressed else self._text_color
-        border_color = self._border_color if self._active else self._deactive_color
+        accent_color = QColor(self._active_color if self._active else self._deactive_color)
+        text_button_color = self._border_color if self._active else self._deactive_color
         padding_y = self._padding_y
         padding_x = self._padding_x
         disabled_bg = self._blend(self._surface_color, QColor("#9ca3af"), 0.20)
@@ -148,16 +149,16 @@ class MonkezButton(QPushButton):
         if self._button_type == "outlined":
             outline_bg = QColor(self._surface_color)
             if self._pressed:
-                outline_bg = self._blend(self._surface_color, border_color, 0.16)
+                outline_bg = self._blend(self._surface_color, accent_color, 0.16)
             elif self._hovered:
-                outline_bg = self._blend(self._surface_color, border_color, 0.09)
-            border = self._pressed_background(border_color) if self._pressed else border_color
+                outline_bg = self._blend(self._surface_color, accent_color, 0.09)
+            border = self._pressed_background(accent_color) if self._pressed else accent_color
             self.setStyleSheet(
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
                 f"background-color: {self._rgba(outline_bg)};"
-                f"color: {border.name()};"
-                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {border.name()};"
+                f"color: {self._rgba(text_color)};"
+                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {self._rgba(border)};"
                 f"padding: {padding_y}px {padding_x}px;"
                 "}"
                 "QPushButton:disabled {"
@@ -169,14 +170,14 @@ class MonkezButton(QPushButton):
         elif self._button_type == "text":
             text_bg = QColor(0, 0, 0, 0)
             if self._pressed:
-                text_bg = self._tinted_surface(border_color, 30)
+                text_bg = self._tinted_surface(text_button_color, 30)
             elif self._hovered:
-                text_bg = self._tinted_surface(border_color, 18)
+                text_bg = self._tinted_surface(text_button_color, 18)
             self.setStyleSheet(
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
                 f"background-color: {self._rgba(text_bg)};"
-                f"color: {border_color.name()};"
+                f"color: {text_button_color.name()};"
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
                 "}"

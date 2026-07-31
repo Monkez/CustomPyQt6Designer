@@ -4,7 +4,7 @@ Updated: 2026-07-31
 
 ## Current version
 
-- Working version: 0.4.8 (NumPy frame and direct path image sources).
+- Working version: 0.4.9 (Outlined colors and layout-owned Image geometry).
 - Python runtime requires Python 3.10 or newer.
 - Designer development and portable build require Python 3.11.
 
@@ -41,22 +41,26 @@ Updated: 2026-07-31
 - `MonkezImage.set_image()` and its `setImage()`/`setFrame()` aliases accept
   detached `uint8` NumPy frames in grayscale, BGR/BGRA or RGB/RGBA formats,
   plus `str`, `bytes` and `pathlib.Path` file paths. NumPy remains lazy-loaded.
+- Outlined `MonkezButton` uses `activeColor` for its border and `textColor` for
+  normal text, while preserving `hoverTextColor` for hover/pressed feedback.
+- `MonkezImage` uses Ignored horizontal/vertical size policies and a zero
+  minimum hint, so its outer layout owns widget geometry before the selected
+  scale mode transforms the pixmap.
 - `MonkezScrollArea` preserves the stock `QScrollArea` runtime defaults and
   only adds theme/style properties. Its Designer XML uses Qt's native
   `scrollAreaWidgetContents` structure without a custom fixed-page extension.
 
 ## Latest verification
 
-- 72 automated tests pass on Python 3.11.15, including NumPy BGR, grayscale,
-  RGBA, non-contiguous frame and direct `pathlib.Path` image sources.
-- The 0.4.8 wheel and source distribution include the NumPy/path image API.
-- The 0.4.8 portable executable passes `--doctor`; source and packaged plugin
-  checks initialize and create all 25 plugins.
+- All 74 automated tests pass for 0.4.9.
+- The 0.4.9 wheel and source archive build successfully, and the wheel contains
+  the verified Button color and Image geometry implementations.
+- The 0.4.9 portable `MonkezDesigner.exe --doctor` check passes with all 25
+  Designer plugins available.
+- `MonkezDesigner-0.4.9-windows-x64.zip` contains 7,584 entries and passes a
+  full CRC integrity check.
 - Importing `MonkezImage` does not import NumPy. Updating and rendering thirty
   1280x720 BGR frames averaged 5.0 ms per frame on the release workstation.
-- `MonkezDesigner-0.4.8-windows-x64.zip` contains 7,570 entries, includes all
-  three portable launcher/onboarding files at its root and passes a full CRC
-  integrity check.
 - A real 0.4.7 portable Designer session successfully creates
   `scrollAreaWidgetContents` when `MonkezScrollArea` is dragged onto a blank
   form, then accepts and saves a `QLabel` dropped directly into that page.
@@ -80,7 +84,7 @@ Updated: 2026-07-31
   noisy `Compress-Archive` progress loop.
 - Unpacked portable builds use versioned output directories so an older
   running Designer does not block a new release build.
-- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.8
+- QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.4.9
   portable Designer work. Reassess their footprint before removing them.
 
 ## Known compatibility debt
