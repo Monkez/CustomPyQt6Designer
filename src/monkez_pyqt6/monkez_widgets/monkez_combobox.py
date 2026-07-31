@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor, QFontMetrics, QIcon, QKeyEvent, QPainter, QPaint
 from PyQt6.QtWidgets import QApplication, QComboBox, QFrame, QListView, QStyle, QStyledItemDelegate, QVBoxLayout
 
 from .themes import (
+    color_to_css,
     normalize_theme,
     theme_color,
     theme_from_preset,
@@ -261,6 +262,8 @@ class MonkezComboBox(QComboBox):
         self._update_style()
 
     def showPopup(self) -> None:
+        if self.count() <= 0 or not self.isEnabled():
+            return
         if self._popup.isVisible():
             self._popup.dismiss()
             return
@@ -289,17 +292,17 @@ class MonkezComboBox(QComboBox):
     def _update_style(self) -> None:
         self.setStyleSheet(
             "QComboBox {"
-            f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {self._border_color.name()};"
+            f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._border_radius}px;"
             "padding: 3px 10px;"
             "padding-right: 32px;"
-            f"background-color: {self._background_color.name()};"
-            f"color: {self._text_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._text_color)};"
             "}"
             "QComboBox:hover {"
-            f"background-color: {self._hover_background_color.name()};"
+            f"background-color: {color_to_css(self._hover_background_color)};"
             f"border-color: {theme_color(self._theme, 'border_focus').name()};"
-            f"color: {self._text_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
             "}"
             "QComboBox::drop-down {"
             "subcontrol-origin: padding;"
@@ -317,7 +320,7 @@ class MonkezComboBox(QComboBox):
             "QListView {"
             "border: none;"
             "background-color: transparent;"
-            f"color: {self._text_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
             "outline: 0;"
             "}"
             "QListView::item {"
@@ -328,8 +331,8 @@ class MonkezComboBox(QComboBox):
             "}"
             "QListView::item:hover,"
             "QListView::item:selected {"
-            f"background-color: {self._hover_background_color.name()};"
-            f"color: {self._hover_text_color.name()};"
+            f"background-color: {color_to_css(self._hover_background_color)};"
+            f"color: {color_to_css(self._hover_text_color)};"
             "}"
             "QScrollBar:vertical {"
             "background: transparent;"

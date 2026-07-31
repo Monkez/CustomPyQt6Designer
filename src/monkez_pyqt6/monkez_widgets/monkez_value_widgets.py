@@ -4,12 +4,12 @@ import math
 from enum import IntEnum
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QDial, QDoubleSpinBox, QSpinBox
 
 from .shadow_support import ShadowSupportMixin
 from .theme_support import ThemeSupportMixin
-from .themes import theme_color, theme_int, theme_radius
+from .themes import color_to_css, theme_color, theme_int, theme_radius
 
 
 class _SpinBoxStyleMixin(ThemeSupportMixin):
@@ -38,18 +38,18 @@ class _SpinBoxStyleMixin(ThemeSupportMixin):
         radius = max(0, self._radius - 1)
         self.setStyleSheet(
             f"{selector} {{"
-            f"background-color: {self._background_color.name()};"
-            f"border: 1px solid {self._border_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"border: 1px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
-            f"color: {self._text_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
             "padding: 4px 8px;"
             f"padding-right: {button_width + 6}px;"
             "}"
-            f"{selector}:focus {{ border: 2px solid {self._accent_color.name()}; }}"
+            f"{selector}:focus {{ border: 2px solid {color_to_css(self._accent_color)}; }}"
             f"{selector}::up-button {{"
             f"subcontrol-origin: border; subcontrol-position: top right; width: {button_width}px;"
             "margin: 1px 1px 0px 0px;"
-            f"border-left: 1px solid {self._border_color.name()};"
+            f"border-left: 1px solid {color_to_css(self._border_color)};"
             "border-top: 1px solid transparent;"
             "border-right: 1px solid transparent;"
             f"border-top-right-radius: {radius}px;"
@@ -58,7 +58,7 @@ class _SpinBoxStyleMixin(ThemeSupportMixin):
             f"{selector}::down-button {{"
             f"subcontrol-origin: border; subcontrol-position: bottom right; width: {button_width}px;"
             "margin: 0px 1px 1px 0px;"
-            f"border-left: 1px solid {self._border_color.name()};"
+            f"border-left: 1px solid {color_to_css(self._border_color)};"
             "border-right: 1px solid transparent;"
             "border-bottom: 1px solid transparent;"
             f"border-bottom-right-radius: {radius}px;"

@@ -17,6 +17,9 @@ Không di chuyển riêng file `.exe` ra khỏi thư mục vì Qt, Python bridge
 Khi tự build, thư mục giải nén được tạo tại
 `dist\portable\<version>\MonkezDesigner`; file ZIP phát hành vẫn nằm trực tiếp
 trong `dist`.
+Nếu executable cùng phiên bản đang mở và Windows khóa thư mục này, build tự
+chuyển sang `dist\portable\<version>-build-<timestamp>\MonkezDesigner` thay vì
+yêu cầu đóng cửa sổ hoặc làm hỏng build đang chạy. Tên ZIP phát hành không đổi.
 
 Các widget được chia thành các nhóm `Monkez 01 Controls` đến `Monkez 07 Media`
 trong Widget Box để dễ tìm kiếm.

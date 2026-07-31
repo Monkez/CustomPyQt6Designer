@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QAbstractSlider
 
 from .shadow_support import ShadowSupportMixin
@@ -375,6 +375,7 @@ class MonkezLinearGauge(_GaugeBase):
 
         if self._show_target:
             target_ratio = (self._target_value - self.minimum()) / max(1, self.maximum() - self.minimum())
+            target_ratio = max(0.0, min(1.0, target_ratio))
             painter.setPen(QPen(self._warning_color, 3, cap=Qt.PenCapStyle.RoundCap))
             if self._vertical:
                 y = track.bottom() - track.height() * target_ratio

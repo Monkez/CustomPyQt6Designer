@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import QSize, pyqtEnum, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtCore import QPointF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtWidgets import QCheckBox, QStyle, QStyleOptionButton
 
 from .themes import (
+    color_to_css,
     normalize_theme,
     theme_color,
     theme_from_preset,
@@ -56,11 +57,10 @@ class MonkezCheckBox(QCheckBox):
         return QSize(18, 18)
 
     def _update_style(self) -> None:
-        mark_color = theme_color(self._theme, "on_primary").name()
-        hover = theme_color(self._theme, "secondary").name()
+        hover = color_to_css(theme_color(self._theme, "secondary"))
         self.setStyleSheet(
             "QCheckBox {"
-            f"color: {self._text_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
             f"font-size: {theme_int(self._theme, 'font_size')}px;"
             "spacing: 8px;"
             "}"
@@ -68,19 +68,60 @@ class MonkezCheckBox(QCheckBox):
             f"width: {self._indicator_size}px;"
             f"height: {self._indicator_size}px;"
             f"border-radius: {self._radius}px;"
-            f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {self._border_color.name()};"
-            f"background-color: {self._box_color.name()};"
+            f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {color_to_css(self._border_color)};"
+            f"background-color: {color_to_css(self._box_color)};"
             "}"
             "QCheckBox::indicator:hover {"
             f"background-color: {hover};"
-            f"border-color: {self._checked_color.name()};"
+            f"border-color: {color_to_css(self._checked_color)};"
             "}"
             "QCheckBox::indicator:checked {"
-            f"background-color: {self._checked_color.name()};"
-            f"border-color: {self._checked_color.name()};"
-            f"image: none; color: {mark_color};"
+            f"background-color: {color_to_css(self._checked_color)};"
+            f"border-color: {color_to_css(self._checked_color)};"
+            "image: none;"
             "}"
         )
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        state = self.checkState()
+        if state == Qt.CheckState.Unchecked:
+            return
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        rect = self.style().subElementRect(
+            QStyle.SubElement.SE_CheckBoxIndicator,
+            option,
+            self,
+        )
+        if rect.isEmpty():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(
+            QPen(
+                theme_color(self._theme, "on_primary"),
+                max(2.0, rect.width() / 8),
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
+            )
+        )
+        if state == Qt.CheckState.PartiallyChecked:
+            y = rect.center().y()
+            painter.drawLine(
+                QPointF(rect.left() + rect.width() * 0.25, y),
+                QPointF(rect.right() - rect.width() * 0.25, y),
+            )
+        else:
+            painter.drawLine(
+                QPointF(rect.left() + rect.width() * 0.22, rect.center().y()),
+                QPointF(rect.left() + rect.width() * 0.43, rect.bottom() - rect.height() * 0.24),
+            )
+            painter.drawLine(
+                QPointF(rect.left() + rect.width() * 0.43, rect.bottom() - rect.height() * 0.24),
+                QPointF(rect.right() - rect.width() * 0.17, rect.top() + rect.height() * 0.22),
+            )
 
     def getTheme(self) -> str:
         return self._theme

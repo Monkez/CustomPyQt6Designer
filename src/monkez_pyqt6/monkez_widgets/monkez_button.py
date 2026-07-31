@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import QSize, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QPushButton
 
 from .themes import (
+    color_to_css,
     normalize_theme,
     theme_color,
     theme_from_preset,
@@ -85,24 +86,40 @@ class MonkezButton(QPushButton):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
-        self._pressed = True
-        self._update_style()
         super().mousePressEvent(event)
+        self._pressed = self.isDown() and event.button() == Qt.MouseButton.LeftButton
+        self._update_style()
 
     def mouseReleaseEvent(self, event) -> None:
-        self._pressed = False
-        self._update_style()
         super().mouseReleaseEvent(event)
+        self._pressed = self.isDown()
+        self._update_style()
+
+    def keyPressEvent(self, event) -> None:
+        super().keyPressEvent(event)
+        pressed = self.isDown()
+        if pressed != self._pressed:
+            self._pressed = pressed
+            self._update_style()
+
+    def keyReleaseEvent(self, event) -> None:
+        super().keyReleaseEvent(event)
+        pressed = self.isDown()
+        if pressed != self._pressed:
+            self._pressed = pressed
+            self._update_style()
 
     def _apply_shadow(self) -> None:
-        if self._shadow_enabled:
-            shadow = QGraphicsDropShadowEffect(self)
-            shadow.setBlurRadius(self._shadow_blur)
-            shadow.setOffset(self._shadow_offset_x, self._shadow_offset_y)
-            shadow.setColor(self._shadow_color)
-            self.setGraphicsEffect(shadow)
-        else:
+        if not self._shadow_enabled:
             self.setGraphicsEffect(None)
+            return
+        shadow = self.graphicsEffect()
+        if not isinstance(shadow, QGraphicsDropShadowEffect):
+            shadow = QGraphicsDropShadowEffect(self)
+            self.setGraphicsEffect(shadow)
+        shadow.setBlurRadius(self._shadow_blur)
+        shadow.setOffset(self._shadow_offset_x, self._shadow_offset_y)
+        shadow.setColor(self._shadow_color)
 
     def _hover_background(self, color: QColor) -> QColor:
         hovered = QColor(color).lighter(112)
@@ -139,7 +156,7 @@ class MonkezButton(QPushButton):
         bg = pressed_color if self._pressed else hover_color if self._hovered else bg_color
         text_color = self._hover_text_color if self._hovered or self._pressed else self._text_color
         accent_color = QColor(self._active_color if self._active else self._deactive_color)
-        text_button_color = self._border_color if self._active else self._deactive_color
+        text_button_color = QColor(self._text_color if self._active else self._deactive_color)
         padding_y = self._padding_y
         padding_x = self._padding_x
         disabled_bg = self._blend(self._surface_color, QColor("#9ca3af"), 0.20)
@@ -163,8 +180,8 @@ class MonkezButton(QPushButton):
                 "}"
                 "QPushButton:disabled {"
                 f"background-color: {self._rgba(disabled_bg)};"
-                f"color: {disabled_text.name()};"
-                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {disabled_border.name()};"
+                f"color: {color_to_css(disabled_text)};"
+                f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {color_to_css(disabled_border)};"
                 "}"
             )
         elif self._button_type == "text":
@@ -177,13 +194,13 @@ class MonkezButton(QPushButton):
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
                 f"background-color: {self._rgba(text_bg)};"
-                f"color: {text_button_color.name()};"
+                f"color: {color_to_css(text_button_color)};"
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
                 "}"
                 "QPushButton:disabled {"
                 "background-color: transparent;"
-                f"color: {disabled_text.name()};"
+                f"color: {color_to_css(disabled_text)};"
                 "border: none;"
                 "}"
             )
@@ -192,13 +209,13 @@ class MonkezButton(QPushButton):
                 "QPushButton {"
                 f"border-radius: {self._radius}px;"
                 f"background-color: {self._rgba(bg)};"
-                f"color: {text_color.name()};"
+                f"color: {color_to_css(text_color)};"
                 "border: none;"
                 f"padding: {padding_y}px {padding_x}px;"
                 "}"
                 "QPushButton:disabled {"
                 f"background-color: {self._rgba(disabled_bg)};"
-                f"color: {disabled_text.name()};"
+                f"color: {color_to_css(disabled_text)};"
                 "border: none;"
                 "}"
             )

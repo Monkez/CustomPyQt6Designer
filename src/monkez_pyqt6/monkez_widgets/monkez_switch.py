@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import IntEnum
 
 from PyQt6.QtCore import QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter
+from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QAbstractButton
 
 from .themes import normalize_theme, theme_color, theme_from_preset, theme_options_text, theme_radius, theme_to_preset
@@ -55,31 +55,52 @@ class MonkezSwitch(QAbstractButton):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setOpacity(1.0 if self.isEnabled() else 0.48)
 
-        switch_width = min(58, max(44, self.width()))
-        switch_height = min(30, max(24, self.height()))
-        track_rect = QRectF(0, (self.height() - switch_height) / 2, switch_width, switch_height)
+        text_space = 0
+        if self._show_text:
+            text = self._on_text if self.isChecked() else self._off_text
+            text_space = self.fontMetrics().horizontalAdvance(text) + 8
+        available_width = max(1, self.width() - text_space)
+        switch_width = min(58, available_width)
+        switch_height = min(30, self.height(), max(14, switch_width * 0.52))
+        left = self.width() - switch_width if self.layoutDirection() == Qt.LayoutDirection.RightToLeft else 0
+        track_rect = QRectF(left, (self.height() - switch_height) / 2, switch_width, switch_height)
         track_color = self._checked_color if self.isChecked() else self._track_color
 
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(track_color)
-        painter.drawRoundedRect(track_rect, self._radius, self._radius)
-
-        thumb_diameter = switch_height - self._thumb_margin * 2
-        thumb_x = (
-            track_rect.right() - thumb_diameter - self._thumb_margin
-            if self.isChecked()
-            else track_rect.left() + self._thumb_margin
+        painter.setPen(
+            QPen(self._checked_color, 1.5)
+            if self.hasFocus()
+            else QPen(Qt.PenStyle.NoPen)
         )
-        thumb_rect = QRectF(thumb_x, track_rect.top() + self._thumb_margin, thumb_diameter, thumb_diameter)
+        painter.setBrush(track_color)
+        radius = min(float(self._radius), switch_height / 2)
+        painter.drawRoundedRect(track_rect, radius, radius)
+
+        margin = min(self._thumb_margin, max(1.0, switch_height / 4))
+        thumb_diameter = max(2.0, switch_height - margin * 2)
+        checked_at_right = self.layoutDirection() != Qt.LayoutDirection.RightToLeft
+        thumb_on_right = self.isChecked() == checked_at_right
+        thumb_x = (
+            track_rect.right() - thumb_diameter - margin
+            if thumb_on_right
+            else track_rect.left() + margin
+        )
+        thumb_rect = QRectF(thumb_x, track_rect.top() + margin, thumb_diameter, thumb_diameter)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self._thumb_color)
         painter.drawEllipse(thumb_rect)
 
         if self._show_text:
             text = self._on_text if self.isChecked() else self._off_text
-            text_rect = QRectF(track_rect.right() + 8, 0, max(0, self.width() - track_rect.width() - 8), self.height())
+            if self.layoutDirection() == Qt.LayoutDirection.RightToLeft:
+                text_rect = QRectF(0, 0, max(0, track_rect.left() - 8), self.height())
+                alignment = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
+            else:
+                text_rect = QRectF(track_rect.right() + 8, 0, max(0, self.width() - track_rect.right() - 8), self.height())
+                alignment = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
             painter.setPen(self._text_color)
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+            painter.drawText(text_rect, alignment, text)
 
         painter.end()
 
@@ -155,14 +176,14 @@ class MonkezSwitch(QAbstractButton):
         return self._radius
 
     def setRadius(self, value: int) -> None:
-        self._radius = max(0, value)
+        self._radius = max(0, int(value))
         self.update()
 
     def getThumbMargin(self) -> int:
         return self._thumb_margin
 
     def setThumbMargin(self, value: int) -> None:
-        self._thumb_margin = max(1, value)
+        self._thumb_margin = max(1, int(value))
         self.update()
 
     def getShowText(self) -> bool:

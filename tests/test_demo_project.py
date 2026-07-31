@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEMO_ROOT = ROOT / "demo_project"
 sys.path.insert(0, str(DEMO_ROOT))
 
-from main import DemoWindow
+from main import DemoWindow  # noqa: E402 - demo path must be inserted first.
 
 
 class DemoProjectTests(unittest.TestCase):

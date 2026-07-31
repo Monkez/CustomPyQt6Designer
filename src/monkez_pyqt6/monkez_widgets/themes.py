@@ -206,6 +206,16 @@ def theme_color(theme: str, key: str) -> QColor:
     return QColor(theme_value(theme, key))
 
 
+def color_to_css(color: QColor) -> str:
+    """Return a Qt stylesheet color without discarding its alpha channel."""
+    value = QColor(color)
+    if not value.isValid():
+        return "transparent"
+    if value.alpha() == 255:
+        return value.name()
+    return f"rgba({value.red()}, {value.green()}, {value.blue()}, {value.alpha()})"
+
+
 def theme_int(theme: str, key: str) -> int:
     return int(theme_value(theme, key))
 

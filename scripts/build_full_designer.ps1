@@ -17,6 +17,62 @@ $PortableBuildRoot = "dist\portable\$Version"
 $OutputDirectory = Join-Path $PortableBuildRoot "MonkezDesigner"
 $ArchivePath = "dist\MonkezDesigner-$Version-windows-x64.zip"
 
+function Test-FileLocked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    try {
+        $Stream = [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::None
+        )
+        $Stream.Dispose()
+        return $false
+    }
+    catch [System.IO.IOException] {
+        return $true
+    }
+    catch [System.UnauthorizedAccessException] {
+        return $true
+    }
+}
+
+function Test-ExecutableRunning {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $ExpectedPath = [System.IO.Path]::GetFullPath($Path)
+    foreach ($Process in Get-CimInstance Win32_Process -Filter "Name = 'MonkezDesigner.exe'") {
+        if (
+            $Process.ExecutablePath -and
+            [System.IO.Path]::GetFullPath($Process.ExecutablePath) -eq $ExpectedPath
+        ) {
+            return $true
+        }
+    }
+    return $false
+}
+
+$ExistingExecutable = Join-Path $OutputDirectory "MonkezDesigner.exe"
+if (
+    (Test-ExecutableRunning -Path $ExistingExecutable) -or
+    (Test-FileLocked -Path $ExistingExecutable)
+) {
+    $BuildId = Get-Date -Format "yyyyMMdd-HHmmss"
+    $PortableBuildRoot = "dist\portable\$Version-build-$BuildId"
+    $OutputDirectory = Join-Path $PortableBuildRoot "MonkezDesigner"
+    Write-Host "Existing Designer is running; using isolated output: $PortableBuildRoot"
+}
+
 & $Python -m pip install "pyinstaller==$PyInstallerVersion"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not install PyInstaller $PyInstallerVersion."

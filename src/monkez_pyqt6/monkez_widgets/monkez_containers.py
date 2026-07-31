@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen
-from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea, QWidget
+from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea
 
 from .theme_support import ThemeSupportMixin
-from .themes import theme_color, theme_int, theme_radius
+from .themes import color_to_css, theme_color, theme_int, theme_radius
 
 
 class MonkezFrame(QFrame, ThemeSupportMixin):
@@ -38,8 +38,8 @@ class MonkezFrame(QFrame, ThemeSupportMixin):
     def _update_style(self) -> None:
         self.setStyleSheet(
             "MonkezFrame {"
-            f"background-color: {self._background_color.name()};"
-            f"border: {self._border_width}px solid {self._border_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"border: {self._border_width}px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
             "}"
         )
@@ -165,13 +165,9 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         layout = self.layout()
         if layout is None:
             return
-        header_height = self._effective_header_height()
-        layout.setContentsMargins(
-            self._content_padding,
-            header_height + 12,
-            self._content_padding,
-            self._content_padding,
-        )
+        # QWidget contents margins already reserve the header and content
+        # padding. Repeating them on the child layout doubled every inset.
+        layout.setContentsMargins(0, 0, 0, 0)
 
     def _effective_header_height(self) -> int:
         if not self._auto_header_height:
@@ -340,9 +336,11 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
 
     def changeEvent(self, event) -> None:
         super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange:
+            self._update_style()
+            return
         if event.type() in {
             QEvent.Type.EnabledChange,
-            QEvent.Type.FontChange,
             QEvent.Type.PaletteChange,
             QEvent.Type.StyleChange,
         }:
@@ -514,17 +512,17 @@ class MonkezScrollArea(QScrollArea, ThemeSupportMixin):
         handle_radius = max(2, width // 2)
         self.setStyleSheet(
             "MonkezScrollArea {"
-            f"background-color: {self._background_color.name()};"
-            f"border: 1px solid {self._border_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"border: 1px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
             "}"
             "MonkezScrollArea > QWidget > QWidget {"
-            f"background-color: {self._background_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
             "}"
-            f"QScrollBar:vertical {{ background: {self._scrollbar_track_color.name()}; width: {width}px; margin: 0; }}"
-            f"QScrollBar::handle:vertical {{ background: {self._scrollbar_color.name()}; min-height: 24px; border-radius: {handle_radius}px; }}"
-            f"QScrollBar:horizontal {{ background: {self._scrollbar_track_color.name()}; height: {width}px; margin: 0; }}"
-            f"QScrollBar::handle:horizontal {{ background: {self._scrollbar_color.name()}; min-width: 24px; border-radius: {handle_radius}px; }}"
+            f"QScrollBar:vertical {{ background: {color_to_css(self._scrollbar_track_color)}; width: {width}px; margin: 0; }}"
+            f"QScrollBar::handle:vertical {{ background: {color_to_css(self._scrollbar_color)}; min-height: 24px; border-radius: {handle_radius}px; }}"
+            f"QScrollBar:horizontal {{ background: {color_to_css(self._scrollbar_track_color)}; height: {width}px; margin: 0; }}"
+            f"QScrollBar::handle:horizontal {{ background: {color_to_css(self._scrollbar_color)}; min-width: 24px; border-radius: {handle_radius}px; }}"
             "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }"
             "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }"
             "QAbstractScrollArea::corner { background: transparent; }"

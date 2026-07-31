@@ -37,6 +37,7 @@ class PackagingTests(unittest.TestCase):
             "run.bat",
             "gallery.bat",
             "demo.bat",
+            "lint.bat",
             "test.bat",
             "build.bat",
             "build_splash_demo.bat",
@@ -49,6 +50,13 @@ class PackagingTests(unittest.TestCase):
             {path.name for path in ROOT.glob("*.bat")} & expected,
             expected,
         )
+
+    def test_portable_build_handles_a_running_same_version(self) -> None:
+        build_script = (
+            ROOT / "scripts" / "build_full_designer.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Test-ExecutableRunning", build_script)
+        self.assertIn("$Version-build-$BuildId", build_script)
 
     def test_portable_release_contains_onboarding_files(self) -> None:
         portable_files = ROOT / "packaging" / "portable"

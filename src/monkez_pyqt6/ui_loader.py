@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from os import PathLike
 from pathlib import Path
-from typing import Any, TypeVar, overload
+from typing import TypeVar, overload
 
 from PyQt6 import uic
 from PyQt6.QtWidgets import QWidget

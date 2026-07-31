@@ -10,8 +10,9 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QSize, QSizeF, Qt
+from PyQt6.QtCore import QPoint, QSize, QSizeF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -124,6 +125,15 @@ class WidgetTests(unittest.TestCase):
         button.close()
         button.deleteLater()
 
+    def test_shadow_effect_is_reused_when_properties_change(self) -> None:
+        for widget in (MonkezButton(), monkez_widgets.MonkezTextInput()):
+            first_effect = widget.graphicsEffect()
+            widget.shadowBlur = widget.shadowBlur + 1
+            self.assertIs(widget.graphicsEffect(), first_effect)
+            widget.shadowOffsetY = widget.shadowOffsetY + 1
+            self.assertIs(widget.graphicsEffect(), first_effect)
+            widget.deleteLater()
+
     def test_widgets_do_not_set_large_hard_minimum_sizes(self) -> None:
         allowed_explicit_minimums = {"MonkezImage", "MonkezUSBCamera"}
         for name in monkez_widgets.__all__:
@@ -148,6 +158,70 @@ class WidgetTests(unittest.TestCase):
         self.assertNotIn("min-height", progress.styleSheet())
         self.assertNotIn("max-height", progress.styleSheet())
         progress.deleteLater()
+
+    def test_progress_bar_height_does_not_override_text_visibility(self) -> None:
+        progress = monkez_widgets.MonkezProgressBar()
+        progress.setTextVisible(True)
+        progress.barHeight = 8
+        progress.barHeight = 28
+
+        self.assertTrue(progress.isTextVisible())
+        progress.setTextVisible(False)
+        progress.barHeight = 32
+        self.assertFalse(progress.isTextVisible())
+        progress.deleteLater()
+
+    def test_slider_supports_vertical_orientation(self) -> None:
+        slider = monkez_widgets.MonkezSlider()
+        slider.setOrientation(Qt.Orientation.Vertical)
+
+        self.assertIn("groove:vertical", slider.styleSheet())
+        self.assertIn("handle:vertical", slider.styleSheet())
+        self.assertGreater(slider.sizeHint().height(), slider.sizeHint().width())
+        self.assertGreater(
+            slider.minimumSizeHint().height(),
+            slider.minimumSizeHint().width(),
+        )
+        slider.deleteLater()
+
+    def test_custom_stylesheet_colors_preserve_alpha(self) -> None:
+        frame = monkez_widgets.MonkezFrame()
+        frame.backgroundColor = QColor(1, 2, 3, 40)
+        self.assertIn("rgba(1, 2, 3, 40)", frame.styleSheet())
+
+        progress = monkez_widgets.MonkezProgressBar()
+        progress.trackColor = QColor(4, 5, 6, 70)
+        self.assertIn("rgba(4, 5, 6, 70)", progress.styleSheet())
+        frame.deleteLater()
+        progress.deleteLater()
+
+    def test_checkbox_checked_and_indeterminate_states_render(self) -> None:
+        checkbox = monkez_widgets.MonkezCheckBox()
+        checkbox.setTristate(True)
+        checkbox.resize(180, 36)
+        checkbox.show()
+        for state in (
+            Qt.CheckState.Checked,
+            Qt.CheckState.PartiallyChecked,
+        ):
+            checkbox.setCheckState(state)
+            self.app.processEvents()
+            self.assertFalse(checkbox.grab().isNull())
+        checkbox.close()
+        checkbox.deleteLater()
+
+    def test_switch_renders_compact_and_right_to_left(self) -> None:
+        switch = monkez_widgets.MonkezSwitch()
+        switch.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        switch.showText = True
+        switch.resize(44, 20)
+        switch.setChecked(True)
+        switch.show()
+        self.app.processEvents()
+
+        self.assertFalse(switch.grab().isNull())
+        switch.close()
+        switch.deleteLater()
 
     def test_button_hover_brightens_current_background_color(self) -> None:
         button = MonkezButton()
@@ -226,6 +300,15 @@ class WidgetTests(unittest.TestCase):
             f"{hover_text.blue()}, {hover_text.alpha()})",
             hover_style,
         )
+        button.deleteLater()
+
+    def test_text_button_uses_text_color(self) -> None:
+        button = MonkezButton()
+        text = QColor(18, 52, 86, 170)
+        button.buttonTypeIndex = 2
+        button.textColor = text
+
+        self.assertIn("color: rgba(18, 52, 86, 170)", button.styleSheet())
         button.deleteLater()
 
     def test_image_reuses_scaled_pixmap_until_source_or_size_changes(self) -> None:
@@ -611,6 +694,21 @@ class WidgetTests(unittest.TestCase):
         group.close()
         group.deleteLater()
 
+    def test_group_box_does_not_apply_header_padding_twice(self) -> None:
+        group = MonkezGroupBox()
+        layout = QVBoxLayout(group)
+        child = QLabel("Child content")
+        layout.addWidget(child)
+        group.resize(320, 220)
+        group.show()
+        self.app.processEvents()
+
+        self.assertEqual(layout.contentsMargins().top(), 0)
+        self.assertLessEqual(child.geometry().top(), group.contentsRect().top() + 1)
+        self.assertLess(child.geometry().top(), group.headerHeight * 2)
+        group.close()
+        group.deleteLater()
+
     def test_group_box_auto_header_height_tracks_subtitle_and_font(self) -> None:
         group = MonkezGroupBox()
         group.subtitle = "Secondary information"
@@ -702,6 +800,41 @@ class WidgetTests(unittest.TestCase):
         combo.close()
         combo.deleteLater()
 
+    def test_text_input_clears_trailing_icon_hit_area(self) -> None:
+        text_input = monkez_widgets.MonkezTextInput()
+        text_input.trailingIcon = "clear.png"
+        text_input.resize(200, 40)
+        text_input.show()
+        self.app.processEvents()
+        self.assertFalse(text_input.trailing_rect.isNull())
+
+        text_input.trailingIcon = ""
+        self.assertTrue(text_input.trailing_icon.isNull())
+        self.assertTrue(text_input.trailing_rect.isNull())
+        text_input.close()
+        text_input.deleteLater()
+
+    def test_text_input_trailing_icon_emits_on_completed_click(self) -> None:
+        text_input = monkez_widgets.MonkezTextInput()
+        text_input.trailingIcon = "clear.png"
+        text_input.resize(200, 40)
+        text_input.show()
+        self.app.processEvents()
+        clicked = []
+        text_input.trailingIconClicked.connect(lambda: clicked.append(True))
+        center = text_input.trailing_rect.center()
+
+        QTest.mousePress(text_input, Qt.MouseButton.LeftButton, pos=center)
+        self.assertEqual(clicked, [])
+        QTest.mouseRelease(text_input, Qt.MouseButton.LeftButton, pos=center)
+        self.assertEqual(clicked, [True])
+
+        QTest.mousePress(text_input, Qt.MouseButton.LeftButton, pos=center)
+        QTest.mouseRelease(text_input, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+        self.assertEqual(clicked, [True])
+        text_input.close()
+        text_input.deleteLater()
+
     def test_combo_designer_font_applies_to_control_and_popup(self) -> None:
         combo = MonkezComboBox()
         combo.addItem("Large font item")
@@ -726,6 +859,17 @@ class WidgetTests(unittest.TestCase):
 
         self.assertEqual(combo.count(), 0)
         self.assertEqual(combo.currentIndex(), -1)
+        combo.deleteLater()
+
+    def test_empty_combo_does_not_open_blank_popup(self) -> None:
+        combo = MonkezComboBox()
+        combo.show()
+        combo.showPopup()
+        self.app.processEvents()
+
+        self.assertFalse(combo._popup.isVisible())
+        self.assertFalse(combo.is_opened)
+        combo.close()
         combo.deleteLater()
 
     def test_stepper_and_date_button_hover_regions_do_not_cover_outer_border(self) -> None:

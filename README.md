@@ -205,6 +205,8 @@ Các widget giao diện hỗ trợ:
 - `themeIndex`: `0 Material`, `1 iOS`, `2 Fluent`, `3 Bootstrap`, `4 Minimal`, `5 Dark`.
 - Context menu `Monkez Theme` trong Designer có đủ sáu theme.
 - Tùy chỉnh màu, radius, border, padding, shadow và các thuộc tính chuyên sâu tùy widget.
+- Các property `QColor` giữ nguyên alpha channel khi sinh stylesheet, nên màu bán
+  trong suốt trong Designer hiển thị giống runtime.
 
 ## Ghi chú runtime
 
@@ -230,6 +232,10 @@ hãy dùng `setWidget()` và `setWidgetResizable()` theo API chuẩn của Qt.
 
 `MonkezUSBCamera` import OpenCV theo nhu cầu, hỗ trợ backend, camera index/source/name, resolution, capture FPS, display FPS, FourCC, buffer size, mirror, reconnect, auto start và preview trong Designer khi bật `previewAutoStart`.
 
+`MonkezSlider` hỗ trợ cả `Horizontal` và `Vertical` qua property `orientation`
+có sẵn của Qt. `MonkezProgressBar.barHeight` chỉ điều khiển hình thức/kích thước
+gợi ý; việc hiện chữ luôn do `textVisible` quyết định.
+
 ## Phát triển
 
 Khuyến nghị Python 3.11 khi chạy Designer bridge:
@@ -237,15 +243,15 @@ Khuyến nghị Python 3.11 khi chạy Designer bridge:
 ```powershell
 py -3.11 -m venv .venv311
 .\.venv311\Scripts\python.exe -m pip install --upgrade pip
-.\.venv311\Scripts\python.exe -m pip install -e ".[all]"
+.\.venv311\Scripts\python.exe -m pip install -e ".[all,dev]"
 .\.venv311\Scripts\monkez-pyqt6.exe
 ```
 
-Chạy test:
+Kiểm tra tĩnh và chạy test:
 
 ```powershell
-$env:QT_QPA_PLATFORM = "offscreen"
-.\.venv311\Scripts\python.exe -m unittest discover -s tests -v
+lint.bat
+test.bat
 ```
 
 Build package:
@@ -272,6 +278,7 @@ Output chính:
 - [Tích hợp runtime vào ứng dụng](docs/RUNTIME_INTEGRATION.md)
 - [Designer portable và phát triển plugin](docs/DESIGNER_PORTABLE.md)
 - [Monkez custom widget Python API](docs/WIDGET_API.md)
+- [Quy trình chất lượng và kiểm tra package](docs/QUALITY.md)
 - [Project demo](demo_project/README.md)
 - [Hướng dẫn cài đặt và sử dụng](docs/INSTALLATION.md)
 - [Splash screen khởi động nhanh](docs/SPLASHSCREEN.md)

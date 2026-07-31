@@ -80,7 +80,7 @@ class CameraCaptureThread(QThread):
                     if self.config["mirror"]:
                         frame = cv2.flip(frame, 1)
 
-                    height, width, channels = frame.shape
+                    height, width, _ = frame.shape
                     image = QImage(
                         frame.data,
                         width,

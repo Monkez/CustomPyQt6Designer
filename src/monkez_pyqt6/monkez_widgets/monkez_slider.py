@@ -6,7 +6,15 @@ from PyQt6.QtCore import QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QSlider
 
-from .themes import normalize_theme, theme_color, theme_from_preset, theme_options_text, theme_radius, theme_to_preset
+from .themes import (
+    color_to_css,
+    normalize_theme,
+    theme_color,
+    theme_from_preset,
+    theme_options_text,
+    theme_radius,
+    theme_to_preset,
+)
 
 
 class MonkezSlider(QSlider):
@@ -42,9 +50,14 @@ class MonkezSlider(QSlider):
         self.setTheme(self._theme)
 
     def sizeHint(self) -> QSize:
-        return QSize(180, max(28, self._handle_size + 10))
+        thickness = max(28, self._handle_size + 10)
+        if self.orientation() == Qt.Orientation.Vertical:
+            return QSize(thickness, 180)
+        return QSize(180, thickness)
 
     def minimumSizeHint(self) -> QSize:
+        if self.orientation() == Qt.Orientation.Vertical:
+            return QSize(12, 32)
         return QSize(32, 12)
 
     def _update_style(self) -> None:
@@ -53,25 +66,53 @@ class MonkezSlider(QSlider):
             "QSlider::groove:horizontal {"
             f"height: {self._groove_height}px;"
             f"border-radius: {radius}px;"
-            f"background-color: {self._groove_color.name()};"
+            f"background-color: {color_to_css(self._groove_color)};"
             "}"
             "QSlider::sub-page:horizontal {"
             f"height: {self._groove_height}px;"
             f"border-radius: {radius}px;"
-            f"background-color: {self._filled_color.name()};"
+            f"background-color: {color_to_css(self._filled_color)};"
             "}"
             "QSlider::handle:horizontal {"
             f"width: {self._handle_size}px;"
             f"height: {self._handle_size}px;"
             f"margin: {-max(1, (self._handle_size - self._groove_height) // 2)}px 0;"
             f"border-radius: {self._handle_size // 2}px;"
-            f"background-color: {self._handle_color.name()};"
-            f"border: 2px solid {self._filled_color.name()};"
+            f"background-color: {color_to_css(self._handle_color)};"
+            f"border: 2px solid {color_to_css(self._filled_color)};"
             "}"
             "QSlider::handle:horizontal:hover {"
-            f"background-color: {theme_color(self._theme, 'secondary').name()};"
+            f"background-color: {color_to_css(theme_color(self._theme, 'secondary'))};"
+            "}"
+            "QSlider::groove:vertical {"
+            f"width: {self._groove_height}px;"
+            f"border-radius: {radius}px;"
+            f"background-color: {color_to_css(self._groove_color)};"
+            "}"
+            "QSlider::sub-page:vertical {"
+            f"width: {self._groove_height}px;"
+            f"border-radius: {radius}px;"
+            f"background-color: {color_to_css(self._filled_color)};"
+            "}"
+            "QSlider::handle:vertical {"
+            f"width: {self._handle_size}px;"
+            f"height: {self._handle_size}px;"
+            f"margin: 0 {-max(1, (self._handle_size - self._groove_height) // 2)}px;"
+            f"border-radius: {self._handle_size // 2}px;"
+            f"background-color: {color_to_css(self._handle_color)};"
+            f"border: 2px solid {color_to_css(self._filled_color)};"
+            "}"
+            "QSlider::handle:vertical:hover {"
+            f"background-color: {color_to_css(theme_color(self._theme, 'secondary'))};"
             "}"
         )
+
+    def setOrientation(self, orientation: Qt.Orientation) -> None:
+        previous = self.orientation()
+        super().setOrientation(orientation)
+        if previous != self.orientation():
+            self.updateGeometry()
+            self._update_style()
 
     def getTheme(self) -> str:
         return self._theme

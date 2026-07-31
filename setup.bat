@@ -21,7 +21,7 @@ echo [2/3] Updating packaging tools...
 if errorlevel 1 goto :error
 
 echo [3/3] Installing project and development tools...
-".venv311\Scripts\python.exe" -m pip install -e ".[all]" "build==1.3.0" "pyinstaller==6.21.0"
+".venv311\Scripts\python.exe" -m pip install -e ".[all,dev]" "pyinstaller==6.21.0"
 if errorlevel 1 goto :error
 
 echo.

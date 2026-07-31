@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLineEdit
 
 from .assets import icon_path
 from .themes import (
+    color_to_css,
     normalize_theme,
     theme_color,
     theme_from_preset,
@@ -58,6 +59,7 @@ class MonkezTextInput(QLineEdit):
         self.leading_icon = QPixmap()
         self.trailing_icon = QPixmap()
         self.trailing_hovered = False
+        self._trailing_pressed = False
         self.trailing_rect = QRect()
 
         self.setPlaceholderText("Monkez input text...")
@@ -71,10 +73,27 @@ class MonkezTextInput(QLineEdit):
         return QSize(32, 18)
 
     def mousePressEvent(self, event) -> None:
-        if not self.trailing_rect.isNull() and self.trailing_rect.contains(event.pos()):
-            self.trailingIconClicked.emit()
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and not self.trailing_rect.isNull()
+            and self.trailing_rect.contains(event.position().toPoint())
+        ):
+            self._trailing_pressed = True
+            event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._trailing_pressed:
+            self._trailing_pressed = False
+            if (
+                event.button() == Qt.MouseButton.LeftButton
+                and self.trailing_rect.contains(event.position().toPoint())
+            ):
+                self.trailingIconClicked.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
         if not self.trailing_rect.isNull() and self.trailing_rect.contains(event.pos()):
@@ -115,6 +134,12 @@ class MonkezTextInput(QLineEdit):
                 painter.drawPixmap(x - 2, y - 2, scaled_icon)
             else:
                 painter.drawPixmap(x, y, self.trailing_icon)
+        else:
+            self.trailing_rect = QRect()
+            self._trailing_pressed = False
+            if self.trailing_hovered:
+                self.trailing_hovered = False
+                self.unsetCursor()
         painter.end()
 
     def _load_icon(self, name: str, size: int) -> QPixmap:
@@ -131,24 +156,26 @@ class MonkezTextInput(QLineEdit):
         )
 
     def _apply_shadow(self) -> None:
-        if self._shadow_enabled:
-            shadow = QGraphicsDropShadowEffect(self)
-            shadow.setBlurRadius(self._shadow_blur)
-            shadow.setOffset(self._shadow_offset_x, self._shadow_offset_y)
-            shadow.setColor(self._shadow_color)
-            self.setGraphicsEffect(shadow)
-        else:
+        if not self._shadow_enabled:
             self.setGraphicsEffect(None)
+            return
+        shadow = self.graphicsEffect()
+        if not isinstance(shadow, QGraphicsDropShadowEffect):
+            shadow = QGraphicsDropShadowEffect(self)
+            self.setGraphicsEffect(shadow)
+        shadow.setBlurRadius(self._shadow_blur)
+        shadow.setOffset(self._shadow_offset_x, self._shadow_offset_y)
+        shadow.setColor(self._shadow_color)
 
     def _update_style(self) -> None:
         padding_left = self._padding + (self._leading_icon_size + 8 if self._leading_icon_name else 0)
         padding_right = self._padding + (self._trailing_icon_size + 15 if self._trailing_icon_name else 0)
         self.setStyleSheet(
             "QLineEdit {"
-            f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {self._border_color.name()};"
+            f"border: {max(1, theme_int(self._theme, 'border_width'))}px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
-            f"background-color: {self._background_color.name()};"
-            f"color: {self._text_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._text_color)};"
             f"padding: {self._padding}px;"
             f"padding-left: {padding_left}px;"
             f"padding-right: {padding_right}px;"
@@ -262,6 +289,11 @@ class MonkezTextInput(QLineEdit):
     def setTrailingIcon(self, name: str) -> None:
         self._trailing_icon_name = name or ""
         self.trailing_icon = self._load_icon(self._trailing_icon_name, self._trailing_icon_size)
+        if self.trailing_icon.isNull():
+            self.trailing_rect = QRect()
+            self.trailing_hovered = False
+            self._trailing_pressed = False
+            self.unsetCursor()
         self._update_style()
 
     def getTrailingIconSize(self) -> int:

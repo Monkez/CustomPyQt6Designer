@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QRadioButton
 
 from .shadow_support import ShadowSupportMixin
-from .themes import normalize_theme, theme_color, theme_from_preset, theme_int, theme_options_text, theme_to_preset
+from .themes import normalize_theme, theme_color, theme_from_preset, theme_options_text, theme_to_preset
 
 
 class MonkezRadioButton(QRadioButton, ShadowSupportMixin):

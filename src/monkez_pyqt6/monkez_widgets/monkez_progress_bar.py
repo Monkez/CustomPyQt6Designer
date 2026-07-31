@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QProgressBar
 
 from .themes import (
+    color_to_css,
     normalize_theme,
     theme_color,
     theme_from_preset,
@@ -62,16 +63,16 @@ class MonkezProgressBar(QProgressBar):
         font_size = min(theme_int(self._theme, "font_size"), max(1, self._bar_height - 6))
         self.setStyleSheet(
             "QProgressBar {"
-            f"border: {border_width}px solid {theme_color(self._theme, 'border').name()};"
+            f"border: {border_width}px solid {color_to_css(theme_color(self._theme, 'border'))};"
             f"border-radius: {radius}px;"
-            f"background-color: {self._track_color.name()};"
-            f"color: {self._text_color.name()};"
+            f"background-color: {color_to_css(self._track_color)};"
+            f"color: {color_to_css(self._text_color)};"
             f"font-size: {font_size}px;"
             "text-align: center;"
             "}"
             "QProgressBar::chunk {"
             f"border-radius: {max(0, radius - border_width)}px;"
-            f"background-color: {self._bar_color.name()};"
+            f"background-color: {color_to_css(self._bar_color)};"
             "}"
         )
 
@@ -151,8 +152,6 @@ class MonkezProgressBar(QProgressBar):
             height = 28
         self._bar_height = max(2, height)
         self.resize(max(self.width(), 1), self._bar_height)
-        if self._bar_height <= 14:
-            self.setTextVisible(False)
         self.updateGeometry()
         self._update_style()
 

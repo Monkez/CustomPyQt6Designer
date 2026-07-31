@@ -54,19 +54,32 @@ Updated: 2026-07-31
 - `MonkezScrollArea` preserves the stock `QScrollArea` runtime defaults and
   only adds theme/style properties. Its Designer XML uses Qt's native
   `scrollAreaWidgetContents` structure without a custom fixed-page extension.
+- Stylesheet-backed `QColor` properties preserve alpha channels.
+- Sliders support horizontal and vertical orientation; progress-bar height no
+  longer overrides `textVisible`.
+- Text buttons honor `textColor`; text-input trailing icons use completed-click
+  semantics and do not retain stale hit areas after removal.
+- Group-box child layouts reserve the header exactly once and refresh that
+  geometry after font changes.
+- Checkbox checked/partial marks, compact/RTL switches, and clamped linear-gauge
+  targets are covered by rendering regression tests.
+- Static checks are reproducible through `lint.bat` and the pinned `dev` extra.
 
 ## Latest verification
 
-- All 83 automated tests pass for 0.5.0.
+- All 95 automated tests pass for 0.5.0.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification passes with all 25 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated
   wheel install imports the canonical package, compatibility namespace and all
   three UI-loading APIs successfully.
-- The 0.5.0 portable `MonkezDesigner.exe --doctor` check passes with all 25
-  Designer plugins available.
-- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,586 entries and passes a
-  full CRC integrity check.
+- The current 0.5.0 portable build initializes and constructs all 25 Designer
+  plugins successfully.
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,590 entries (266.2 MB) and
+  passes a full entry read/CRC integrity check.
+- A real same-version running Designer triggered the timestamped build fallback;
+  the isolated portable output then built, verified and archived successfully
+  without terminating the existing process.
 - Importing `MonkezImage` does not import NumPy. Updating and rendering thirty
   1280x720 BGR frames averaged 5.0 ms per frame on the release workstation.
 - A real 0.4.7 portable Designer session successfully creates
@@ -92,6 +105,8 @@ Updated: 2026-07-31
   noisy `Compress-Archive` progress loop.
 - Unpacked portable builds use versioned output directories so an older
   running Designer does not block a new release build.
+- A locked same-version output now falls back to a timestamped build directory,
+  so rebuilding never requires forcibly closing the user's Designer window.
 - QFluentWidgets and QFramelessWindow are deliberately bundled for the 0.5.0
   portable Designer work. Reassess their footprint before removing them.
 

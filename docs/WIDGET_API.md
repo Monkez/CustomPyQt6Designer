@@ -107,7 +107,7 @@ property.
 | `active` | `bool` | Switches between active and deactive color. |
 | `activeColor` | `QColor` | Filled background; Outlined border/accent color. |
 | `deactiveColor` | `QColor` | Disabled-like custom inactive color. |
-| `textColor` | `QColor` | Normal text color, including Outlined mode. |
+| `textColor` | `QColor` | Normal text color in Filled, Outlined and Text modes. |
 | `hoverTextColor` | `QColor` | Text color while hover/pressed. |
 | `paddingX`, `paddingY` | `int` | Internal button padding. |
 | `radius` | `int` | Corner radius. |
@@ -135,6 +135,10 @@ button.setContentPadding(8, 4).setSizeTokens(radius=10)
 Khi hover/pressed, chữ dùng `hoverTextColor` và viền vẫn được dẫn xuất từ
 `activeColor`.
 
+Ở chế độ `Text`, `textColor` cũng là màu chữ bình thường; nền chỉ nhận tint nhẹ
+khi hover/pressed. Các thay đổi property shadow tái sử dụng effect hiện tại để
+tránh tạo lại object đồ họa không cần thiết.
+
 ### MonkezTextInput
 
 | Property | Type | Description |
@@ -155,7 +159,7 @@ Khi hover/pressed, chữ dùng `hoverTextColor` và viền vẫn được dẫn 
 | `setBorder(color)` | Sets `borderColor`. |
 | `setColors(background=..., text=..., border=...)` | Updates multiple roles. |
 | `setLeadingIcon(name)`, `setTrailingIcon(name)` | Sets icon assets. |
-| `trailingIconClicked` | Signal emitted when the trailing icon is clicked. |
+| `trailingIconClicked` | Signal emitted after a complete press-and-release on the trailing icon. |
 
 ```python
 search = MonkezTextInput()
@@ -184,6 +188,7 @@ search.trailingIconClicked.connect(search.clear)
 
 Trong Designer, mở property `font` rồi chỉnh `Point Size`; preview của control
 và danh sách popup sẽ cùng dùng giá trị này.
+Combo không có item sẽ không mở một popup trống.
 
 | Method | Description |
 |---|---|
@@ -268,6 +273,10 @@ switch.setTrack("#e2e8f0").setAccent("#22c55e").setThumb("#ffffff")
 | `MonkezRadialGauge` | `trackColor`, `valueColor`, `textColor`, `warningColor`, `dangerColor` |
 | `MonkezArcGauge` | `arcWidth`, `warningThreshold`, `dangerThreshold`, `segmented`, `segmentCount` |
 | `MonkezLinearGauge` | `vertical`, `barThickness`, `targetValue`, `showTarget`, `rounded` |
+
+`MonkezSlider` dùng property kế thừa `orientation` để đổi giữa ngang và dọc;
+`sizeHint()` và stylesheet tự thích nghi theo hướng. `MonkezProgressBar.barHeight`
+không tự đổi `textVisible`, vì vậy app có toàn quyền quyết định khi nào hiện chữ.
 
 | Method | Description |
 |---|---|

@@ -12,6 +12,7 @@
 Run:
 
 ```powershell
+lint.bat
 test.bat
 ```
 
@@ -52,6 +53,9 @@ at the archive root.
 PyInstaller writes unpacked builds to `dist/portable/<version>/MonkezDesigner`.
 This versioned location prevents an older running portable Designer from
 locking and breaking a newer release build.
+If that exact version is currently running, the build script automatically
+uses `dist/portable/<version>-build-<timestamp>/MonkezDesigner` as an isolated
+fallback while keeping the canonical release ZIP name.
 
 The splash plugin is intentionally hidden from the Widget Box by returning
 empty `domXml()`. Full Designer verification must open the packaged standalone

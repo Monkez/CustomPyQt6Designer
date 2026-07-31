@@ -5,7 +5,7 @@ from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QFrame, QLCDNumber
 
 from .theme_support import ThemeSupportMixin
-from .themes import theme_color, theme_radius
+from .themes import color_to_css, theme_color, theme_radius
 
 
 class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
@@ -45,8 +45,8 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         self.setPalette(palette)
         self.setStyleSheet(
             "MonkezLCDNumber {"
-            f"background-color: {self._background_color.name()};"
-            f"border: 1px solid {self._border_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"border: 1px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
             "padding: 8px;"
             "}"

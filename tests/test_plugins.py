@@ -63,6 +63,9 @@ class PluginTests(unittest.TestCase):
             "monkez_pyqt6.monkez_widgets"
         ).MonkezImage()
         menu = theme_task_menu.MonkezThemeTaskMenu(image)
+        self.assertFalse(
+            any(action.text().startswith("Monkez Theme:") for action in menu.taskActions())
+        )
         self.assertEqual(
             [action.text() for action in menu.taskActions() if action.text().startswith("Image Scale:")],
             [

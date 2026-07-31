@@ -18,7 +18,7 @@ THEME_LABELS = (
     ("Minimal", "Minimal", "minimal", 4),
     ("Dark", "Dark", "dark", 5),
 )
-THEMED_CLASS_NAMES = {
+TASK_MENU_CLASS_NAMES = {
     "MonkezButton",
     "MonkezArcGauge",
     "MonkezCalendarWidget",
@@ -52,19 +52,17 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
         self._widget = widget
         self._actions = []
 
-        for label, enum_key, theme_name, theme_index in THEME_LABELS:
-            action = QAction(f"Monkez Theme: {label}", self)
-            action.triggered.connect(
-                lambda checked=False, key=enum_key, name=theme_name, index=theme_index: self._apply_theme(
-                    key, name, index
+        if type(widget).__name__ != "MonkezImage":
+            for label, enum_key, theme_name, theme_index in THEME_LABELS:
+                action = QAction(f"Monkez Theme: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, key=enum_key, name=theme_name, index=theme_index: self._apply_theme(
+                        key, name, index
+                    )
                 )
-            )
-            self._actions.append(action)
+                self._actions.append(action)
 
         if type(widget).__name__ == "MonkezImage":
-            separator = QAction(self)
-            separator.setSeparator(True)
-            self._actions.append(separator)
             for label, index in (
                 ("Fit", 0),
                 ("Fill", 1),
@@ -122,7 +120,7 @@ class MonkezThemeTaskMenuFactory(QExtensionFactory):
     def createExtension(self, object, iid: str, parent):
         if iid != TASK_MENU_IID:
             return None
-        if type(object).__name__ not in THEMED_CLASS_NAMES:
+        if type(object).__name__ not in TASK_MENU_CLASS_NAMES:
             return None
         write_probe(f"MonkezThemeTaskMenuFactory.createExtension:{type(object).__name__}")
         return MonkezThemeTaskMenu(object, parent)

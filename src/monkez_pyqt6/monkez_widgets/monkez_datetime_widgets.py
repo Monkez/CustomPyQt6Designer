@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .theme_support import ThemeSupportMixin
-from .themes import theme_color, theme_int, theme_radius
+from .themes import color_to_css, theme_color, theme_int, theme_radius
 
 
 class _DateTimeStyleMixin(ThemeSupportMixin):
@@ -38,25 +38,25 @@ class _DateTimeStyleMixin(ThemeSupportMixin):
     def _update_style(self) -> None:
         selector = type(self).__name__
         button_width = max(28, self._control_height - 4)
-        hover = theme_color(self._theme, "control_hover").name()
+        hover = color_to_css(theme_color(self._theme, "control_hover"))
         radius = max(0, self._radius - 1)
         base = (
             f"{selector} {{"
-            f"background-color: {self._background_color.name()};"
-            f"border: 1px solid {self._border_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"border: 1px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
-            f"color: {self._text_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
             "padding: 4px 8px;"
             f"padding-right: {button_width + 4}px;"
             "}"
-            f"{selector}:focus {{ border: 2px solid {self._accent_color.name()}; }}"
+            f"{selector}:focus {{ border: 2px solid {color_to_css(self._accent_color)}; }}"
         )
         if getattr(self, "_calendar_button", False):
             controls = (
                 f"{selector}::drop-down {{"
                 f"subcontrol-origin: border; subcontrol-position: top right; width: {button_width}px;"
                 "margin: 1px 1px 1px 0px;"
-                f"border-left: 1px solid {self._border_color.name()};"
+                f"border-left: 1px solid {color_to_css(self._border_color)};"
                 "border-top: 1px solid transparent;"
                 "border-right: 1px solid transparent;"
                 "border-bottom: 1px solid transparent;"
@@ -74,7 +74,7 @@ class _DateTimeStyleMixin(ThemeSupportMixin):
                 f"{selector}::up-button {{"
                 f"subcontrol-origin: border; subcontrol-position: top right; width: {button_width}px;"
                 "margin: 1px 1px 0px 0px;"
-                f"border-left: 1px solid {self._border_color.name()};"
+                f"border-left: 1px solid {color_to_css(self._border_color)};"
                 "border-top: 1px solid transparent;"
                 "border-right: 1px solid transparent;"
                 f"border-top-right-radius: {radius}px;"
@@ -83,7 +83,7 @@ class _DateTimeStyleMixin(ThemeSupportMixin):
                 f"{selector}::down-button {{"
                 f"subcontrol-origin: border; subcontrol-position: bottom right; width: {button_width}px;"
                 "margin: 0px 1px 1px 0px;"
-                f"border-left: 1px solid {self._border_color.name()};"
+                f"border-left: 1px solid {color_to_css(self._border_color)};"
                 "border-right: 1px solid transparent;"
                 "border-bottom: 1px solid transparent;"
                 f"border-bottom-right-radius: {radius}px;"
@@ -298,12 +298,12 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
         self._update_style()
 
     def _update_style(self) -> None:
-        hover = theme_color(self._theme, "secondary").name()
-        border = theme_color(self._theme, "border").name()
+        hover = color_to_css(theme_color(self._theme, "secondary"))
+        border = color_to_css(theme_color(self._theme, "border"))
         self.setStyleSheet(
             "MonkezCalendarWidget {"
-            f"background-color: {self._background_color.name()};"
-            f"color: {self._text_color.name()};"
+            f"background-color: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._text_color)};"
             f"border: 1px solid {border};"
             f"border-radius: {self._radius}px;"
             "}"
@@ -315,7 +315,7 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             "padding: 8px 10px;"
             "}"
             "MonkezCalendarWidget QToolButton {"
-            f"color: {self._text_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
             "background: transparent;"
             "border: 0;"
             "padding: 7px 10px;"
@@ -331,7 +331,7 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             f"MonkezCalendarWidget QToolButton:hover {{ background: {hover}; border-radius: 8px; }}"
             "MonkezCalendarWidget QToolButton#qt_calendar_prevmonth,"
             "MonkezCalendarWidget QToolButton#qt_calendar_nextmonth {"
-            f"color: {self._accent_color.name()};"
+            f"color: {color_to_css(self._accent_color)};"
             "font-size: 22px;"
             "font-weight: 500;"
             "}"
@@ -342,8 +342,8 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             "padding-left: 4px;"
             "}"
             "MonkezCalendarWidget QMenu {"
-            f"background: {self._background_color.name()};"
-            f"color: {self._text_color.name()};"
+            f"background: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._text_color)};"
             f"border: 1px solid {border};"
             f"border-radius: {max(6, self._radius - 2)}px;"
             "padding: 6px;"
@@ -354,38 +354,38 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             "}"
             f"MonkezCalendarWidget QMenu::item:selected {{ background: {hover}; }}"
             "MonkezCalendarWidget QTableView {"
-            f"background: {self._background_color.name()};"
+            f"background: {color_to_css(self._background_color)};"
             "border: 0;"
             "padding: 8px;"
             "selection-background-color: transparent;"
             "outline: 0;"
             "}"
             "MonkezCalendarWidget QHeaderView {"
-            f"background: {self._background_color.name()};"
+            f"background: {color_to_css(self._background_color)};"
             "border: 0;"
             "}"
             "MonkezCalendarWidget QHeaderView::section {"
-            f"background: {self._background_color.name()};"
-            f"color: {self._muted_color.name()};"
+            f"background: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._muted_color)};"
             "border: 0;"
             "padding: 7px 2px;"
             "font-size: 12px;"
             "font-weight: 600;"
             "}"
             "MonkezCalendarWidget QAbstractItemView {"
-            f"background: {self._background_color.name()};"
-            f"color: {self._text_color.name()};"
+            f"background: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._text_color)};"
             "selection-background-color: transparent;"
             "outline: 0;"
             "}"
             "MonkezCalendarWidget QSpinBox {"
-            f"color: {self._text_color.name()};"
-            f"background: {self._background_color.name()};"
-            f"border: 1px solid {self._accent_color.name()};"
+            f"color: {color_to_css(self._text_color)};"
+            f"background: {color_to_css(self._background_color)};"
+            f"border: 1px solid {color_to_css(self._accent_color)};"
             "border-radius: 8px;"
             "padding: 6px 12px;"
             "min-width: 68px;"
-            f"selection-background-color: {self._accent_color.name()};"
+            f"selection-background-color: {color_to_css(self._accent_color)};"
             f"selection-color: {theme_color(self._theme, 'on_primary').name()};"
             "font-weight: 650;"
             "}"

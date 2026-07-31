@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, unquote
 
-from PyQt6.QtCore import QDate, QDateTime, Qt, QTime, QTimer, QUrl
+from PyQt6.QtCore import QDate, QDateTime, Qt, QTime, QUrl
 from PyQt6.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
-    QStackedWidget,
     QTextBrowser,
     QToolButton,
     QVBoxLayout,
