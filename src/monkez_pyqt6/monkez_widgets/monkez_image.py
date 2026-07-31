@@ -98,11 +98,7 @@ class MonkezImage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.image_label = _ScalableImageLabel(self)
         self.image_label.setObjectName("monkezImageContent")
-        self.image_label.setStyleSheet(
-            "background: transparent;"
-            "border: none;"
-            "border-radius: 0;"
-        )
+        self._update_content_background()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(0, 0)
         self.image_label.setMaximumSize(16777215, 16777215)
@@ -145,6 +141,8 @@ class MonkezImage(QWidget):
             QEvent.Type.LayoutRequest,
         }:
             self._schedule_pixmap_update()
+        elif event.type() is QEvent.Type.StyleChange and hasattr(self, "image_label"):
+            self._update_content_background()
         return handled
 
     def set_image(self, image: object, color_order: str = "bgr") -> None:
@@ -260,8 +258,29 @@ class MonkezImage(QWidget):
         palette.setColor(QPalette.ColorRole.Window, self._background_color)
         self.setPalette(palette)
         self.setAutoFillBackground(True)
+        self._update_content_background()
         self.update()
         self._schedule_pixmap_update()
+
+    def _update_content_background(self) -> None:
+        """Keep the Designer background visible through inherited stylesheets."""
+        if not hasattr(self, "image_label"):
+            return
+        local_style = self.styleSheet().lower().replace(" ", "")
+        has_local_background = (
+            "background:" in local_style or "background-color:" in local_style
+        )
+        if has_local_background:
+            background_rule = "background: transparent;"
+        else:
+            color = self._background_color
+            background = (
+                f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
+            )
+            background_rule = f"background-color: {background};"
+        self.image_label.setStyleSheet(
+            background_rule + "border: none;" + "border-radius: 0;"
+        )
 
     def _schedule_pixmap_update(self, delay_ms: int = 0) -> None:
         if self._pixmap_update_pending:

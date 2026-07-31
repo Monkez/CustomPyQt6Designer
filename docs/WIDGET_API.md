@@ -395,6 +395,10 @@ cùng, không còn một `QFrame` con có style cố định che lên. Trong Des
 thể nhập trực tiếp các khai báo hoặc dùng selector `MonkezImage` để đặt border,
 nền và bo góc, ví dụ:
 
+`backgroundColor` vẫn được vẽ đúng khi widget nằm trong một container có
+stylesheet nền kế thừa. Nếu `MonkezImage` có khai báo `background` hoặc
+`background-color` riêng trong `styleSheet`, khai báo trực tiếp đó được ưu tiên.
+
 ```css
 MonkezImage {
     background-color: #020617;

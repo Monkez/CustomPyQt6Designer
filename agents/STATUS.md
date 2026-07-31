@@ -40,6 +40,9 @@ Updated: 2026-07-31
 - `MonkezImage` renders directly in its outer widget without a fixed-style
   child frame, so Designer stylesheets can control its visible background,
   border and radius.
+- `MonkezImage.backgroundColor` is also applied to its transparent content
+  surface, so an inherited parent stylesheet cannot replace the Designer
+  property. A background declared directly on the widget stylesheet still wins.
 - `MonkezImage.scaleModeIndex` is a stable Designer property with task-menu
   choices for Fit, Fill, Stretch and Original; every mode recalculates against
   the outer container size.

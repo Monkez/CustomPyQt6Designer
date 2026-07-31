@@ -427,6 +427,29 @@ class WidgetTests(unittest.TestCase):
         )
         widget.deleteLater()
 
+    def test_image_background_property_overrides_inherited_parent_background(self) -> None:
+        parent = QWidget()
+        parent.setStyleSheet("background-color: #ffaa00;")
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(0, 0, 0, 0)
+        widget = MonkezImage(parent)
+        widget.setBackgroundColor(QColor("#0c0c0c"))
+        widget.set_image(None)
+        layout.addWidget(widget)
+        parent.resize(120, 80)
+        parent.show()
+        self.app.processEvents()
+
+        rendered = QImage(widget.size(), QImage.Format.Format_ARGB32)
+        rendered.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(rendered)
+        widget.render(painter)
+        painter.end()
+
+        self.assertEqual(rendered.pixelColor(10, 10), QColor("#0c0c0c"))
+        parent.close()
+        parent.deleteLater()
+
     def test_image_scaling_does_not_lock_window_minimum_size(self) -> None:
         widget = MonkezImage()
         pixmap = QPixmap(1200, 800)
