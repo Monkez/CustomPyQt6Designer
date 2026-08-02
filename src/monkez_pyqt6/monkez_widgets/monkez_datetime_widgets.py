@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
+from ._painting import aligned_stroke_rect
 from .theme_support import ThemeSupportMixin
 from .themes import color_to_css, theme_color, theme_int, theme_radius
 
@@ -99,12 +100,13 @@ class _DateTimeStyleMixin(ThemeSupportMixin):
     def _paint_calendar_icon(self) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(self._accent_color, 2))
+        icon_width = 2.0
+        painter.setPen(QPen(self._accent_color, icon_width))
         size = min(16, self.height() - 12)
         x = self.width() - max(22, self._control_height // 2) - size / 2
         y = (self.height() - size) / 2
         rect = QRectF(x, y + 2, size, size - 2)
-        painter.drawRoundedRect(rect, 2, 2)
+        painter.drawRoundedRect(aligned_stroke_rect(rect, icon_width), 2, 2)
         painter.drawLine(QPointF(x, y + 7), QPointF(x + size, y + 7))
         painter.drawLine(QPointF(x + 4, y), QPointF(x + 4, y + 5))
         painter.drawLine(QPointF(x + size - 4, y), QPointF(x + size - 4, y + 5))
@@ -421,10 +423,12 @@ class MonkezCalendarWidget(QCalendarWidget, ThemeSupportMixin):
             radius = cell.height() / 2 if self._theme == "ios" else min(9.0, cell.height() / 3)
             painter.drawRoundedRect(cell, radius, radius)
         elif today:
-            painter.setPen(QPen(self._today_color, 1.5))
+            border_width = 1.5
+            painter.setPen(QPen(self._today_color, border_width))
             painter.setBrush(theme_color(self._theme, "secondary"))
             radius = cell.height() / 2 if self._theme == "ios" else min(9.0, cell.height() / 3)
-            painter.drawRoundedRect(cell, radius, radius)
+            today_rect = aligned_stroke_rect(cell, border_width)
+            painter.drawRoundedRect(today_rect, max(0.0, radius - border_width / 2), max(0.0, radius - border_width / 2))
 
         if selected:
             text_color = theme_color(self._theme, "on_primary")

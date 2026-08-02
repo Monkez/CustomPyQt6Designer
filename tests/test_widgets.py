@@ -10,7 +10,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QPoint, QSize, QSizeF, Qt
+from PyQt6.QtCore import QPoint, QRectF, QSize, QSizeF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 from PyQt6 import uic
 
 from monkez_pyqt6 import monkez_widgets
+from monkez_pyqt6.monkez_widgets._painting import aligned_corner_radius, aligned_stroke_rect
 from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
     MonkezBreadcrumb,
@@ -56,6 +57,17 @@ class WidgetTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_antialiased_stroke_geometry_stays_inside_bounds(self) -> None:
+        bounds = QRectF(0, 0, 20, 12)
+
+        one_pixel = aligned_stroke_rect(bounds, 1)
+        two_pixels = aligned_stroke_rect(bounds, 2)
+
+        self.assertEqual(QRectF(0.5, 0.5, 19, 11), one_pixel)
+        self.assertEqual(QRectF(1, 1, 18, 10), two_pixels)
+        self.assertEqual(5.5, aligned_corner_radius(bounds, 6, 1))
+        self.assertEqual(5.0, aligned_corner_radius(bounds, 99, 2))
 
     def test_all_widgets_construct(self) -> None:
         self.assertEqual(len(monkez_widgets.__all__), len(set(monkez_widgets.__all__)))

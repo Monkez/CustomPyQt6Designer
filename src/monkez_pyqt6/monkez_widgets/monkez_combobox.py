@@ -6,6 +6,7 @@ from PyQt6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, pyqt
 from PyQt6.QtGui import QColor, QFontMetrics, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication, QComboBox, QFrame, QListView, QStyle, QStyledItemDelegate, QVBoxLayout
 
+from ._painting import aligned_corner_radius, aligned_stroke_rect
 from .themes import (
     color_to_css,
     normalize_theme,
@@ -213,14 +214,15 @@ class MonkezComboPopup(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         border_width = max(1, theme_int(self._combo._theme, "border_width"))
-        inset = border_width / 2
-        rect = QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
+        source_rect = QRectF(self.rect())
+        rect = aligned_stroke_rect(source_rect, border_width)
         radius = float(getattr(self._combo, "_border_radius", 8))
         background = self._combo._background_color
         border = theme_color(self._combo._theme, "border_focus")
 
         painter.setPen(QPen(border, border_width))
         painter.setBrush(background)
+        radius = aligned_corner_radius(source_rect, radius, border_width)
         painter.drawRoundedRect(rect, radius, radius)
         painter.end()
 

@@ -17,7 +17,7 @@ from monkez_pyqt6.gallery_app import (
     _create_doc_preview_widget,
     _supported_fluent_method_docs,
 )
-from monkez_pyqt6.monkez_widgets import MonkezButton, MonkezRadioButton
+from monkez_pyqt6.monkez_widgets import MonkezButton, MonkezComboBox, MonkezRadioButton
 from monkez_pyqt6.monkez_widgets import __all__ as MONKEZ_WIDGETS
 
 
@@ -77,6 +77,8 @@ class GalleryAppTests(unittest.TestCase):
             self.assertGreaterEqual(len(outlined_buttons), 3)
             for button in outlined_buttons:
                 self.assertNotEqual(QColor("#ffffff"), button.getTextColor())
+            self.assertIsInstance(window._color_format_combo, MonkezComboBox)
+            self.assertEqual(36, window._color_format_combo.height())
             window._handle_doc_link(QUrl("method:setButtonTypeIndex%28index%29"))
             self.assertEqual("setButtonTypeIndex(1)", window._docs_method_input.text())
             window._handle_doc_link(QUrl("method:setBackground%28color%29"))

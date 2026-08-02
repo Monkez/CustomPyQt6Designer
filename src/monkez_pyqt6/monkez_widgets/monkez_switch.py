@@ -6,6 +6,7 @@ from PyQt6.QtCore import QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QAbstractButton
 
+from ._painting import aligned_corner_radius, aligned_stroke_rect
 from .themes import normalize_theme, theme_color, theme_from_preset, theme_options_text, theme_radius, theme_to_preset
 
 
@@ -68,14 +69,17 @@ class MonkezSwitch(QAbstractButton):
         track_rect = QRectF(left, (self.height() - switch_height) / 2, switch_width, switch_height)
         track_color = self._checked_color if self.isChecked() else self._track_color
 
-        painter.setPen(
-            QPen(self._checked_color, 1.5)
-            if self.hasFocus()
-            else QPen(Qt.PenStyle.NoPen)
-        )
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(track_color)
         radius = min(float(self._radius), switch_height / 2)
         painter.drawRoundedRect(track_rect, radius, radius)
+        if self.hasFocus():
+            focus_width = 1.5
+            focus_rect = aligned_stroke_rect(track_rect, focus_width)
+            focus_radius = aligned_corner_radius(track_rect, radius, focus_width)
+            painter.setPen(QPen(self._checked_color, focus_width))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(focus_rect, focus_radius, focus_radius)
 
         margin = min(self._thumb_margin, max(1.0, switch_height / 4))
         thumb_diameter = max(2.0, switch_height - margin * 2)

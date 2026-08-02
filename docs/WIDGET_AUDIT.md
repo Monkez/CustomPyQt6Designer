@@ -1,6 +1,6 @@
 # Rà soát khả năng widget
 
-Cập nhật: 2026-08-02
+Cập nhật: 2026-08-03
 
 Package hiện có 35 runtime widget/component và 34 plugin Qt Designer. `MonkezToast`
 chỉ dùng ở runtime nên không xuất hiện trong Widget Box. Việc rà soát tập
@@ -26,6 +26,19 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 - `MonkezRadialGauge`: tiếp tục dùng các tên màu theo đúng thành phần trực quan
   (`activeTicksColor`, `inactiveTicksColor`, `needleColor`, `valueTextColor`,
   `scaleTextColor`) thay cho việc buộc người dùng đoán vai trò màu chung chung.
+
+## Chuẩn hóa anti-alias và viền
+
+- Các nét viền tự vẽ được căn theo độ rộng pen và pixel vật lý, giữ toàn bộ nét
+  nằm trong hình học của widget thay vì để nửa nét bị cắt ở mép.
+- Quy tắc dùng chung đã được áp dụng cho ComboBox popup, GroupBox, RadioButton,
+  Switch, Pagination, Calendar, Table badge/frame, RangeSlider và Dial.
+- Bán kính bo được giảm tương ứng sau khi inset nét, nhờ đó bốn góc có cùng độ
+  đậm và không còn góc trên mờ hoặc đường viền chắp nối.
+- `handleSize` của RangeSlider và Dial nay là đường kính ngoài thực tế, không bị
+  cộng thêm độ dày border.
+- Combobox chọn định dạng màu trong Gallery dùng trực tiếp `MonkezComboBox`, loại
+  bỏ phần drop-down native bị lệch viền và khác kiểu với các control bên cạnh.
 
 ## Phạm vi đã kiểm tra
 

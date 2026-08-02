@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QColorDialog,
-    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -1095,9 +1094,11 @@ class GalleryWindow(QMainWindow):
         label.setObjectName("tabThemeLabel")
         header.addWidget(label)
         header.addStretch(1)
-        self._color_format_combo = QComboBox()
+        self._color_format_combo = MonkezComboBox()
         self._color_format_combo.setObjectName("colorFormatCombo")
         self._color_format_combo.addItems(COLOR_FORMATS)
+        self._color_format_combo.setFixedSize(116, 36)
+        self._track_theme(self._color_format_combo)
         self._color_format_combo.currentTextChanged.connect(lambda _text: self._copy_selected_color())
         header.addWidget(self._color_format_combo)
         self._selected_color_label = QLabel("#2563eb")
@@ -2258,13 +2259,6 @@ QLineEdit#docsMethodInput:focus {
 QLabel#docsMethodStatus {
     color: #64748b;
     font-size: 9pt;
-}
-QComboBox#colorFormatCombo {
-    background: #ffffff;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 4px 8px;
-    min-height: 24px;
 }
 """
 

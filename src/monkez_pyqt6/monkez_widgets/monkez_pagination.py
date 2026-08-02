@@ -7,6 +7,7 @@ from PyQt6.QtCore import QRectF, QSize, Qt, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QKeyEvent, QMouseEvent, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+from ._painting import aligned_corner_radius, aligned_stroke_rect
 from .theme_support import ThemeSupportMixin
 from .themes import theme_color, theme_radius
 
@@ -173,12 +174,13 @@ class MonkezPagination(QWidget, ThemeSupportMixin):
             painter.setOpacity(0.55)
 
         if self._style_index in (1, 3) and self._buttons:
-            group_rect = self._buttons[0].rect.united(self._buttons[-1].rect).adjusted(0.5, 0.5, -0.5, -0.5)
+            group_bounds = self._buttons[0].rect.united(self._buttons[-1].rect)
+            group_rect = aligned_stroke_rect(group_bounds, 1)
             pen = QPen(self._border_color, 1)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
             painter.setBrush(self._background_color)
-            radius = max(0.0, min(float(self._radius), group_rect.height() / 2.0))
+            radius = aligned_corner_radius(group_bounds, self._radius, 1)
             painter.drawRoundedRect(group_rect, radius, radius)
 
         for index, button in enumerate(self._buttons):
@@ -186,14 +188,16 @@ class MonkezPagination(QWidget, ThemeSupportMixin):
             self._draw_button(painter, button, hovered)
 
         if self.hasFocus():
-            focus_rect = QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
+            focus_bounds = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+            focus_rect = aligned_stroke_rect(focus_bounds, 1)
             pen = QPen(self._active_color, 1, Qt.PenStyle.DotLine)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(focus_rect, self._radius, self._radius)
+            focus_radius = aligned_corner_radius(focus_bounds, self._radius, 1)
+            painter.drawRoundedRect(focus_rect, focus_radius, focus_radius)
 
     def _draw_button(self, painter: QPainter, button: _PageButton, hovered: bool) -> None:
-        rect = button.rect.adjusted(0.5, 0.5, -0.5, -0.5)
+        rect = button.rect
         font = QFont(self.font())
         font.setBold(button.active)
         painter.setFont(font)
@@ -202,7 +206,9 @@ class MonkezPagination(QWidget, ThemeSupportMixin):
             painter.setPen(QPen(self._active_color if button.active else self._border_color, 1))
             painter.setBrush(self._active_color if button.active else (self._hover_color if hovered else self._background_color))
             if button.kind != "ellipsis":
-                painter.drawRoundedRect(rect, self._radius, self._radius)
+                stroke_rect = aligned_stroke_rect(rect, 1)
+                radius = aligned_corner_radius(rect, self._radius, 1)
+                painter.drawRoundedRect(stroke_rect, radius, radius)
         elif self._style_index in (1, 3):
             painter.setPen(Qt.PenStyle.NoPen)
             if button.active:

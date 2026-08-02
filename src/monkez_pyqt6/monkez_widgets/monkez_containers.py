@@ -4,6 +4,7 @@ from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, QTimer, Qt, pyqtPropert
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea, QWidget
 
+from ._painting import aligned_corner_radius, aligned_stroke_position, aligned_stroke_rect
 from .theme_support import ThemeSupportMixin
 from .themes import color_to_css, theme_color, theme_int, theme_radius
 
@@ -220,10 +221,12 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         painter.fillRect(header_rect, self._header_color)
         divider = QColor(self._border_color)
         divider.setAlpha(max(80, divider.alpha()))
-        painter.setPen(QPen(divider, max(1, self._border_width)))
+        divider_width = max(1, self._border_width)
+        painter.setPen(QPen(divider, divider_width))
+        divider_y = aligned_stroke_position(painter, header_rect.bottom(), divider_width)
         painter.drawLine(
-            QPointF(card_rect.left(), header_rect.bottom()),
-            QPointF(card_rect.right(), header_rect.bottom()),
+            QPointF(card_rect.left(), divider_y),
+            QPointF(card_rect.right(), divider_y),
         )
         painter.restore()
 
@@ -231,7 +234,9 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
         border_width = max(self._border_width, 2 if self.hasFocus() else self._border_width)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(border, border_width))
-        painter.drawPath(card_path)
+        border_rect = aligned_stroke_rect(card_rect, border_width)
+        border_radius = aligned_corner_radius(card_rect, self._radius, border_width)
+        painter.drawRoundedRect(border_rect, border_radius, border_radius)
 
         accent_height = max(16.0, header_height - 22.0)
         accent_rect = QRectF(
@@ -300,9 +305,12 @@ class MonkezGroupBox(QGroupBox, ThemeSupportMixin):
 
     def _draw_indicator(self, painter: QPainter, rect: QRectF) -> None:
         checked = self.isChecked()
-        painter.setPen(QPen(self._accent_color if checked else self._border_color, 1.5))
+        border_width = 1.5
+        painter.setPen(QPen(self._accent_color if checked else self._border_color, border_width))
         painter.setBrush(self._accent_color if checked else self._background_color)
-        painter.drawRoundedRect(rect, 5, 5)
+        indicator_rect = aligned_stroke_rect(rect, border_width)
+        radius = aligned_corner_radius(rect, 5, border_width)
+        painter.drawRoundedRect(indicator_rect, radius, radius)
         if not checked:
             return
         painter.setPen(

@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
     QWidgetAction,
 )
 
+from ._painting import aligned_corner_radius, aligned_stroke_rect
 from .monkez_pagination import MonkezPagination
 from .theme_support import ThemeSupportMixin
 from .themes import color_to_css, theme_color
@@ -153,9 +154,8 @@ class _TableBorderOverlay(QWidget):
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        inset = width / 2.0
-        frame = QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
-        radius = max(0.0, self._table._border_radius - inset)
+        frame = aligned_stroke_rect(self.rect(), width)
+        radius = aligned_corner_radius(self.rect(), self._table._border_radius, width)
         painter.drawRoundedRect(frame, radius, radius)
 
 
@@ -613,9 +613,12 @@ class MonkezTableDelegate(QStyledItemDelegate):
             pill.moveCenter(rect.center())
             bg = QColor(color)
             bg.setAlpha(35)
-            painter.setPen(QPen(color, 1))
+            border_width = 1.0
+            painter.setPen(QPen(color, border_width))
             painter.setBrush(bg)
-            painter.drawRoundedRect(pill, pill.height() / 2, pill.height() / 2)
+            badge_rect = aligned_stroke_rect(pill, border_width)
+            badge_radius = aligned_corner_radius(pill, pill.height() / 2, border_width)
+            painter.drawRoundedRect(badge_rect, badge_radius, badge_radius)
             painter.setPen(color)
             painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
         painter.restore()

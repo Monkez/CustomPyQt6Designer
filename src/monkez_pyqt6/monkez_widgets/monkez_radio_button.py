@@ -6,6 +6,7 @@ from PyQt6.QtCore import QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QRadioButton
 
+from ._painting import aligned_corner_radius, aligned_stroke_rect
 from .shadow_support import ShadowSupportMixin
 from .themes import normalize_theme, theme_color, theme_from_preset, theme_options_text, theme_to_preset
 
@@ -69,9 +70,12 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
             radius = bounds.height() / 2 if self._radio_style == self.RadioStyle.Pill else 9
             background = self._hover_color if hovered or checked else self._indicator_color
             border = self._checked_color if checked else self._border_color
-            painter.setPen(QPen(border, 1.5 if checked else 1))
+            border_width = 1.5 if checked else 1.0
+            painter.setPen(QPen(border, border_width))
             painter.setBrush(background)
-            painter.drawRoundedRect(bounds, radius, radius)
+            border_rect = aligned_stroke_rect(bounds, border_width)
+            border_radius = aligned_corner_radius(bounds, radius, border_width)
+            painter.drawRoundedRect(border_rect, border_radius, border_radius)
 
         left = self._content_padding if self._radio_style != self.RadioStyle.Classic else 2
         indicator = QRectF(
@@ -80,9 +84,10 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
             self._indicator_size,
             self._indicator_size,
         )
-        painter.setPen(QPen(self._checked_color if checked or hovered else self._border_color, 2))
+        indicator_width = 2.0
+        painter.setPen(QPen(self._checked_color if checked or hovered else self._border_color, indicator_width))
         painter.setBrush(self._indicator_color)
-        painter.drawEllipse(indicator)
+        painter.drawEllipse(aligned_stroke_rect(indicator, indicator_width))
         if checked:
             dot = indicator.adjusted(self._indicator_size * 0.27, self._indicator_size * 0.27,
                                      -self._indicator_size * 0.27, -self._indicator_size * 0.27)
@@ -99,9 +104,12 @@ class MonkezRadioButton(QRadioButton, ShadowSupportMixin):
 
         if self.hasFocus():
             focus = bounds.adjusted(2, 2, -2, -2)
-            painter.setPen(QPen(self._checked_color, 1, Qt.PenStyle.DotLine))
+            focus_width = 1.0
+            painter.setPen(QPen(self._checked_color, focus_width, Qt.PenStyle.DotLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(focus, 7, 7)
+            focus_rect = aligned_stroke_rect(focus, focus_width)
+            focus_radius = aligned_corner_radius(focus, 7, focus_width)
+            painter.drawRoundedRect(focus_rect, focus_radius, focus_radius)
 
     def _update_style(self) -> None:
         self.setStyleSheet("MonkezRadioButton { background: transparent; }")

@@ -4,6 +4,7 @@ from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+from ._painting import aligned_stroke_rect
 from .theme_support import ThemeSupportMixin
 from .themes import theme_color
 
@@ -100,9 +101,17 @@ class MonkezRangeSlider(QWidget, ThemeSupportMixin):
         painter.setBrush(self._range_color)
         painter.drawRoundedRect(selected, radius, radius)
         for index, center in ((1, lower), (2, upper)):
-            painter.setPen(QPen(self._range_color if index == self._active_handle else self._border_color, 2))
+            border_width = 2.0
+            painter.setPen(QPen(self._range_color if index == self._active_handle else self._border_color, border_width))
             painter.setBrush(self._handle_color)
-            painter.drawEllipse(center, self._handle_size / 2, self._handle_size / 2)
+            handle_radius = self._handle_size / 2
+            handle_bounds = QRectF(
+                center.x() - handle_radius,
+                center.y() - handle_radius,
+                self._handle_size,
+                self._handle_size,
+            )
+            painter.drawEllipse(aligned_stroke_rect(handle_bounds, border_width))
 
     def _nearest_handle(self, position: QPointF) -> int:
         lower = self._position_for_value(self._lower_value)

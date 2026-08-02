@@ -37,6 +37,12 @@ Updated: 2026-08-03
   closed control and custom popup items, including large-font row sizing.
 - New `MonkezComboBox` instances contain no placeholder items; Designer forms
   and runtime code add only the application-specific choices they need.
+- Custom-painted borders now share DPI-aware inset and corner-radius geometry.
+  The rule covers combo popups, group boxes, radios, switches, pagination,
+  calendar cells, table frames/badges, range-slider handles and dial handles,
+  preventing clipped or uneven antialiasing at widget edges.
+- Gallery's color-format selector now uses `MonkezComboBox` instead of a native
+  combo, so its right edge, chevron and rounded frame form one coherent control.
 - `MonkezImage` renders directly in its outer widget without a fixed-style
   child frame, so Designer stylesheets can control its visible background,
   border and radius.
@@ -119,7 +125,7 @@ Updated: 2026-08-03
 
 ## Latest verification
 
-- The automated suite contains 111 passing tests and covers all 35 public
+- The automated suite contains 112 passing tests and covers all 35 public
   runtime components and 34 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 34 Designer plugins.
@@ -128,10 +134,10 @@ Updated: 2026-08-03
   three UI-loading APIs successfully.
 - The current portable build initializes and constructs all 34 Designer
   plugins successfully.
-- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,703 entries (266.6 MiB) and
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,705 entries (266.6 MiB) and
   passes a full entry read/CRC integrity check.
 - Its SHA-256 is
-  `73E643E9BDE26369ABE0F041447856B07E84B0BA4A785F8BFD948F55D0AA724B`.
+  `ADEE7785BD2A99AAF9901000993746674172D13722135974EC61CCEA9062B126`.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully
   without terminating the existing process.

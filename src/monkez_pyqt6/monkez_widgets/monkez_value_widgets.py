@@ -7,6 +7,7 @@ from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtEnum, pyqtProperty, pyq
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QDial, QDoubleSpinBox, QSpinBox
 
+from ._painting import aligned_stroke_rect
 from .shadow_support import ShadowSupportMixin
 from .theme_support import ThemeSupportMixin
 from .themes import color_to_css, theme_color, theme_int, theme_radius
@@ -270,13 +271,22 @@ class MonkezDial(QDial, ThemeSupportMixin, ShadowSupportMixin):
             painter.setPen(pen)
             painter.drawArc(rect, start_angle, int(total_span * ratio))
             handle = QPointF(center.x() + radius * math.cos(angle), center.y() + radius * math.sin(angle))
-            painter.setPen(QPen(self._value_color, 2))
+            handle_border_width = 2.0
+            painter.setPen(QPen(self._value_color, handle_border_width))
             painter.setBrush(self._handle_color)
-            painter.drawEllipse(handle, self._handle_size / 2, self._handle_size / 2)
+            handle_radius = self._handle_size / 2
+            handle_bounds = QRectF(
+                handle.x() - handle_radius,
+                handle.y() - handle_radius,
+                self._handle_size,
+                self._handle_size,
+            )
+            painter.drawEllipse(aligned_stroke_rect(handle_bounds, handle_border_width))
         elif self._dial_style == self.DialStyle.Knob:
-            painter.setPen(QPen(self._track_color, 2))
+            knob_border_width = 2.0
+            painter.setPen(QPen(self._track_color, knob_border_width))
             painter.setBrush(self._handle_color)
-            painter.drawEllipse(rect)
+            painter.drawEllipse(aligned_stroke_rect(rect, knob_border_width))
             inner = rect.adjusted(self._track_width, self._track_width, -self._track_width, -self._track_width)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(theme_color(self._theme, "surface_alt"))
@@ -294,9 +304,17 @@ class MonkezDial(QDial, ThemeSupportMixin, ShadowSupportMixin):
             end = QPointF(center.x() + needle_radius * math.cos(angle), center.y() + needle_radius * math.sin(angle))
             painter.setPen(QPen(self._value_color, 3, cap=Qt.PenCapStyle.RoundCap))
             painter.drawLine(center, end)
-            painter.setPen(QPen(self._handle_color, 2))
+            center_border_width = 2.0
+            painter.setPen(QPen(self._handle_color, center_border_width))
             painter.setBrush(self._value_color)
-            painter.drawEllipse(center, self._handle_size / 2, self._handle_size / 2)
+            center_radius = self._handle_size / 2
+            center_bounds = QRectF(
+                center.x() - center_radius,
+                center.y() - center_radius,
+                self._handle_size,
+                self._handle_size,
+            )
+            painter.drawEllipse(aligned_stroke_rect(center_bounds, center_border_width))
 
         if self._show_value:
             painter.setPen(self._text_color)
