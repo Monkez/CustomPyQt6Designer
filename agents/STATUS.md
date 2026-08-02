@@ -1,6 +1,6 @@
 # Current engineering status
 
-Updated: 2026-07-31
+Updated: 2026-08-02
 
 ## Current version
 
@@ -51,6 +51,10 @@ Updated: 2026-07-31
   plus `str`, `bytes` and `pathlib.Path` file paths. NumPy remains lazy-loaded.
 - Outlined `MonkezButton` uses `activeColor` for its border and `textColor` for
   normal text, while preserving `hoverTextColor` for hover/pressed feedback.
+- Theme-derived button text is mode-aware: Filled uses `on_primary`, while
+  Outlined/Text use `primary` (or `danger` when inactive), preventing the white
+  text on white surface previously visible in Gallery. Explicit text and hover
+  colors survive button-type changes.
 - `MonkezImage` uses Ignored horizontal/vertical size policies and a zero
   minimum hint, so its outer layout owns widget geometry before the selected
   scale mode transforms the pixmap.
@@ -70,7 +74,7 @@ Updated: 2026-07-31
 
 ## Latest verification
 
-- All 95 automated tests pass for 0.5.0.
+- All 98 automated tests pass for 0.5.0.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification passes with all 25 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated

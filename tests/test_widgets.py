@@ -311,6 +311,39 @@ class WidgetTests(unittest.TestCase):
         self.assertIn("color: rgba(18, 52, 86, 170)", button.styleSheet())
         button.deleteLater()
 
+    def test_button_theme_uses_visible_text_for_each_button_type(self) -> None:
+        button = MonkezButton()
+        theme_names = ("material", "ios", "fluent", "bootstrap", "minimal", "dark")
+
+        for theme in theme_names:
+            for button_type in (1, 2):
+                with self.subTest(theme=theme, button_type=button_type):
+                    button.setThemeName(theme)
+                    button.setButtonTypeIndex(button_type)
+                    self.assertEqual(button.getTextColor(), button.getActiveColor())
+                    self.assertNotEqual(button.getTextColor(), button._surface_color)
+
+            button.setButtonTypeIndex(0)
+            self.assertNotEqual(button.getTextColor(), button.getActiveColor())
+
+        button.deleteLater()
+
+    def test_button_type_change_preserves_explicit_text_colors(self) -> None:
+        button = MonkezButton()
+        text = QColor("#7c3aed")
+        hover = QColor("#db2777")
+        button.setTextColor(text)
+        button.setHoverTextColor(hover)
+
+        button.setButtonTypeIndex(1)
+        self.assertEqual(button.getTextColor(), text)
+        self.assertEqual(button.getHoverTextColor(), hover)
+
+        button.setButtonTypeIndex(2)
+        self.assertEqual(button.getTextColor(), text)
+        self.assertEqual(button.getHoverTextColor(), hover)
+        button.deleteLater()
+
     def test_image_reuses_scaled_pixmap_until_source_or_size_changes(self) -> None:
         widget = MonkezImage()
         widget.resize(320, 180)

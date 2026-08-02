@@ -6,6 +6,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QApplication
 
 from monkez_pyqt6.gallery_app import (
@@ -66,6 +67,14 @@ class GalleryAppTests(unittest.TestCase):
             self.assertNotIn("Properties", docs_html)
             self.assertNotIn("Methods / Signals", docs_html)
             self.assertIsInstance(window._docs_preview_widget, MonkezButton)
+            outlined_buttons = [
+                button
+                for button in window.findChildren(MonkezButton)
+                if button.getButtonTypeIndex() == 1
+            ]
+            self.assertGreaterEqual(len(outlined_buttons), 3)
+            for button in outlined_buttons:
+                self.assertNotEqual(QColor("#ffffff"), button.getTextColor())
             window._handle_doc_link(QUrl("method:setButtonTypeIndex%28index%29"))
             self.assertEqual("setButtonTypeIndex(1)", window._docs_method_input.text())
             window._handle_doc_link(QUrl("method:setBackground%28color%29"))

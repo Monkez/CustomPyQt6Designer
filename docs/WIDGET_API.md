@@ -135,6 +135,12 @@ button.setContentPadding(8, 4).setSizeTokens(radius=10)
 Khi hover/pressed, chữ dùng `hoverTextColor` và viền vẫn được dẫn xuất từ
 `activeColor`.
 
+Màu chữ mặc định theo theme phụ thuộc kiểu button: `Filled` dùng `on_primary`,
+còn `Outlined` và `Text` dùng `primary` để luôn tương phản với nền surface sáng.
+Outlined/Text không active dùng màu `danger`. Nếu ứng dụng đặt riêng
+`textColor` hoặc `hoverTextColor`, màu tùy chỉnh đó được giữ khi đổi
+`buttonTypeIndex`; chọn một theme mới sẽ áp dụng lại bộ màu mặc định của theme.
+
 Ở chế độ `Text`, `textColor` cũng là màu chữ bình thường; nền chỉ nhận tint nhẹ
 khi hover/pressed. Các thay đổi property shadow tái sử dụng effect hiện tại để
 tránh tạo lại object đồ họa không cần thiết.

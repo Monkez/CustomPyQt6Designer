@@ -52,6 +52,8 @@ class MonkezButton(QPushButton):
         self._deactive_color = QColor(170, 0, 0, 255)
         self._text_color = QColor("white")
         self._hover_text_color = QColor(255, 255, 0)
+        self._text_color_uses_theme = True
+        self._hover_text_color_uses_theme = True
         self._padding_x = 4
         self._padding_y = 2
         self._shadow_enabled = True
@@ -149,14 +151,36 @@ class MonkezButton(QPushButton):
     def _rgba(self, color: QColor) -> str:
         return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
 
+    def _theme_button_text_color(self) -> QColor:
+        role = "on_primary" if self._button_type == "filled" else "primary"
+        return theme_color(self._theme, role)
+
+    def _refresh_theme_text_colors(self) -> None:
+        default = self._theme_button_text_color()
+        if self._text_color_uses_theme:
+            self._text_color = QColor(default)
+        if self._hover_text_color_uses_theme:
+            self._hover_text_color = QColor(default)
+
+    def _resolved_text_colors(self) -> tuple[QColor, QColor]:
+        normal = QColor(self._text_color)
+        hover = QColor(self._hover_text_color)
+        if not self._active and self._button_type != "filled":
+            if self._text_color_uses_theme:
+                normal = QColor(self._deactive_color)
+            if self._hover_text_color_uses_theme:
+                hover = QColor(self._deactive_color)
+        return normal, hover
+
     def _update_style(self) -> None:
         bg_color = QColor(self._active_color if self._active else self._deactive_color)
         hover_color = self._hover_background(bg_color)
         pressed_color = self._pressed_background(bg_color)
         bg = pressed_color if self._pressed else hover_color if self._hovered else bg_color
-        text_color = self._hover_text_color if self._hovered or self._pressed else self._text_color
+        normal_text_color, hover_text_color = self._resolved_text_colors()
+        text_color = hover_text_color if self._hovered or self._pressed else normal_text_color
         accent_color = QColor(self._active_color if self._active else self._deactive_color)
-        text_button_color = QColor(self._text_color if self._active else self._deactive_color)
+        text_button_color = QColor(text_color)
         padding_y = self._padding_y
         padding_x = self._padding_x
         disabled_bg = self._blend(self._surface_color, QColor("#9ca3af"), 0.20)
@@ -238,6 +262,7 @@ class MonkezButton(QPushButton):
         if value not in BUTTON_TYPE_NAMES:
             value = "filled"
         self._button_type = value
+        self._refresh_theme_text_colors()
         self._update_style()
 
     def getButtonTypeIndex(self) -> int:
@@ -268,8 +293,9 @@ class MonkezButton(QPushButton):
         self._surface_color = theme_color(self._theme, "surface")
         self._border_color = theme_color(self._theme, "border_focus")
         self._deactive_color = theme_color(self._theme, "danger")
-        self._text_color = theme_color(self._theme, "on_primary")
-        self._hover_text_color = theme_color(self._theme, "on_primary")
+        self._text_color_uses_theme = True
+        self._hover_text_color_uses_theme = True
+        self._refresh_theme_text_colors()
         self._radius = theme_radius(self._theme)
         self._shadow_color = theme_color(self._theme, "shadow")
         self._shadow_blur = 18 if self._theme in {"ios", "material"} else 8
@@ -329,6 +355,7 @@ class MonkezButton(QPushButton):
 
     def setTextColor(self, color: QColor) -> None:
         self._text_color = QColor(color)
+        self._text_color_uses_theme = False
         self._update_style()
 
     def getHoverTextColor(self) -> QColor:
@@ -336,6 +363,7 @@ class MonkezButton(QPushButton):
 
     def setHoverTextColor(self, color: QColor) -> None:
         self._hover_text_color = QColor(color)
+        self._hover_text_color_uses_theme = False
         self._update_style()
 
     def getPaddingX(self) -> int:
