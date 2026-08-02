@@ -35,6 +35,13 @@ TASK_MENU_CLASS_NAMES = {
     "MonkezLinearGauge",
     "MonkezProgressBar",
     "MonkezPagination",
+    "MonkezRangeSlider",
+    "MonkezSegmentedControl",
+    "MonkezBreadcrumb",
+    "MonkezStatusBadge",
+    "MonkezLoadingIndicator",
+    "MonkezLoadingOverlay",
+    "MonkezFilePicker",
     "MonkezRadioButton",
     "MonkezRadialGauge",
     "MonkezScrollArea",
@@ -86,6 +93,20 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
                 )
                 self._actions.append(action)
 
+        if type(widget).__name__ == "MonkezButton":
+            for label, index in (("Filled", 0), ("Outlined", 1), ("Text", 2)):
+                action = QAction(f"Button Variant: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, value=index, name=label: self._apply_button_variant(value, name)
+                )
+                self._actions.append(action)
+            for label, index in (("Standard", 0), ("Icon only", 1)):
+                action = QAction(f"Button Content: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, value=index, name=label: self._apply_button_style(value, name)
+                )
+                self._actions.append(action)
+
     def preferredEditAction(self):
         return self._actions[0] if self._actions else None
 
@@ -134,6 +155,24 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
         cursor = form.cursor()
         if cursor is not None:
             cursor.setWidgetProperty(self._widget, "styleIndex", index)
+        form.setDirty(True)
+
+    def _apply_button_variant(self, index: int, name: str) -> None:
+        self._apply_button_property("buttonTypeIndex", index, "Variant", name)
+
+    def _apply_button_style(self, index: int, name: str) -> None:
+        self._apply_button_property("styleIndex", index, "Style", name)
+
+    def _apply_button_property(self, property_name: str, index: int, kind: str, name: str) -> None:
+        write_probe(f"MonkezButton.taskMenu{kind}={index}/{name}")
+        self._widget.setProperty(property_name, index)
+
+        form = QDesignerFormWindowInterface.findFormWindow(self._widget)
+        if form is None:
+            return
+        cursor = form.cursor()
+        if cursor is not None:
+            cursor.setWidgetProperty(self._widget, property_name, index)
         form.setDirty(True)
 
 

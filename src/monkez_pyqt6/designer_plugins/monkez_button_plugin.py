@@ -73,6 +73,9 @@ class MonkezButtonPlugin(QPyDesignerCustomWidgetPlugin):
   <property name="buttonTypeIndex">
    <number>0</number>
   </property>
+  <property name="styleIndex">
+   <number>0</number>
+  </property>
  </widget>
 </ui>
 """

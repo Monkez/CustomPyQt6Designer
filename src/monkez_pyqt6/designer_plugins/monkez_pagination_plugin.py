@@ -2,10 +2,10 @@ from monkez_pyqt6.monkez_widgets import MonkezPagination
 
 try:
     from plugin_factory import PluginSpec, create_plugin
-    from plugin_groups import GROUP_DISPLAY
+    from plugin_groups import GROUP_NAVIGATION
 except ModuleNotFoundError:
     from .plugin_factory import PluginSpec, create_plugin
-    from .plugin_groups import GROUP_DISPLAY
+    from .plugin_groups import GROUP_NAVIGATION
 
 
 MonkezPaginationPlugin = create_plugin(
@@ -23,7 +23,7 @@ MonkezPaginationPlugin = create_plugin(
             '  <property name="currentPage"><number>4</number></property>\n'
             '  <property name="styleIndex"><number>0</number></property>'
         ),
-        group=GROUP_DISPLAY,
+        group=GROUP_NAVIGATION,
     ),
     __name__,
 )

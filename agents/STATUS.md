@@ -10,8 +10,8 @@ Updated: 2026-08-02
 
 ## Supported surface
 
-- 26 runtime widgets.
-- 26 Qt Designer plugins.
+- 34 public runtime widgets/components.
+- 33 Qt Designer plugins; runtime-only `MonkezToast` is intentionally excluded.
 - Six themes: Material, iOS, Fluent, Bootstrap, Minimal and Dark.
 - Canonical distribution/import names are `monkez-pyqt6` and `monkez_pyqt6`;
   `custom_pyqt6_designer` remains as a compatibility namespace and launcher.
@@ -55,6 +55,10 @@ Updated: 2026-08-02
   Outlined/Text use `primary` (or `danger` when inactive), preventing the white
   text on white surface previously visible in Gallery. Explicit text and hover
   colors survive button-type changes.
+- `MonkezButton` now owns Standard/Icon-only presentation and guarded loading
+  state through `styleIndex`, `iconText`, `buttonSize`, `loading`, `loadingText`
+  and `disableWhileLoading`. Separate Loading/Icon button entries were removed
+  from Designer and Gallery; compatibility aliases remain module-local only.
 - `MonkezImage` uses Ignored horizontal/vertical size policies and a zero
   minimum hint, so its outer layout owns widget geometry before the selected
   scale mode transforms the pixmap.
@@ -74,6 +78,12 @@ Updated: 2026-08-02
 - `MonkezPagination` adds Rounded, Pill, Minimal and Compact navigation styles,
   responsive ellipsis, page-count and item-count modes, mouse/keyboard/wheel
   navigation, state colors, runtime signals and a Designer style task menu.
+- Eight practical components complete the feedback/navigation workflow:
+  `MonkezStatusBadge`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`,
+  runtime-only `MonkezToast`, `MonkezRangeSlider`, `MonkezSegmentedControl`,
+  `MonkezFilePicker` and `MonkezBreadcrumb`. The seven visual form components
+  have Designer plugins, Gallery previews, theme APIs and behavioral tests;
+  Loading/Icon-only behavior is part of `MonkezButton`.
 - `MonkezRadialGauge` exposes part-specific Designer/Python color names for
   active ticks, inactive ticks, the needle, central value and scale text while
   retaining the older generic color properties for compatibility.
@@ -90,15 +100,16 @@ Updated: 2026-08-02
 
 ## Latest verification
 
-- All 102 automated tests pass for 0.5.0.
+- The automated suite contains 106 passing tests and covers all 34 public
+  runtime components and 33 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
-  verification passes with all 26 Designer plugins.
+  verification targets all 33 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated
   wheel install imports the canonical package, compatibility namespace and all
   three UI-loading APIs successfully.
-- The current 0.5.0 portable build initializes and constructs all 26 Designer
+- The current portable build initializes and constructs all 33 Designer
   plugins successfully.
-- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,639 entries (266.4 MB) and
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,665 entries (266.5 MB) and
   passes a full entry read/CRC integrity check.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully

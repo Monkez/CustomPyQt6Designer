@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from PyQt6.QtCore import QSize, Qt, pyqtEnum, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QSize, QTimer, Qt, pyqtEnum, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QPushButton
 
@@ -20,6 +20,8 @@ from .themes import (
 
 BUTTON_TYPE_NAMES = ("filled", "outlined", "text")
 BUTTON_TYPE_OPTIONS_TEXT = "0 Filled | 1 Outlined | 2 Text"
+BUTTON_STYLE_NAMES = ("standard", "icon")
+BUTTON_STYLE_OPTIONS_TEXT = "0 Standard | 1 Icon only"
 
 
 class MonkezButton(QPushButton):
@@ -39,6 +41,8 @@ class MonkezButton(QPushButton):
     Minimal = ThemePreset.Minimal
     Dark = ThemePreset.Dark
     themePresetChanged = pyqtSignal(ThemePreset)
+    loadingChanged = pyqtSignal(bool)
+    iconTextChanged = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -63,6 +67,18 @@ class MonkezButton(QPushButton):
         self._shadow_color = QColor(0, 0, 0, 100)
         self._hovered = False
         self._pressed = False
+        self._style = "standard"
+        self._icon_text = "⋯"
+        self._button_size = 40
+        self._loading = False
+        self._loading_text = "Loading"
+        self._idle_text = "Monkez Button"
+        self._loading_dot_count = 0
+        self._disable_while_loading = True
+        self._enabled_before_loading = True
+        self._loading_timer = QTimer(self)
+        self._loading_timer.setInterval(350)
+        self._loading_timer.timeout.connect(self._advance_loading)
 
         self.setText("Monkez Button")
         self.setMinimumSize(0, 0)
@@ -72,10 +88,133 @@ class MonkezButton(QPushButton):
         self._update_style()
 
     def sizeHint(self) -> QSize:
+        if self._style == "icon":
+            return QSize(self._button_size, self._button_size)
         return QSize(130, 40)
 
     def minimumSizeHint(self) -> QSize:
         return QSize(24, 24)
+
+    def setText(self, text: str) -> None:
+        self._idle_text = str(text)
+        if not self._loading and self._style == "standard":
+            super().setText(self._idle_text)
+
+    def _display_idle_content(self) -> None:
+        text = self._icon_text if self._style == "icon" else self._idle_text
+        super().setText(text)
+
+    def _advance_loading(self) -> None:
+        self._loading_dot_count = self._loading_dot_count % 3 + 1
+        dots = "." * self._loading_dot_count
+        super().setText(dots if self._style == "icon" else self._loading_text + dots)
+
+    def getStyle(self) -> str:
+        return self._style
+
+    def setStyle(self, value: str) -> None:
+        value = (value or "standard").strip().lower()
+        if value.isdigit():
+            self.setStyleIndex(int(value))
+            return
+        if value not in BUTTON_STYLE_NAMES:
+            value = "standard"
+        if value == self._style:
+            return
+        self._style = value
+        if value == "icon":
+            self.setMinimumSize(self._button_size, self._button_size)
+            self.setMaximumSize(self._button_size, self._button_size)
+            self.setAccessibleName(self.toolTip() or self._icon_text)
+        else:
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+        if not self._loading:
+            self._display_idle_content()
+        self.updateGeometry()
+
+    def getStyleIndex(self) -> int:
+        return BUTTON_STYLE_NAMES.index(self._style)
+
+    def setStyleIndex(self, value: int) -> None:
+        try:
+            index = int(value)
+        except (TypeError, ValueError):
+            index = 0
+        if not 0 <= index < len(BUTTON_STYLE_NAMES):
+            index = 0
+        self.setStyle(BUTTON_STYLE_NAMES[index])
+
+    def getStyleOptions(self) -> str:
+        return BUTTON_STYLE_OPTIONS_TEXT
+
+    def setStyleOptions(self, value: str) -> None:
+        return None
+
+    def getIconText(self) -> str:
+        return self._icon_text
+
+    def setIconText(self, value: str) -> None:
+        value = str(value)
+        if value == self._icon_text:
+            return
+        self._icon_text = value
+        if self._style == "icon" and not self._loading:
+            super().setText(value)
+        self.setAccessibleName(self.toolTip() or value)
+        self.iconTextChanged.emit(value)
+
+    def getButtonSize(self) -> int:
+        return self._button_size
+
+    def setButtonSize(self, value: int) -> None:
+        self._button_size = max(24, min(128, int(value)))
+        if self._style == "icon":
+            self.setMinimumSize(self._button_size, self._button_size)
+            self.setMaximumSize(self._button_size, self._button_size)
+        self.updateGeometry()
+
+    def getLoading(self) -> bool:
+        return self._loading
+
+    def setLoading(self, value: bool) -> None:
+        loading = bool(value)
+        if loading == self._loading:
+            return
+        self._loading = loading
+        self._loading_dot_count = 0
+        if loading:
+            self._enabled_before_loading = self.isEnabled()
+            if self._disable_while_loading:
+                self.setEnabled(False)
+            self._loading_timer.start()
+            self._advance_loading()
+        else:
+            self._loading_timer.stop()
+            if self._disable_while_loading:
+                self.setEnabled(self._enabled_before_loading)
+            self._display_idle_content()
+        self.loadingChanged.emit(loading)
+
+    def getLoadingText(self) -> str:
+        return self._loading_text
+
+    def setLoadingText(self, value: str) -> None:
+        self._loading_text = str(value)
+        if self._loading:
+            self._loading_dot_count = 0
+            self._advance_loading()
+
+    def getDisableWhileLoading(self) -> bool:
+        return self._disable_while_loading
+
+    def setDisableWhileLoading(self, value: bool) -> None:
+        disable = bool(value)
+        if disable == self._disable_while_loading:
+            return
+        self._disable_while_loading = disable
+        if self._loading:
+            self.setEnabled(False if disable else self._enabled_before_loading)
 
     def enterEvent(self, event) -> None:
         self._hovered = True
@@ -427,6 +566,16 @@ class MonkezButton(QPushButton):
     buttonTypeIndexHint = pyqtProperty(str, getButtonTypeOptions, setButtonTypeOptions, designable=False, stored=False)
     buttonTypeOptions = pyqtProperty(str, getButtonTypeOptions, setButtonTypeOptions, designable=False, stored=False)
     buttonType = pyqtProperty(str, getButtonType, setButtonType, designable=False)
+    styleIndex = pyqtProperty(int, getStyleIndex, setStyleIndex)
+    styleHint = pyqtProperty(str, getStyleOptions, setStyleOptions, designable=True, stored=False)
+    styleIndexHint = pyqtProperty(str, getStyleOptions, setStyleOptions, designable=False, stored=False)
+    styleOptions = pyqtProperty(str, getStyleOptions, setStyleOptions, designable=False, stored=False)
+    buttonStyle = pyqtProperty(str, getStyle, setStyle, designable=False)
+    iconText = pyqtProperty(str, getIconText, setIconText, notify=iconTextChanged)
+    buttonSize = pyqtProperty(int, getButtonSize, setButtonSize)
+    loading = pyqtProperty(bool, getLoading, setLoading, notify=loadingChanged)
+    loadingText = pyqtProperty(str, getLoadingText, setLoadingText)
+    disableWhileLoading = pyqtProperty(bool, getDisableWhileLoading, setDisableWhileLoading)
     active = pyqtProperty(bool, getActive, setActive)
     activeColor = pyqtProperty(QColor, getActiveColor, setActiveColor)
     deactiveColor = pyqtProperty(QColor, getDeactiveColor, setDeactiveColor)

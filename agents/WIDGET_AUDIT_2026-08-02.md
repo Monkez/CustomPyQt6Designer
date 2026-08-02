@@ -23,8 +23,11 @@ Designer properties/plugins, Gallery probes/previews, fluent aliases and tests.
   supported. State changes emit `pageChanged` exactly once.
 - The widget must remain lazy-imported and usable without Designer dependencies.
 
-## Deferred candidates
+## Follow-up implementation
 
-Loading buttons, slider value bubbles, badges/toasts and breadcrumbs remain
-deliberate backlog items. They need concrete interaction and accessibility
-requirements before becoming stable public APIs.
+The practical feedback/navigation candidates were implemented after this audit:
+status badge, loading indicator/overlay, runtime toast, range slider, segmented
+control, file picker and breadcrumb. Loading and icon-only behavior were folded
+into `MonkezButton` as selectable modes instead of adding two public widget
+types. Slider value bubbles remain deferred until their interaction contract is
+defined.

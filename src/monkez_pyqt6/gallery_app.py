@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 
 from .monkez_widgets import (
     MonkezArcGauge,
+    MonkezBreadcrumb,
     MonkezButton,
     MonkezCalendarWidget,
     MonkezCheckBox,
@@ -46,18 +47,25 @@ from .monkez_widgets import (
     MonkezImage,
     MonkezLCDNumber,
     MonkezLinearGauge,
+    MonkezLoadingIndicator,
+    MonkezLoadingOverlay,
     MonkezPagination,
     MonkezProgressBar,
+    MonkezRangeSlider,
     MonkezRadioButton,
     MonkezRadialGauge,
     MonkezScrollArea,
+    MonkezSegmentedControl,
     MonkezSlider,
     MonkezSplashScreen,
     MonkezSpinBox,
     MonkezSwitch,
+    MonkezStatusBadge,
     MonkezTextInput,
     MonkezTimeEdit,
+    MonkezToast,
     MonkezUSBCamera,
+    MonkezFilePicker,
 )
 
 
@@ -135,10 +143,15 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         "Button co theme, radius, padding nho, hover/pressed va shadow.",
         (
             "buttonTypeIndex: 0 Filled | 1 Outlined | 2 Text",
+            "styleIndex: 0 Standard | 1 Icon only",
+            "loading, loadingText, disableWhileLoading, iconText, buttonSize",
             "active, activeColor, deactiveColor, textColor, hoverTextColor",
             "paddingX, paddingY, radius, shadowEnabled, shadowBlur, shadowOffsetX/Y",
         ),
-        ("setThemeIndex(index)", "setButtonTypeIndex(index)", "clicked.connect(slot)"),
+        (
+            "setThemeIndex(index)", "setButtonTypeIndex(index)",
+            "setStyleIndex(index)", "setLoading(value)", "clicked.connect(slot)",
+        ),
         "button = MonkezButton(); button.setText('Save'); button.setThemeIndex(0)",
     ),
     WidgetDoc(
@@ -263,7 +276,7 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
     ),
     WidgetDoc(
         "MonkezPagination",
-        "Display",
+        "Navigation",
         "Dieu huong trang co ellipsis responsive va bon style Rounded, Pill, Minimal, Compact.",
         (
             "currentPage, pageCount, totalItems, pageSize",
@@ -367,6 +380,54 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         ("setValue(value)", "setVertical(value)", "setTargetValue(value)"),
         "gauge = MonkezLinearGauge(); gauge.setTargetValue(80)",
     ),
+    WidgetDoc(
+        "MonkezStatusBadge", "Display", "Nhan trang thai semantic gon cho ket noi va quy trinh.",
+        ("badgeText, statusIndex, dotVisible", "accentColor, textColor, backgroundColor, radius"),
+        ("setStatusIndex(index)", "setText(text)"),
+        "badge = MonkezStatusBadge(); badge.setText('Online'); badge.setStatusIndex(1)",
+    ),
+    WidgetDoc(
+        "MonkezLoadingIndicator", "Display", "Spinner nhe, khong phu thuoc thu vien ngoai.",
+        ("running, spinnerColor", "lineCount, lineWidth, speed"),
+        ("setRunning(value)", "setSpeed(milliseconds)"),
+        "spinner = MonkezLoadingIndicator(); spinner.setRunning(True)",
+    ),
+    WidgetDoc(
+        "MonkezLoadingOverlay", "Container", "Be mat loading voi spinner va thong diep.",
+        ("active, message", "backgroundColor, textColor, radius"),
+        ("setActive(value)", "setMessage(text)"),
+        "overlay = MonkezLoadingOverlay(); overlay.setMessage('Connecting camera…')",
+    ),
+    WidgetDoc(
+        "MonkezToast", "Feedback", "Thong bao noi tu dong an, dung trong runtime.",
+        ("message, duration, statusIndex",),
+        ("showMessage(message, duration)", "dismiss()"),
+        "toast = MonkezToast(window); toast.showMessage('Saved', 3000)",
+    ),
+    WidgetDoc(
+        "MonkezRangeSlider", "Value", "Slider hai handle chon khoang min-max.",
+        ("minimum, maximum, lowerValue, upperValue", "orientation, singleStep, grooveHeight, handleSize"),
+        ("setRange(min, max)", "setValues(lower, upper)"),
+        "slider = MonkezRangeSlider(); slider.setValues(20, 80)",
+    ),
+    WidgetDoc(
+        "MonkezSegmentedControl", "Navigation", "Chuyen nhanh giua cac che do loai tru nhau.",
+        ("items, currentIndex, radius",),
+        ("setItems(text)", "setCurrentIndex(index)"),
+        "segments = MonkezSegmentedControl(); segments.setItems('Camera | Result | History')",
+    ),
+    WidgetDoc(
+        "MonkezFilePicker", "Input", "Input duong dan kem dialog file, save hoac thu muc.",
+        ("path, placeholderText", "dialogMode, nameFilter, requireExisting, buttonText"),
+        ("browse()", "clear()", "setPath(path)"),
+        "picker = MonkezFilePicker(); picker.setNameFilter('Images (*.png *.jpg)')",
+    ),
+    WidgetDoc(
+        "MonkezBreadcrumb", "Navigation", "Duong dan phan cap co the click tung muc.",
+        ("items, separator, currentIndex, spacing",),
+        ("setItems(text)", "setCurrentIndex(index)"),
+        "crumb = MonkezBreadcrumb(); crumb.setItems('Home | Cameras | Camera 01')",
+    ),
 )
 
 WidgetMethodProbe = tuple[str, str, str, Callable[[QWidget], object]]
@@ -374,6 +435,9 @@ WidgetMethodProbe = tuple[str, str, str, Callable[[QWidget], object]]
 WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
     "MonkezButton": (
         ("setButtonTypeIndex(index)", "Switch button style: 0 Filled, 1 Outlined, 2 Text.", "setButtonTypeIndex(1)", lambda widget: widget.setButtonTypeIndex(1)),
+        ("setStyleIndex(index)", "Switch content style: 0 Standard or 1 Icon only.", "setStyleIndex(1)", lambda widget: (widget.setIconText("⚙"), widget.setStyleIndex(1))),
+        ("setLoading(value)", "Toggle the guarded loading state.", "setLoading(True)", lambda widget: widget.setLoading(True)),
+        ("setLoadingText(text)", "Set the animated loading label.", 'setLoadingText("Saving")', lambda widget: widget.setLoadingText("Saving")),
         ("setText(text)", "Set button label text.", 'setText("Save")', lambda widget: widget.setText("Save")),
         ("setActive(value)", "Toggle active/deactive visual state.", "setActive(False)", lambda widget: widget.setActive(False)),
     ),
@@ -527,6 +591,38 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("setVertical(value)", "Switch orientation.", "setVertical(True)", lambda widget: widget.setVertical(True)),
         ("setTargetValue(value)", "Set target marker.", "setTargetValue(80)", lambda widget: widget.setTargetValue(80)),
     ),
+    "MonkezStatusBadge": (
+        ("setStatusIndex(index)", "Set semantic status: info, success, warning, error or neutral.", "setStatusIndex(2)", lambda widget: widget.setStatusIndex(2)),
+        ("setText(text)", "Set badge label.", 'setText("Warning")', lambda widget: widget.setText("Warning")),
+    ),
+    "MonkezLoadingIndicator": (
+        ("setRunning(value)", "Start or pause animation.", "setRunning(True)", lambda widget: widget.setRunning(True)),
+        ("setSpeed(milliseconds)", "Set frame interval.", "setSpeed(55)", lambda widget: widget.setSpeed(55)),
+    ),
+    "MonkezLoadingOverlay": (
+        ("setMessage(text)", "Set loading message.", 'setMessage("Connecting…")', lambda widget: widget.setMessage("Connecting…")),
+        ("setActive(value)", "Show or hide overlay activity.", "setActive(True)", lambda widget: widget.setActive(True)),
+    ),
+    "MonkezToast": (
+        ("showMessage(message, duration)", "Show a timed notification.", 'showMessage("Saved", 3000)', lambda widget: widget.showMessage("Saved", 3000)),
+        ("dismiss()", "Hide the notification.", "dismiss()", lambda widget: widget.dismiss()),
+    ),
+    "MonkezRangeSlider": (
+        ("setRange(min, max)", "Set allowed range.", "setRange(0, 100)", lambda widget: widget.setRange(0, 100)),
+        ("setValues(lower, upper)", "Set selected interval.", "setValues(20, 80)", lambda widget: widget.setValues(20, 80)),
+    ),
+    "MonkezSegmentedControl": (
+        ("setItems(text)", "Set pipe-separated segments.", 'setItems("Live | Result | Log")', lambda widget: widget.setItems("Live | Result | Log")),
+        ("setCurrentIndex(index)", "Select active segment.", "setCurrentIndex(1)", lambda widget: widget.setCurrentIndex(1)),
+    ),
+    "MonkezFilePicker": (
+        ("setPath(path)", "Set current path.", 'setPath("assets/image.png")', lambda widget: widget.setPath("assets/image.png")),
+        ("clear()", "Clear selected path.", "clear()", lambda widget: widget.clear()),
+    ),
+    "MonkezBreadcrumb": (
+        ("setItems(text)", "Set pipe-separated path items.", 'setItems("Home | Devices | Camera")', lambda widget: widget.setItems("Home | Devices | Camera")),
+        ("setCurrentIndex(index)", "Set active path item.", "setCurrentIndex(1)", lambda widget: widget.setCurrentIndex(1)),
+    ),
 }
 
 
@@ -640,7 +736,7 @@ class GalleryWindow(QMainWindow):
         title_box.addWidget(subtitle)
         layout.addLayout(title_box, 1)
 
-        for label, value in (("Widgets", "26"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
+        for label, value in (("Widgets", "34"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
             layout.addWidget(self._metric(label, value))
         return header
 
@@ -1756,6 +1852,63 @@ def _splash_preview() -> QWidget:
     return widget
 
 
+def _status_badge_preview() -> QWidget:
+    widget = MonkezStatusBadge()
+    widget.setText("Camera online")
+    widget.setStatusIndex(1)
+    return widget
+
+
+def _loading_indicator_preview() -> QWidget:
+    widget = MonkezLoadingIndicator()
+    widget.setFixedSize(52, 52)
+    return widget
+
+
+def _loading_overlay_preview() -> QWidget:
+    widget = MonkezLoadingOverlay()
+    widget.setMessage("Connecting camera…")
+    widget.setMinimumSize(260, 150)
+    return widget
+
+
+def _toast_preview() -> QWidget:
+    toast = MonkezToast()
+    toast.setMessage("Settings saved successfully")
+    toast.setStatusIndex(1)
+    toast.setMinimumSize(320, 64)
+    return toast
+
+
+def _range_slider_preview() -> QWidget:
+    widget = MonkezRangeSlider()
+    widget.setValues(22, 78)
+    widget.setMinimumWidth(280)
+    return widget
+
+
+def _segmented_preview() -> QWidget:
+    widget = MonkezSegmentedControl()
+    widget.setItems("Camera | Result | History")
+    widget.setCurrentIndex(1)
+    widget.setMinimumWidth(300)
+    return widget
+
+
+def _file_picker_preview() -> QWidget:
+    widget = MonkezFilePicker()
+    widget.setPlaceholderText("Choose camera profile…")
+    widget.setMinimumWidth(340)
+    return widget
+
+
+def _breadcrumb_preview() -> QWidget:
+    widget = MonkezBreadcrumb()
+    widget.setItems("Home | Cameras | Camera 01")
+    widget.setMinimumWidth(320)
+    return widget
+
+
 _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
     "MonkezButton": _button_preview,
     "MonkezTextInput": _text_input_preview,
@@ -1783,6 +1936,14 @@ _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
     "MonkezRadialGauge": _radial_gauge_preview,
     "MonkezArcGauge": _arc_gauge_preview,
     "MonkezLinearGauge": _linear_gauge_preview,
+    "MonkezStatusBadge": _status_badge_preview,
+    "MonkezLoadingIndicator": _loading_indicator_preview,
+    "MonkezLoadingOverlay": _loading_overlay_preview,
+    "MonkezToast": _toast_preview,
+    "MonkezRangeSlider": _range_slider_preview,
+    "MonkezSegmentedControl": _segmented_preview,
+    "MonkezFilePicker": _file_picker_preview,
+    "MonkezBreadcrumb": _breadcrumb_preview,
 }
 
 

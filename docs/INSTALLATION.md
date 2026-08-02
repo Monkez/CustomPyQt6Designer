@@ -67,7 +67,7 @@ python -m monkez_pyqt6 --new-splash ui/splash_screen.ui
 python -m monkez_pyqt6 --doctor
 ```
 
-Doctor kiểm tra phiên bản package/Python, đủ 26 plugin, vị trí Qt Designer và
+Doctor kiểm tra phiên bản package/Python, đủ 33 plugin, vị trí Qt Designer và
 Python plugin bridge. Mỗi lỗi đều kèm hướng khắc phục. Xem phiên bản nhanh:
 
 ```powershell

@@ -27,6 +27,7 @@ from PyQt6 import uic
 from monkez_pyqt6 import monkez_widgets
 from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
+    MonkezBreadcrumb,
     MonkezCalendarWidget,
     MonkezArcGauge,
     MonkezComboBox,
@@ -35,11 +36,18 @@ from monkez_pyqt6.monkez_widgets import (
     MonkezImage,
     MonkezLinearGauge,
     MonkezLCDNumber,
+    MonkezLoadingIndicator,
+    MonkezLoadingOverlay,
     MonkezPagination,
+    MonkezRangeSlider,
     MonkezRadialGauge,
     MonkezRadioButton,
     MonkezScrollArea,
+    MonkezSegmentedControl,
+    MonkezStatusBadge,
     MonkezUSBCamera,
+    MonkezToast,
+    MonkezFilePicker,
 )
 
 
@@ -865,6 +873,110 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual("9876.5", lcd.displayText)
         lcd.close()
         lcd.deleteLater()
+
+    def test_feedback_widgets_expose_complete_runtime_states(self) -> None:
+        badge = MonkezStatusBadge()
+        badge.statusIndex = 3
+        badge.badgeText = "Camera offline"
+        self.assertEqual(3, badge.statusIndex)
+        self.assertIn("Camera offline", badge.text())
+
+        spinner = MonkezLoadingIndicator()
+        spinner.resize(48, 48)
+        spinner.speed = 45
+        spinner.running = False
+        self.assertFalse(spinner.running)
+        self.assertFalse(spinner.grab().isNull())
+
+        overlay = MonkezLoadingOverlay()
+        overlay.message = "Connecting…"
+        overlay.resize(260, 150)
+        overlay.show()
+        self.app.processEvents()
+        self.assertEqual("Connecting…", overlay.message)
+        self.assertFalse(overlay.grab().isNull())
+        overlay.active = False
+        self.assertFalse(overlay.isVisible())
+
+        toast = MonkezToast()
+        toast.showMessage("Saved", 0)
+        self.app.processEvents()
+        self.assertTrue(toast.isVisible())
+        toast.dismiss()
+        self.assertFalse(toast.isVisible())
+
+        for widget in (badge, spinner, overlay, toast):
+            widget.close()
+            widget.deleteLater()
+
+    def test_range_slider_clamps_values_and_supports_orientation(self) -> None:
+        slider = MonkezRangeSlider()
+        changes = []
+        slider.valuesChanged.connect(lambda lower, upper: changes.append((lower, upper)))
+        slider.setRange(-10, 110)
+        slider.setValues(90, 20)
+        self.assertEqual((20, 90), (slider.lowerValue, slider.upperValue))
+        slider.lowerValue = 100
+        self.assertEqual(90, slider.lowerValue)
+        slider.upperValue = -20
+        self.assertEqual(90, slider.upperValue)
+        slider.orientation = Qt.Orientation.Vertical
+        slider.resize(slider.sizeHint())
+        slider.show()
+        self.app.processEvents()
+        self.assertFalse(slider.grab().isNull())
+        self.assertTrue(changes)
+        slider.close()
+        slider.deleteLater()
+
+    def test_segmented_breadcrumb_and_action_widgets_update_state(self) -> None:
+        segmented = MonkezSegmentedControl()
+        segmented.items = "Live | Result | Log"
+        segmented.currentIndex = 2
+        self.assertEqual("Log", segmented.currentText())
+
+        breadcrumb = MonkezBreadcrumb()
+        breadcrumb.items = "Home | Devices | Camera"
+        breadcrumb.currentIndex = 1
+        self.assertEqual(1, breadcrumb.currentIndex)
+
+        button = MonkezButton()
+        button.setText("Save")
+        button.loadingText = "Saving"
+        button.loading = True
+        self.assertTrue(button.loading)
+        self.assertFalse(button.isEnabled())
+        button.loading = False
+        self.assertEqual("Save", button.text())
+        self.assertTrue(button.isEnabled())
+
+        button.iconText = "⚙"
+        button.buttonSize = 44
+        button.styleIndex = 1
+        self.assertEqual("⚙", button.text())
+        self.assertEqual(QSize(44, 44), button.sizeHint())
+        self.assertEqual(QSize(44, 44), button.size())
+        button.styleIndex = 0
+        self.assertEqual("Save", button.text())
+        self.assertEqual(0, button.minimumWidth())
+        self.assertEqual(16777215, button.maximumWidth())
+
+        for widget in (segmented, breadcrumb, button):
+            widget.close()
+            widget.deleteLater()
+
+    def test_file_picker_tracks_paths_and_validation(self) -> None:
+        picker = MonkezFilePicker()
+        with tempfile.NamedTemporaryFile() as handle:
+            picker.path = handle.name
+            self.assertTrue(picker.isValidPath())
+            self.assertEqual(handle.name, picker.path)
+        picker.requireExisting = False
+        picker.path = "future-output.txt"
+        self.assertTrue(picker.isValidPath())
+        picker.clear()
+        self.assertEqual("", picker.path)
+        picker.deleteLater()
 
     def test_pagination_calculates_pages_and_responsive_ellipsis(self) -> None:
         pagination = MonkezPagination()

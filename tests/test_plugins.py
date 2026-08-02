@@ -45,9 +45,9 @@ class PluginTests(unittest.TestCase):
             names.append(plugin.name())
             widget.deleteLater()
 
-        self.assertEqual(len(names), 26)
+        self.assertEqual(len(names), 33)
         self.assertNotIn("MetricCard", names)
-        self.assertNotIn("StatusBadge", names)
+        self.assertIn("MonkezStatusBadge", names)
 
     def test_theme_task_menu_exposes_all_runtime_themes(self) -> None:
         theme_task_menu = importlib.import_module("theme_task_menu")
@@ -92,6 +92,20 @@ class PluginTests(unittest.TestCase):
         )
         pagination.deleteLater()
 
+        button = importlib.import_module(
+            "monkez_pyqt6.monkez_widgets"
+        ).MonkezButton()
+        button_menu = theme_task_menu.MonkezThemeTaskMenu(button)
+        self.assertEqual(
+            [action.text() for action in button_menu.taskActions() if action.text().startswith("Button Variant:")],
+            ["Button Variant: Filled", "Button Variant: Outlined", "Button Variant: Text"],
+        )
+        self.assertEqual(
+            [action.text() for action in button_menu.taskActions() if action.text().startswith("Button Content:")],
+            ["Button Content: Standard", "Button Content: Icon only"],
+        )
+        button.deleteLater()
+
     def test_image_plugin_registers_its_designer_task_menu(self) -> None:
         image_plugin = importlib.import_module("monkez_image_plugin")
         theme_task_menu = importlib.import_module("theme_task_menu")
@@ -127,6 +141,7 @@ class PluginTests(unittest.TestCase):
             "Monkez 05 Gauges",
             "Monkez 06 Containers",
             "Monkez 07 Media",
+            "Monkez 08 Navigation",
         }
         groups = set()
         for path in sorted(PLUGIN_DIR.glob("*_plugin.py")):

@@ -104,6 +104,12 @@ property.
 |---|---|---|
 | `themeIndex` | `int` | Numeric theme preset. |
 | `buttonTypeIndex` | `int` | `0 Filled`, `1 Outlined`, `2 Text`. |
+| `styleIndex` | `int` | `0 Standard`, `1 Icon only`; replaces separate icon-button type. |
+| `loading` | `bool` | Shows the animated loading label and optionally guards repeated clicks. |
+| `loadingText` | `str` | Label used while `loading=True`. |
+| `disableWhileLoading` | `bool` | Temporarily disables the button while loading. |
+| `iconText` | `str` | Unicode glyph used by Icon-only style. Native `icon` remains supported. |
+| `buttonSize` | `int` | Square size used by Icon-only style. |
 | `active` | `bool` | Switches between active and deactive color. |
 | `activeColor` | `QColor` | Filled background; Outlined border/accent color. |
 | `deactiveColor` | `QColor` | Disabled-like custom inactive color. |
@@ -120,6 +126,8 @@ property.
 | `setForeground(color)` | Sets `textColor`. |
 | `setContentPadding(x, y)` | Sets `paddingX` and `paddingY`. |
 | `setButtonTypeIndex(index)` | Changes filled/outlined/text style. |
+| `setStyleIndex(index)` | Changes Standard/Icon-only content style. |
+| `setLoading(value)` | Starts/stops the guarded loading state. |
 | `setShadow(...)` | Configures drop shadow. |
 
 ```python
@@ -128,6 +136,13 @@ button.setText("Delete")
 button.setButtonTypeIndex(1)  # outlined
 button.setAccent("#ef4444").setForeground("#ef4444")
 button.setContentPadding(8, 4).setSizeTokens(radius=10)
+
+# Cung mot loai widget cho loading va icon-only.
+button.setLoadingText("Deleting")
+button.setLoading(True)
+button.setLoading(False)
+button.setIconText("⚙")
+button.setStyleIndex(1)
 ```
 
 Ở chế độ `Outlined`, viền luôn lấy từ `activeColor` khi `active=True`
@@ -343,6 +358,48 @@ pages.pageChanged.connect(load_page)
 
 In Qt Designer, `styleHint` documents the indexes and the widget context menu
 offers all four styles directly.
+
+### Feedback, loading and modern navigation
+
+| Widget | Core API |
+|---|---|
+| `MonkezStatusBadge` | `badgeText`, `statusIndex`, `dotVisible`, semantic colors |
+| `MonkezLoadingIndicator` | `running`, `spinnerColor`, `lineCount`, `lineWidth`, `speed` |
+| `MonkezLoadingOverlay` | `active`, `message`, `backgroundColor`, `textColor`, `radius` |
+| `MonkezToast` | `message`, `duration`, `statusIndex`, `showMessage()`, `dismiss()` |
+| `MonkezRangeSlider` | `minimum`, `maximum`, `lowerValue`, `upperValue`, `orientation`, `setValues()` |
+| `MonkezSegmentedControl` | pipe-separated `items`, `currentIndex`, state colors |
+| `MonkezButton` modes | `styleIndex`, `loading`, `loadingText`, `iconText`, `buttonSize` |
+| `MonkezFilePicker` | `path`, `dialogMode`, `nameFilter`, `requireExisting`, `browse()` |
+| `MonkezBreadcrumb` | pipe-separated `items`, `separator`, `currentIndex`, `activated` |
+
+```python
+badge = MonkezStatusBadge()
+badge.setText("Camera online")
+badge.setStatusIndex(1)  # Success
+
+range_slider = MonkezRangeSlider()
+range_slider.setRange(0, 100)
+range_slider.setValues(20, 80)
+range_slider.valuesChanged.connect(update_filter)
+
+segments = MonkezSegmentedControl()
+segments.setItems("Camera | Result | History")
+segments.currentIndexChanged.connect(change_page)
+
+picker = MonkezFilePicker()
+picker.setNameFilter("Images (*.png *.jpg)")
+picker.pathSelected.connect(load_image)
+
+toast = MonkezToast(window)
+toast.setStatusIndex(1)
+toast.showMessage("Settings saved", 3000)
+```
+
+`MonkezToast` là component runtime và không có Designer plugin vì thông báo chỉ
+được tạo khi ứng dụng đang chạy. Chín widget còn lại xuất hiện trong Widget Box.
+`statusIndex` dùng `0 Info`, `1 Success`, `2 Warning`, `3 Error`, `4 Neutral`;
+`dialogMode` dùng `0 Open file`, `1 Save file`, `2 Directory`.
 
 ### Date and Time Widgets
 

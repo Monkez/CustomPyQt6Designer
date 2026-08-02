@@ -2,7 +2,8 @@
 
 Cập nhật: 2026-08-02
 
-Package hiện có 26 runtime widget và 26 plugin Qt Designer. Việc rà soát tập
+Package hiện có 34 runtime widget/component và 33 plugin Qt Designer. `MonkezToast`
+chỉ dùng ở runtime nên không xuất hiện trong Widget Box. Việc rà soát tập
 trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung cấp thuận tiện,
 đồng thời không tạo property trùng lặp với API kế thừa sẵn có.
 
@@ -38,6 +39,8 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 - Tận dụng property/signal kế thừa của Qt thay vì tạo bản sao dễ lệch trạng thái.
 - Mọi widget mới phải có runtime class, lazy export, Designer plugin/icon/task
   menu khi cần, Gallery docs/live preview, kiểm thử render và tài liệu người dùng.
-- Các ý tưởng như loading button, slider value bubble, badge/toast và breadcrumb
-  được giữ ở backlog; chỉ triển khai khi có use case rõ để tránh làm package nặng
-  và khó nhất quán.
+- Nhóm feedback/navigation cần thiết đã có status badge, toast, loading
+  indicator/overlay, range slider, segmented control, file picker và breadcrumb.
+  Loading và Icon-only là hai chế độ của `MonkezButton`, không còn là hai loại
+  widget riêng phải ghi nhớ. Slider value bubble và các composite chuyên ngành
+  vẫn ở backlog.

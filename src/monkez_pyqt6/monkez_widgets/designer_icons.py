@@ -313,4 +313,9 @@ _DRAWERS = {
     "calendar": _draw_calendar,
     "lcd": _draw_lcd,
     "pagination": _draw_pagination,
+    "badge": _draw_radio,
+    "loading": _draw_dial,
+    "segments": _draw_pagination,
+    "breadcrumb": _draw_pagination,
+    "file": _draw_text,
 }

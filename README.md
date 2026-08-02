@@ -191,10 +191,11 @@ python -m venv .venv
 
 | Nhóm | Widgets |
 |---|---|
-| Action | `MonkezButton`, `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
-| Input | `MonkezTextInput`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
-| Value | `MonkezSlider`, `MonkezDial`, `MonkezProgressBar`, `MonkezLCDNumber` |
-| Navigation | `MonkezPagination` |
+| Action | `MonkezButton` (Standard/Icon + loading), `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
+| Input | `MonkezTextInput`, `MonkezFilePicker`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
+| Value | `MonkezSlider`, `MonkezRangeSlider`, `MonkezDial`, `MonkezProgressBar`, `MonkezLCDNumber` |
+| Navigation | `MonkezPagination`, `MonkezSegmentedControl`, `MonkezBreadcrumb` |
+| Feedback | `MonkezStatusBadge`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`, `MonkezToast` |
 | Date/time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
 | Media | `MonkezImage`, `MonkezUSBCamera` |
 | Container | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea` |
