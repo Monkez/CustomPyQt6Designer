@@ -100,6 +100,17 @@ column-menu and page-size controls. Set `borderWidth=0` for a borderless embed,
 or increase `borderRadius` for a card-like surface. These properties are also
 available directly in Qt Designer.
 
+Sorted columns use a crisp vector chevron drawn by the table itself instead of
+the platform-dependent Qt indicator. Ascending and descending states remain
+aligned at the right edge of the header; multi-column sorting also shows the
+sort priority. The outer frame and Compact/Pill pagination frames use
+pixel-aligned strokes so one-pixel rounded borders stay even at high DPI.
+
+Selected rows use one low-contrast accent wash across text, badge and progress
+cells, preserve semantic badge colors, remove the platform focus rectangle and
+add a slim accent marker at the leading edge. This keeps selection visible
+without replacing the row's information colors.
+
 `saveState()` returns a JSON-compatible dictionary containing column order,
 widths and visibility plus search, filters, sort, page size, style and density.
 Pass the dictionary back to `restoreState()` after recreating the same schema.

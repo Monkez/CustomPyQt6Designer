@@ -1145,6 +1145,8 @@ class WidgetTests(unittest.TestCase):
         table.setSearchText("")
         table.setColumnFilter("status", "")
         table.setSort("status")
+        self.assertEqual("_TableHeader", type(table.tableView().horizontalHeader()).__name__)
+        self.assertFalse(table.tableView().horizontalHeader().isSortIndicatorShown())
         table.setSort("progress", descending=True, additive=True)
         self.assertEqual(54, table.rowData(0)["progress"])
 

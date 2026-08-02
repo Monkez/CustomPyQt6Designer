@@ -13,6 +13,7 @@ from PyQt6.QtCore import (
     QModelIndex,
     QPoint,
     QRect,
+    QRectF,
     QSortFilterProxyModel,
     Qt,
     QTimer,
@@ -26,6 +27,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMenu,
@@ -88,6 +90,73 @@ class _TableMenuButton(QToolButton):
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         _draw_control_chevron(self, QPainter(self), self._chevron_color)
+
+
+class _TableHeader(QHeaderView):
+    """Header with a compact, platform-independent sort indicator."""
+
+    def __init__(self, table: "MonkezTable", parent=None) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._table = table
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not self._table._sort_keys:
+            return
+        painter = QPainter(self.viewport())
+        for rank, (logical_index, order) in enumerate(self._table._sort_keys, 1):
+            position = self.sectionViewportPosition(logical_index)
+            if position < 0:
+                continue
+            rect = QRect(position, 0, self.sectionSize(logical_index), self.viewport().height())
+            self._draw_sort_indicator(painter, rect, rank, order)
+
+    def _draw_sort_indicator(self, painter: QPainter, rect: QRect, rank: int, order: Qt.SortOrder) -> None:
+        center_x = rect.right() - 15
+        center_y = rect.center().y()
+        direction = -1 if order == Qt.SortOrder.AscendingOrder else 1
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(self._table._accent, 1.8)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.drawLine(center_x - 4, center_y + 2 * direction, center_x, center_y - 2 * direction)
+        painter.drawLine(center_x, center_y - 2 * direction, center_x + 4, center_y + 2 * direction)
+        if len(self._table._sort_keys) > 1:
+            rank_rect = QRect(center_x - 18, center_y - 7, 10, 14)
+            rank_font = QFont(painter.font())
+            rank_font.setPointSizeF(max(6.0, rank_font.pointSizeF() - 2.0))
+            rank_font.setBold(True)
+            painter.setFont(rank_font)
+            painter.setPen(self._table._muted)
+            painter.drawText(rank_rect, Qt.AlignmentFlag.AlignCenter, str(rank))
+        painter.restore()
+
+
+class _TableBorderOverlay(QWidget):
+    """Paint the rounded frame above child widgets so corners stay crisp."""
+
+    def __init__(self, table: "MonkezTable") -> None:
+        super().__init__(table)
+        self._table = table
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def paintEvent(self, event) -> None:
+        width = self._table._border_width
+        if width <= 0:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(self._table._border, width)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        inset = width / 2.0
+        frame = QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
+        radius = max(0.0, self._table._border_radius - inset)
+        painter.drawRoundedRect(frame, radius, radius)
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,13 +567,17 @@ class MonkezTableDelegate(QStyledItemDelegate):
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         kind = str(index.data(COLUMN_TYPE_ROLE) or "").lower()
-        if kind not in {"boolean", "progress", "badge"}:
-            super().paint(painter, option, index)
-            return
         base = QStyleOptionViewItem(option)
+        base.state &= ~QStyle.StateFlag.State_HasFocus
+        if kind not in {"boolean", "progress", "badge"}:
+            super().paint(painter, base, index)
+            self._paint_selection_marker(painter, option, index)
+            return
         self.initStyleOption(base, index)
+        base.state &= ~QStyle.StateFlag.State_HasFocus
         base.text = ""
-        self._table.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, base, painter, self._table)
+        style_widget = option.widget if option.widget is not None else self._table
+        style_widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, base, painter, style_widget)
         rect = option.rect.adjusted(10, 7, -10, -7)
         value = index.data(RAW_VALUE_ROLE)
         painter.save()
@@ -545,6 +618,22 @@ class MonkezTableDelegate(QStyledItemDelegate):
             painter.drawRoundedRect(pill, pill.height() / 2, pill.height() / 2)
             painter.setPen(color)
             painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
+        self._paint_selection_marker(painter, option, index)
+
+    def _paint_selection_marker(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        if not option.state & QStyle.StateFlag.State_Selected:
+            return
+        view = self._table.tableView()
+        first_visible = next((column for column in range(view.model().columnCount()) if not view.isColumnHidden(column)), -1)
+        if index.column() != first_visible:
+            return
+        marker = QRectF(option.rect.left() + 1, option.rect.top() + 6, 3, max(4, option.rect.height() - 12))
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._table._accent)
+        painter.drawRoundedRect(marker, 1.5, 1.5)
         painter.restore()
 
 
@@ -598,6 +687,8 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._page_proxy.setSourceModel(self._filter_proxy)
 
         self._build_ui()
+        self._border_overlay = _TableBorderOverlay(self)
+        self._border_overlay.setGeometry(self.rect())
         self._connect_signals()
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._toolbar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -635,6 +726,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._view = QTableView(self)
         self._view.setObjectName("monkezTableView")
         self._view.setModel(self._page_proxy)
+        self._view.setHorizontalHeader(_TableHeader(self, self._view))
         self._view.setItemDelegate(MonkezTableDelegate(self))
         self._view.setAlternatingRowColors(True)
         self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -823,8 +915,8 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         else:
             self._sort_keys = [(column, order)]
         self._filter_proxy.setSortKeys(() if self._server_mode else self._sort_keys)
-        self._view.horizontalHeader().setSortIndicatorShown(True)
-        self._view.horizontalHeader().setSortIndicator(column, order)
+        self._view.horizontalHeader().setSortIndicatorShown(False)
+        self._view.horizontalHeader().update()
         payload = self.sortState()
         self.sortChanged.emit(payload)
         self._emit_query()
@@ -833,6 +925,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._sort_keys.clear()
         self._filter_proxy.setSortKeys(())
         self._view.horizontalHeader().setSortIndicatorShown(False)
+        self._view.horizontalHeader().update()
         self.sortChanged.emit([])
         self._emit_query()
 
@@ -934,6 +1027,9 @@ class MonkezTable(QWidget, ThemeSupportMixin):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        if hasattr(self, "_border_overlay"):
+            self._border_overlay.setGeometry(self.rect())
+            self._border_overlay.raise_()
         self._page_size_label.setVisible(self._pagination_enabled and self.width() >= 660)
         self._summary.setVisible(self.width() >= 520)
         self._refresh_state()
@@ -1083,9 +1179,11 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         muted = color_to_css(self._muted)
         border = color_to_css(self._border)
         accent = color_to_css(self._accent)
-        on_accent = color_to_css(self._on_accent)
+        selection_color = QColor(self._accent)
+        selection_color.setAlpha(52 if self._theme == "dark" else 34)
+        selection = color_to_css(selection_color)
         self.setStyleSheet(f"""
-            MonkezTable {{ background: {surface}; border: {border_width}px solid {border}; border-radius: {outer_radius}px; }}
+            MonkezTable {{ background: {surface}; border: 0; border-radius: {outer_radius}px; }}
             QWidget#monkezTableToolbar, QWidget#monkezTableFooter {{ background: {surface}; color: {text}; }}
             QWidget#monkezTableToolbar {{ border-bottom: {divider_width}px solid {border}; border-top-left-radius: {inner_radius}px; border-top-right-radius: {inner_radius}px; }}
             QWidget#monkezTableFooter {{ border-top: {divider_width}px solid {border}; border-bottom-left-radius: {inner_radius}px; border-bottom-right-radius: {inner_radius}px; }}
@@ -1103,10 +1201,11 @@ class MonkezTable(QWidget, ThemeSupportMixin):
             QMenu#monkezTableMenu::item {{ min-height: 28px; padding: 2px 26px 2px 10px; border-radius: {max(3, control_radius - 3)}px; }}
             QMenu#monkezTableMenu::item:selected {{ background: {alt}; color: {text}; }}
             QMenu#monkezTableMenu::separator {{ height: 1px; background: {border}; margin: 5px 8px; }}
-            QTableView#monkezTableView {{ background: {surface}; alternate-background-color: {alt}; color: {text}; border: 0; gridline-color: {border}; outline: 0; selection-background-color: {accent}; selection-color: {on_accent}; }}
+            QTableView#monkezTableView {{ background: {surface}; alternate-background-color: {alt}; color: {text}; border: 0; gridline-color: {border}; outline: 0; selection-background-color: {selection}; selection-color: {text}; }}
             QTableView#monkezTableView::item {{ padding: 0 9px; border-bottom: 1px solid {border if self._style_index == 1 else alt}; }}
             QTableView#monkezTableView::item:hover:!selected {{ background: {alt}; }}
-            QHeaderView::section {{ background: {header}; color: {text}; border: 0; border-bottom: 1px solid {border}; padding: 8px 10px; font-weight: 600; }}
+            QTableView#monkezTableView::item:selected {{ background: {selection}; color: {text}; }}
+            QHeaderView::section {{ background: {header}; color: {text}; border: 0; border-bottom: 1px solid {border}; padding: 8px 30px 8px 10px; font-weight: 600; }}
             QLabel#monkezTableState {{ color: {muted}; background: {surface}; font-size: 14px; }}
             QLabel#monkezTableSummary, QLabel#monkezTablePageSizeLabel {{ color: {muted}; background: transparent; }}
             QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
@@ -1121,6 +1220,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
             QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
             QTableView#monkezTableView QTableCornerButton::section {{ background: {header}; border: 0; }}
         """)
+        self._border_overlay.update()
         self._view.viewport().update()
 
     def getThemeIndex(self) -> int:

@@ -1,6 +1,6 @@
 # Current engineering status
 
-Updated: 2026-08-02
+Updated: 2026-08-03
 
 ## Current version
 
@@ -92,7 +92,11 @@ Updated: 2026-08-02
   Gallery expose four visual styles and three density modes without WebEngine.
   Its outer frame, toolbar/footer corners and controls share one coherent
   geometry system; outer border width/radius and control height/radius are
-  separately editable in Designer.
+  separately editable in Designer. The outer frame is painted above child
+  surfaces to keep top corners crisp; sort chevrons and grouped pagination
+  borders use platform-independent, high-DPI-aligned vector strokes. Selected
+  rows share one subtle accent wash across every delegate, omit per-cell focus
+  rectangles and use a slim leading marker.
 - Eight practical components complete the feedback/navigation workflow:
   `MonkezStatusBadge`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`,
   runtime-only `MonkezToast`, `MonkezRangeSlider`, `MonkezSegmentedControl`,
@@ -127,7 +131,7 @@ Updated: 2026-08-02
 - `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,703 entries (266.6 MiB) and
   passes a full entry read/CRC integrity check.
 - Its SHA-256 is
-  `34F6BF0D24D5D83FFD9C57368CB59C36699E3E296E4043C358F845C6B5EEDE58`.
+  `73E643E9BDE26369ABE0F041447856B07E84B0BA4A785F8BFD948F55D0AA724B`.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully
   without terminating the existing process.
