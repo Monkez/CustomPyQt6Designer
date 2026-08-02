@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PyQt6.QtWidgets import QFrame, QLCDNumber
 
 from .theme_support import ThemeSupportMixin
@@ -163,28 +163,36 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         for character in self._display_text:
             if character == "," and occupied_slots:
                 x = content.left() + (leading_slots + occupied_slots) * slot_width - slot_width * 0.08
-                # A QLCDNumber only understands a decimal point.  Keep that
-                # native point as the comma head, then paint a deliberately
-                # stronger tail: the previous 2.5 px mark collapsed back into
-                # a second dot in compact Designer/Gallery previews.
-                mark_size = max(3.5, min(slot_width * 0.14, content.height() * 0.065))
+                # QLCDNumber renders the comma as a native decimal point. Draw
+                # one filled teardrop over that point, rather than joining a
+                # separately stroked tail to it.  The overlap hides rounding
+                # gaps at every scale and makes the punctuation read as one
+                # continuous seven-segment comma.
+                mark_size = max(3.5, min(slot_width * 0.15, content.height() * 0.07))
                 y = content.bottom() - content.height() * 0.17
-                painter.drawEllipse(QPointF(x, y), mark_size * 0.52, mark_size * 0.52)
-
-                tail = QPainterPath(QPointF(x + mark_size * 0.2, y + mark_size * 0.22))
-                tail.cubicTo(
-                    QPointF(x + mark_size * 0.45, y + mark_size * 0.95),
-                    QPointF(x - mark_size * 0.02, y + mark_size * 1.65),
-                    QPointF(x - mark_size * 0.72, y + mark_size * 2.05),
+                comma = QPainterPath(QPointF(x, y - mark_size * 0.62))
+                comma.cubicTo(
+                    QPointF(x + mark_size * 0.62, y - mark_size * 0.62),
+                    QPointF(x + mark_size * 0.72, y - mark_size * 0.12),
+                    QPointF(x + mark_size * 0.58, y + mark_size * 0.42),
                 )
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                tail_pen = QPen(comma_color, max(1.5, mark_size * 0.42))
-                tail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                tail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-                painter.setPen(tail_pen)
-                painter.drawPath(tail)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(comma_color)
+                comma.cubicTo(
+                    QPointF(x + mark_size * 0.48, y + mark_size * 1.15),
+                    QPointF(x - mark_size * 0.12, y + mark_size * 1.85),
+                    QPointF(x - mark_size * 0.92, y + mark_size * 2.28),
+                )
+                comma.cubicTo(
+                    QPointF(x - mark_size * 0.58, y + mark_size * 1.45),
+                    QPointF(x - mark_size * 0.30, y + mark_size * 0.86),
+                    QPointF(x - mark_size * 0.42, y + mark_size * 0.38),
+                )
+                comma.cubicTo(
+                    QPointF(x - mark_size * 0.72, y + mark_size * 0.08),
+                    QPointF(x - mark_size * 0.62, y - mark_size * 0.62),
+                    QPointF(x, y - mark_size * 0.62),
+                )
+                comma.closeSubpath()
+                painter.drawPath(comma)
             elif character not in ".,":
                 occupied_slots += 1
 

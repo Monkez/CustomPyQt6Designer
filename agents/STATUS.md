@@ -68,7 +68,7 @@ Updated: 2026-08-02
   `displayText`, can resize its digit count automatically, and provides
   `displayFormatted()` for US- or European-style numeric formatting.
 - `MonkezLCDNumber` comma punctuation now follows the actual segment baseline
-  with a proportional head and a high-contrast curved stroke that remains
+  as one filled teardrop with no join between its head and tail, remaining
   distinguishable from a decimal point in compact Gallery/Designer previews.
   Its color is resolved from the same live foreground palette as native LCD
   segments. `digitColor` now has component-level stylesheet priority over

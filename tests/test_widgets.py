@@ -834,6 +834,32 @@ class WidgetTests(unittest.TestCase):
         changed_y = [point[1] for point in changed_pixels]
         self.assertGreaterEqual(max(changed_y) - min(changed_y), 8)
 
+        # The comma is a single filled teardrop. Its foreground pixels must
+        # continue through every scanline from the head into the tail; this
+        # catches the visually detached "dot + hook" regression.
+        scale = comma_image.devicePixelRatio()
+        content_width = lcd.width() - 18
+        content_height = lcd.height() - 18
+        slot_width = content_width / lcd.digitCount()
+        comma_x = 9 + (1 + 4) * slot_width - slot_width * 0.08
+        comma_y = 9 + content_height - content_height * 0.17
+        mark_size = max(3.5, min(slot_width * 0.15, content_height * 0.07))
+        left = round((comma_x - mark_size) * scale)
+        right = round((comma_x + mark_size) * scale)
+        top = round((comma_y - mark_size * 0.5) * scale)
+        # Stay inside the filled core; the final tapered pixels are
+        # intentionally antialiased and need not equal the solid RGBA value.
+        bottom = round((comma_y + mark_size * 1.8) * scale)
+        foreground = lcd.palette().color(lcd.foregroundRole()).rgba()
+        uninterrupted_rows = [
+            any(
+                comma_image.pixelColor(x, y).rgba() == foreground
+                for x in range(left, right + 1)
+            )
+            for y in range(top, bottom + 1)
+        ]
+        self.assertTrue(all(uninterrupted_rows))
+
         # An explicit widget stylesheet can override the resolved QLCDNumber
         # foreground without changing our cached digitColor property. The
         # custom comma must follow the same resolved palette as native segments.

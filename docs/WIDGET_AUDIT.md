@@ -8,8 +8,8 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 
 ## Kết quả đã bổ sung
 
-- `MonkezLCDNumber`: dấu phẩy được vẽ theo đúng baseline của segment với đầu
-  chấm và nét đuôi cong đủ rõ ở cả preview nhỏ; màu dấu phẩy luôn lấy từ
+- `MonkezLCDNumber`: dấu phẩy được vẽ theo đúng baseline của segment thành một
+  khối giọt liền nét từ đầu đến đuôi ở cả preview nhỏ; màu dấu phẩy luôn lấy từ
   foreground thực tế giống segment; `digitColor` không còn bị stylesheet chung
   của ứng dụng lấn át nhưng vẫn cho phép stylesheet gắn trực tiếp ghi đè; hỗ trợ
   cấu hình số bằng
