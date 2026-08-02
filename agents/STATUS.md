@@ -70,6 +70,9 @@ Updated: 2026-08-02
 - `MonkezLCDNumber` comma punctuation now follows the actual segment baseline
   with a proportional head and a high-contrast curved stroke that remains
   distinguishable from a decimal point in compact Gallery/Designer previews.
+  Its color is resolved from the same live foreground palette as native LCD
+  segments. `digitColor` now has component-level stylesheet priority over
+  broad application styles while explicit per-widget styles can still override it.
   Designer-friendly numeric properties
   cover decimal places, decimal/group separators, grouping and the source number.
 - `MonkezPagination` adds Rounded, Pill, Minimal and Compact navigation styles,

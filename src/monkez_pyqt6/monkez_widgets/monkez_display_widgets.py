@@ -151,7 +151,14 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self._digit_color)
+        # Resolve the same foreground role QLCDNumber uses for its segments.
+        # Designer, a parent stylesheet, or an application palette may override
+        # that role after ``digitColor`` was applied; using the cached theme
+        # value here would make only the custom comma retain the stale color.
+        comma_color = self.palette().color(self.foregroundRole())
+        if not comma_color.isValid():
+            comma_color = QColor(self._digit_color)
+        painter.setBrush(comma_color)
         occupied_slots = 0
         for character in self._display_text:
             if character == "," and occupied_slots:
@@ -171,13 +178,13 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
                     QPointF(x - mark_size * 0.72, y + mark_size * 2.05),
                 )
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                tail_pen = QPen(self._digit_color, max(1.5, mark_size * 0.42))
+                tail_pen = QPen(comma_color, max(1.5, mark_size * 0.42))
                 tail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 tail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(tail_pen)
                 painter.drawPath(tail)
                 painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(self._digit_color)
+                painter.setBrush(comma_color)
             elif character not in ".,":
                 occupied_slots += 1
 
@@ -197,6 +204,7 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         self.setStyleSheet(
             "MonkezLCDNumber {"
             f"background-color: {color_to_css(self._background_color)};"
+            f"color: {color_to_css(self._digit_color)};"
             f"border: 1px solid {color_to_css(self._border_color)};"
             f"border-radius: {self._radius}px;"
             "padding: 8px;"

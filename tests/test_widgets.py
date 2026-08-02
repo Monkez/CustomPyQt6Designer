@@ -833,6 +833,37 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(changed_pixels)
         changed_y = [point[1] for point in changed_pixels]
         self.assertGreaterEqual(max(changed_y) - min(changed_y), 8)
+
+        # An explicit widget stylesheet can override the resolved QLCDNumber
+        # foreground without changing our cached digitColor property. The
+        # custom comma must follow the same resolved palette as native segments.
+        configured_digit_color = lcd.digitColor
+        resolved_digit_color = QColor("#111827")
+        lcd.setStyleSheet(
+            lcd.styleSheet()
+            + f"MonkezLCDNumber {{ color: {resolved_digit_color.name()}; }}"
+        )
+        self.app.processEvents()
+        palette_override_image = lcd.grab().toImage()
+        rendered_colors = {
+            palette_override_image.pixelColor(x, y).rgba()
+            for y in range(palette_override_image.height())
+            for x in range(palette_override_image.width())
+        }
+        self.assertIn(resolved_digit_color.rgba(), rendered_colors)
+        self.assertNotIn(configured_digit_color.rgba(), rendered_colors)
+
+        lcd.setDigitColor(QColor("#f59e0b"))
+        self.app.processEvents()
+        runtime_color_image = lcd.grab().toImage()
+        runtime_colors = {
+            runtime_color_image.pixelColor(x, y).rgba()
+            for y in range(runtime_color_image.height())
+            for x in range(runtime_color_image.width())
+        }
+        self.assertIn(QColor("#f59e0b").rgba(), runtime_colors)
+        self.assertNotIn(resolved_digit_color.rgba(), runtime_colors)
+
         lcd.autoDigitCount = True
         self.assertEqual("12.345,67", lcd.displayFormatted(12345.67, 2, ",", "."))
         self.assertEqual(7, lcd.digitCount())
