@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit
+from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QWidget
 
 from monkez_pyqt6.gallery_app import (
     FLUENT_METHOD_PROBES,
@@ -115,6 +115,21 @@ class GalleryAppTests(unittest.TestCase):
             slot_center = window._docs_preview_slot.contentsRect().center()
             self.assertLessEqual(abs(preview_center.x() - slot_center.x()), 2)
             self.assertLessEqual(abs(preview_center.y() - slot_center.y()), 2)
+
+            pagination_items = window._docs_list.findItems("MonkezPagination", Qt.MatchFlag.MatchExactly)
+            self.assertEqual(1, len(pagination_items))
+            window._docs_list.setCurrentItem(pagination_items[0])
+            self.app.processEvents()
+            visible_live_widgets = [
+                widget
+                for widget in window.findChildren(QWidget, "docsLiveWidget")
+                if widget.isVisible()
+            ]
+            self.assertEqual([window._docs_preview_widget], visible_live_widgets)
+            window._docs_method_input.setText("setStyleIndex(3)")
+            window._run_doc_method()
+            self.assertEqual(3, window._docs_preview_widget.styleIndex)
+            self.assertNotIn("Error:", window._docs_method_status.text())
 
             title = next(label for label in window.findChildren(QLabel) if label.objectName() == "heroTitle")
             search = window.findChild(QLineEdit, "docsSearch")

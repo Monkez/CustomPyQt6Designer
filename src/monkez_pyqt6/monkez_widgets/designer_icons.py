@@ -276,6 +276,16 @@ def _draw_lcd(painter: QPainter) -> None:
     painter.drawLine(42, 25, 42, 39)
 
 
+def _draw_pagination(painter: QPainter) -> None:
+    painter.setPen(QPen(MUTED, 2))
+    for index, x in enumerate((5, 23, 41)):
+        painter.setBrush(PRIMARY if index == 1 else SURFACE)
+        painter.drawRoundedRect(QRectF(x, 22, 16, 20), 5, 5)
+    painter.setPen(QPen(Qt.GlobalColor.white, 2))
+    painter.drawLine(29, 29, 35, 29)
+    painter.drawLine(29, 35, 35, 35)
+
+
 _DRAWERS = {
     "button": _draw_button,
     "checkbox": _draw_checkbox,
@@ -302,4 +312,5 @@ _DRAWERS = {
     "datetimeedit": _draw_datetime,
     "calendar": _draw_calendar,
     "lcd": _draw_lcd,
+    "pagination": _draw_pagination,
 }

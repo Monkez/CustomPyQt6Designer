@@ -46,7 +46,7 @@ the per-user installation. Python 3.10+ remains supported for runtime usage.
 
 - runtime package and Python version;
 - Python 3.11 compatibility for source-based Designer;
-- exactly 25 shipped plugin modules;
+- exactly 26 shipped plugin modules;
 - discoverable Qt Designer executable;
 - available Python Designer bridge.
 

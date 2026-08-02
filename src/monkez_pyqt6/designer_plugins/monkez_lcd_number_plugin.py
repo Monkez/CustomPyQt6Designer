@@ -15,9 +15,13 @@ MonkezLCDNumberPlugin = create_plugin(
         "monkezLCDNumber",
         "lcd",
         "Themed LCD number",
-        "LCD display with configurable palette, background, border, radius, digit count, and segment style.",
+        "LCD display with dot/comma separators, numeric formatting, configurable palette, border and segment style.",
         180,
         72,
+        properties_xml=(
+            '  <property name="autoDigitCount"><bool>true</bool></property>\n'
+            '  <property name="displayText"><string>1.234,56</string></property>'
+        ),
         group=GROUP_DISPLAY,
     ),
     __name__,

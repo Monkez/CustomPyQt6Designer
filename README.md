@@ -194,6 +194,7 @@ python -m venv .venv
 | Action | `MonkezButton`, `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
 | Input | `MonkezTextInput`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
 | Value | `MonkezSlider`, `MonkezDial`, `MonkezProgressBar`, `MonkezLCDNumber` |
+| Navigation | `MonkezPagination` |
 | Date/time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
 | Media | `MonkezImage`, `MonkezUSBCamera` |
 | Container | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea` |

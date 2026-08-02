@@ -46,6 +46,7 @@ from .monkez_widgets import (
     MonkezImage,
     MonkezLCDNumber,
     MonkezLinearGauge,
+    MonkezPagination,
     MonkezProgressBar,
     MonkezRadioButton,
     MonkezRadialGauge,
@@ -261,6 +262,19 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         "lcd = MonkezLCDNumber(); lcd.displayFormatted(1234.56, 2, ',', '.')",
     ),
     WidgetDoc(
+        "MonkezPagination",
+        "Display",
+        "Dieu huong trang co ellipsis responsive va bon style Rounded, Pill, Minimal, Compact.",
+        (
+            "currentPage, pageCount, totalItems, pageSize",
+            "styleIndex, maximumVisiblePages, showFirstLast, showPrevNext",
+            "loopNavigation, wheelNavigation, buttonSize, spacing, radius",
+            "backgroundColor, textColor, activeColor, activeTextColor, hoverColor, borderColor",
+        ),
+        ("setCurrentPage(page)", "nextPage()", "previousPage()", "pageChanged.connect(slot)"),
+        "pages = MonkezPagination(); pages.setTotalItems(245); pages.setPageSize(20); pages.setStyleIndex(1)",
+    ),
+    WidgetDoc(
         "MonkezImage",
         "Media",
         "Image viewer cho Qt image, file path va NumPy/OpenCV frame.",
@@ -445,6 +459,15 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("displayFormatted(value, ...)", "Format a number with chosen decimal and grouping separators.", 'displayFormatted(1234.56, 2, ",", ".")', lambda widget: widget.displayFormatted(1234.56, 2, ",", ".")),
         ("setDigitCount(count)", "Set digit count.", "setDigitCount(4)", lambda widget: widget.setDigitCount(4)),
     ),
+    "MonkezPagination": (
+        ("setCurrentPage(page)", "Select a 1-based page and emit pageChanged.", "setCurrentPage(6)", lambda widget: widget.setCurrentPage(6)),
+        ("setPageCount(count)", "Set an explicit number of pages.", "setPageCount(18)", lambda widget: widget.setPageCount(18)),
+        ("setTotalItems(count)", "Calculate page count from totalItems and pageSize.", "setTotalItems(245)", lambda widget: widget.setTotalItems(245)),
+        ("setStyleIndex(index)", "Switch style: 0 Rounded, 1 Pill, 2 Minimal, 3 Compact.", "setStyleIndex(1)", lambda widget: widget.setStyleIndex(1)),
+        ("setMaximumVisiblePages(count)", "Control numbered buttons before responsive ellipsis.", "setMaximumVisiblePages(5)", lambda widget: widget.setMaximumVisiblePages(5)),
+        ("nextPage()", "Move forward, respecting loopNavigation.", "nextPage()", lambda widget: widget.nextPage()),
+        ("previousPage()", "Move backward, respecting loopNavigation.", "previousPage()", lambda widget: widget.previousPage()),
+    ),
     "MonkezImage": (
         ("setScaleMode(mode)", "Set Fit, Fill, Stretch or Original scaling.", "setScaleMode(MonkezImage.ScaleMode.Fill)", lambda widget: widget.setScaleMode(MonkezImage.ScaleMode.Fill)),
         ("setSmoothScaling(value)", "Enable or disable smooth scaling.", "setSmoothScaling(True)", lambda widget: widget.setSmoothScaling(True)),
@@ -617,7 +640,7 @@ class GalleryWindow(QMainWindow):
         title_box.addWidget(subtitle)
         layout.addLayout(title_box, 1)
 
-        for label, value in (("Widgets", "25"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
+        for label, value in (("Widgets", "26"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
             layout.addWidget(self._metric(label, value))
         return header
 
@@ -1335,6 +1358,8 @@ class GalleryWindow(QMainWindow):
             item = layout.takeAt(0)
             child = item.widget()
             if child is not None:
+                child.hide()
+                child.setParent(None)
                 child.deleteLater()
         widget.setObjectName("docsLiveWidget")
         if hasattr(widget, "setThemeIndex"):
@@ -1628,9 +1653,20 @@ def _calendar_preview() -> QWidget:
 
 def _lcd_preview() -> QWidget:
     widget = MonkezLCDNumber()
-    widget.setDigitCount(4)
-    widget.display(128)
-    widget.setMinimumSize(180, 80)
+    widget.setAutoDigitCount(True)
+    widget.setDisplayText("1.234,56")
+    widget.setMinimumSize(220, 80)
+    return widget
+
+
+def _pagination_preview() -> QWidget:
+    widget = MonkezPagination()
+    widget.setPageCount(12)
+    widget.setCurrentPage(4)
+    widget.setMaximumVisiblePages(3)
+    widget.setButtonSize(30)
+    widget.setSpacing(4)
+    widget.setMinimumSize(280, 40)
     return widget
 
 
@@ -1737,6 +1773,7 @@ _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
     "MonkezDateTimeEdit": _date_time_preview,
     "MonkezCalendarWidget": _calendar_preview,
     "MonkezLCDNumber": _lcd_preview,
+    "MonkezPagination": _pagination_preview,
     "MonkezImage": _image_preview,
     "MonkezUSBCamera": _camera_preview,
     "MonkezSplashScreen": _splash_preview,

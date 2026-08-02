@@ -34,6 +34,7 @@ TASK_MENU_CLASS_NAMES = {
     "MonkezLCDNumber",
     "MonkezLinearGauge",
     "MonkezProgressBar",
+    "MonkezPagination",
     "MonkezRadioButton",
     "MonkezRadialGauge",
     "MonkezScrollArea",
@@ -77,6 +78,14 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
                 )
                 self._actions.append(action)
 
+        if type(widget).__name__ == "MonkezPagination":
+            for label, index in (("Rounded", 0), ("Pill", 1), ("Minimal", 2), ("Compact", 3)):
+                action = QAction(f"Pagination Style: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, value=index, name=label: self._apply_pagination_style(value, name)
+                )
+                self._actions.append(action)
+
     def preferredEditAction(self):
         return self._actions[0] if self._actions else None
 
@@ -113,6 +122,18 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
         cursor = form.cursor()
         if cursor is not None:
             cursor.setWidgetProperty(self._widget, "scaleModeIndex", index)
+        form.setDirty(True)
+
+    def _apply_pagination_style(self, index: int, name: str) -> None:
+        write_probe(f"MonkezPagination.taskMenuStyle={index}/{name}")
+        self._widget.setStyleIndex(index)
+
+        form = QDesignerFormWindowInterface.findFormWindow(self._widget)
+        if form is None:
+            return
+        cursor = form.cursor()
+        if cursor is not None:
+            cursor.setWidgetProperty(self._widget, "styleIndex", index)
         form.setDirty(True)
 
 

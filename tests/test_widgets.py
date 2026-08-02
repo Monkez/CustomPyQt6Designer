@@ -35,6 +35,7 @@ from monkez_pyqt6.monkez_widgets import (
     MonkezImage,
     MonkezLinearGauge,
     MonkezLCDNumber,
+    MonkezPagination,
     MonkezRadialGauge,
     MonkezRadioButton,
     MonkezScrollArea,
@@ -826,8 +827,67 @@ class WidgetTests(unittest.TestCase):
         lcd.autoDigitCount = True
         self.assertEqual("12.345,67", lcd.displayFormatted(12345.67, 2, ",", "."))
         self.assertEqual(7, lcd.digitCount())
+        lcd.decimalPlaces = 1
+        lcd.decimalSeparator = ","
+        lcd.groupSeparator = "."
+        lcd.groupingEnabled = True
+        lcd.number = 9876.54
+        self.assertEqual("9.876,5", lcd.displayText)
         lcd.close()
         lcd.deleteLater()
+
+    def test_pagination_calculates_pages_and_responsive_ellipsis(self) -> None:
+        pagination = MonkezPagination()
+        changes = []
+        pagination.pageChanged.connect(changes.append)
+        pagination.pageSize = 25
+        pagination.totalItems = 101
+        self.assertEqual(5, pagination.pageCount)
+        self.assertEqual(25, pagination.pageSize)
+
+        pagination.pageCount = 20
+        pagination.maximumVisiblePages = 5
+        pagination.currentPage = 10
+        self.assertEqual((1, None, 9, 10, 11, None, 20), pagination.visiblePages())
+        pagination.nextPage()
+        pagination.previousPage()
+        self.assertEqual([10, 11, 10], changes[-3:])
+
+        pagination.loopNavigation = True
+        pagination.currentPage = 20
+        pagination.nextPage()
+        self.assertEqual(1, pagination.currentPage)
+        pagination.previousPage()
+        self.assertEqual(20, pagination.currentPage)
+        pagination.deleteLater()
+
+    def test_pagination_styles_render_and_keyboard_navigation_works(self) -> None:
+        pagination = MonkezPagination()
+        pagination.resize(520, 48)
+        pagination.show()
+        images = []
+        for style_index in range(4):
+            pagination.styleIndex = style_index
+            self.app.processEvents()
+            image = pagination.grab().toImage()
+            self.assertFalse(image.isNull())
+            images.append(image)
+        self.assertGreater(len({image.cacheKey() for image in images}), 1)
+
+        pagination.currentPage = 4
+        QTest.keyClick(pagination, Qt.Key.Key_Right)
+        self.assertEqual(5, pagination.currentPage)
+        QTest.keyClick(pagination, Qt.Key.Key_Home)
+        self.assertEqual(1, pagination.currentPage)
+        QTest.keyClick(pagination, Qt.Key.Key_End)
+        self.assertEqual(pagination.pageCount, pagination.currentPage)
+        pagination.currentPage = 4
+        pagination.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        QTest.keyClick(pagination, Qt.Key.Key_Left)
+        self.assertEqual(5, pagination.currentPage)
+        self.assertEqual(f"Page 5 of {pagination.pageCount}", pagination.accessibleDescription())
+        pagination.close()
+        pagination.deleteLater()
 
     def test_radial_gauge_exposes_part_specific_color_names(self) -> None:
         gauge = MonkezRadialGauge()

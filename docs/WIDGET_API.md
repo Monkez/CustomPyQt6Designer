@@ -275,7 +275,7 @@ switch.setTrack("#e2e8f0").setAccent("#22c55e").setThumb("#ffffff")
 | `MonkezSlider` | `grooveColor`, `filledColor`, `handleColor`, `grooveHeight`, `handleSize` |
 | `MonkezProgressBar` | `barColor`, `trackColor`, `textColor`, `barHeight`, `radius` |
 | `MonkezDial` | `trackColor`, `valueColor`, `handleColor`, `trackWidth`, `handleSize`, `dialStyle` |
-| `MonkezLCDNumber` | `displayText`, `autoDigitCount`, `backgroundColor`, `digitColor`, `borderColor`, `radius` |
+| `MonkezLCDNumber` | `displayText`, `number`, `autoDigitCount`, `decimalPlaces`, `decimalSeparator`, `groupSeparator`, `groupingEnabled` |
 | `MonkezRadialGauge` | `activeTicksColor`, `inactiveTicksColor`, `needleColor`, `valueTextColor`, `scaleTextColor` |
 | `MonkezArcGauge` | `arcWidth`, `warningThreshold`, `dangerThreshold`, `segmented`, `segmentCount` |
 | `MonkezLinearGauge` | `vertical`, `barThickness`, `targetValue`, `showTarget`, `rounded` |
@@ -311,9 +311,41 @@ gauge.setValueTextColor("#052e16")
 
 lcd = MonkezLCDNumber()
 lcd.autoDigitCount = True
-lcd.setDisplayText("1,234.56")
-lcd.displayFormatted(1234.56, 2, decimal_separator=",", group_separator=".")
+lcd.decimalPlaces = 2
+lcd.decimalSeparator = ","
+lcd.groupSeparator = "."
+lcd.groupingEnabled = True
+lcd.number = 1234.56  # 1.234,56
 ```
+
+### Pagination
+
+`MonkezPagination` supports four visual styles through `styleIndex`: `0 Rounded`,
+`1 Pill`, `2 Minimal`, and `3 Compact`. It is 1-based, clamps invalid pages,
+uses responsive ellipsis, supports mouse and keyboard navigation, and emits
+`pageChanged(int)` only when the selected page actually changes.
+
+| Property | Purpose |
+|---|---|
+| `currentPage`, `pageCount` | Direct page-based setup. |
+| `totalItems`, `pageSize` | Automatically calculate `pageCount`. |
+| `maximumVisiblePages` | Numbered-page window before ellipsis is inserted. |
+| `showFirstLast`, `showPrevNext` | Toggle navigation button groups. |
+| `loopNavigation`, `wheelNavigation` | Optional wraparound and mouse-wheel navigation. |
+| `buttonSize`, `spacing`, `radius` | Compact/dense layout tuning. |
+| `activeColor`, `activeTextColor`, `hoverColor`, `disabledColor` | State colors. |
+
+```python
+pages = MonkezPagination()
+pages.setTotalItems(245)
+pages.setPageSize(20)
+pages.setCurrentPage(4)
+pages.setStyleIndex(1)  # Pill
+pages.pageChanged.connect(load_page)
+```
+
+In Qt Designer, `styleHint` documents the indexes and the widget context menu
+offers all four styles directly.
 
 ### Date and Time Widgets
 

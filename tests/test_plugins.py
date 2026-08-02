@@ -45,7 +45,7 @@ class PluginTests(unittest.TestCase):
             names.append(plugin.name())
             widget.deleteLater()
 
-        self.assertEqual(len(names), 25)
+        self.assertEqual(len(names), 26)
         self.assertNotIn("MetricCard", names)
         self.assertNotIn("StatusBadge", names)
 
@@ -76,6 +76,21 @@ class PluginTests(unittest.TestCase):
             ],
         )
         image.deleteLater()
+
+        pagination = importlib.import_module(
+            "monkez_pyqt6.monkez_widgets"
+        ).MonkezPagination()
+        pagination_menu = theme_task_menu.MonkezThemeTaskMenu(pagination)
+        self.assertEqual(
+            [action.text() for action in pagination_menu.taskActions() if action.text().startswith("Pagination Style:")],
+            [
+                "Pagination Style: Rounded",
+                "Pagination Style: Pill",
+                "Pagination Style: Minimal",
+                "Pagination Style: Compact",
+            ],
+        )
+        pagination.deleteLater()
 
     def test_image_plugin_registers_its_designer_task_menu(self) -> None:
         image_plugin = importlib.import_module("monkez_image_plugin")

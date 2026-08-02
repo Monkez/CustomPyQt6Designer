@@ -25,6 +25,7 @@ _WIDGET_MODULES = {
     "MonkezRadialGauge": ".monkez_gauges",
     "MonkezImage": ".monkez_image",
     "MonkezProgressBar": ".monkez_progress_bar",
+    "MonkezPagination": ".monkez_pagination",
     "MonkezRadioButton": ".monkez_radio_button",
     "MonkezSlider": ".monkez_slider",
     "MonkezSplashScreen": ".monkez_splash_screen",

@@ -10,8 +10,8 @@ Updated: 2026-08-02
 
 ## Supported surface
 
-- 25 runtime widgets.
-- 25 Qt Designer plugins.
+- 26 runtime widgets.
+- 26 Qt Designer plugins.
 - Six themes: Material, iOS, Fluent, Bootstrap, Minimal and Dark.
 - Canonical distribution/import names are `monkez-pyqt6` and `monkez_pyqt6`;
   `custom_pyqt6_designer` remains as a compatibility namespace and launcher.
@@ -67,6 +67,12 @@ Updated: 2026-08-02
 - `MonkezLCDNumber` accepts literal dot/comma separators through `display()` and
   `displayText`, can resize its digit count automatically, and provides
   `displayFormatted()` for US- or European-style numeric formatting.
+- `MonkezLCDNumber` comma punctuation now follows the actual segment baseline
+  with a proportional dot and curved tail. Designer-friendly numeric properties
+  cover decimal places, decimal/group separators, grouping and the source number.
+- `MonkezPagination` adds Rounded, Pill, Minimal and Compact navigation styles,
+  responsive ellipsis, page-count and item-count modes, mouse/keyboard/wheel
+  navigation, state colors, runtime signals and a Designer style task menu.
 - `MonkezRadialGauge` exposes part-specific Designer/Python color names for
   active ticks, inactive ticks, the needle, central value and scale text while
   retaining the older generic color properties for compatibility.
@@ -83,15 +89,15 @@ Updated: 2026-08-02
 
 ## Latest verification
 
-- All 100 automated tests pass for 0.5.0.
+- All 102 automated tests pass for 0.5.0.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
-  verification passes with all 25 Designer plugins.
+  verification passes with all 26 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated
   wheel install imports the canonical package, compatibility namespace and all
   three UI-loading APIs successfully.
-- The current 0.5.0 portable build initializes and constructs all 25 Designer
+- The current 0.5.0 portable build initializes and constructs all 26 Designer
   plugins successfully.
-- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,590 entries (266.2 MB) and
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,639 entries (266.4 MB) and
   passes a full entry read/CRC integrity check.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully
