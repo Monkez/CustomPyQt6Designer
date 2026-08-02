@@ -16,9 +16,9 @@ except ModuleNotFoundError:
     from .theme_task_menu import register_theme_task_menu
 
 try:
-    from plugin_groups import GROUP_CONTROLS
+    from plugin_groups import GROUP_ACTIONS
 except ModuleNotFoundError:
-    from .plugin_groups import GROUP_CONTROLS
+    from .plugin_groups import GROUP_ACTIONS
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class PluginSpec:
     themed: bool = True
     properties_xml: str = ""
     children_xml: str = ""
-    group: str = GROUP_CONTROLS
+    group: str = GROUP_ACTIONS
     palette_visible: bool = True
 
 

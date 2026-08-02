@@ -2,10 +2,10 @@ from monkez_pyqt6.monkez_widgets import MonkezStatusBadge
 
 try:
     from plugin_factory import PluginSpec, create_plugin
-    from plugin_groups import GROUP_DISPLAY
+    from plugin_groups import GROUP_FEEDBACK
 except ModuleNotFoundError:
     from .plugin_factory import PluginSpec, create_plugin
-    from .plugin_groups import GROUP_DISPLAY
+    from .plugin_groups import GROUP_FEEDBACK
 
 
 MonkezStatusBadgePlugin = create_plugin(
@@ -13,6 +13,6 @@ MonkezStatusBadgePlugin = create_plugin(
         MonkezStatusBadge, "MonkezStatusBadge", "monkezStatusBadge", "badge",
         "Semantic status badge", "Info, success, warning, error and neutral status badge.", 100, 30,
         properties_xml='  <property name="badgeText"><string>Online</string></property>',
-        group=GROUP_DISPLAY,
+        group=GROUP_FEEDBACK,
     ), __name__
 )

@@ -31,3 +31,8 @@ control, file picker and breadcrumb. Loading and icon-only behavior were folded
 into `MonkezButton` as selectable modes instead of adding two public widget
 types. Slider value bubbles remain deferred until their interaction contract is
 defined.
+
+The Designer palette is ordered into nine workflow groups rather than grouping
+unrelated controls by implementation base class. `MonkezScrollArea` also owns
+automatic content-minimum tracking so AsNeeded scrollbars work for both layouts
+and freely positioned Designer children while preserving explicit minimums.

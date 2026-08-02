@@ -682,6 +682,90 @@ class WidgetTests(unittest.TestCase):
         widget.deleteLater()
         native.deleteLater()
 
+    def test_scroll_area_automatically_tracks_content_and_shows_scrollbars(self) -> None:
+        scroll = MonkezScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        child = QLabel("X", content)
+        child.setGeometry(230, 150, 110, 32)
+        scroll.setWidget(content)
+        scroll.resize(180, 100)
+        scroll.show()
+        self.app.processEvents()
+        scroll.refreshContentSize()
+        for _ in range(5):
+            self.app.processEvents()
+
+        self.assertTrue(scroll.autoContentSize)
+        self.assertGreater(scroll.horizontalScrollBar().maximum(), 0)
+        self.assertGreater(scroll.verticalScrollBar().maximum(), 0)
+        self.assertTrue(scroll.horizontalScrollBar().isVisible())
+        self.assertTrue(scroll.verticalScrollBar().isVisible())
+
+        child.setGeometry(8, 8, 80, 24)
+        for _ in range(5):
+            self.app.processEvents()
+
+        self.assertEqual(scroll.horizontalScrollBar().maximum(), 0)
+        self.assertEqual(scroll.verticalScrollBar().maximum(), 0)
+        self.assertFalse(scroll.horizontalScrollBar().isVisible())
+        self.assertFalse(scroll.verticalScrollBar().isVisible())
+
+        child.move(230, 150)
+        for _ in range(5):
+            self.app.processEvents()
+        self.assertGreater(scroll.horizontalScrollBar().maximum(), 0)
+        scroll.autoContentSize = False
+        for _ in range(5):
+            self.app.processEvents()
+        self.assertEqual(content.minimumSize(), QSize(0, 0))
+        self.assertEqual(scroll.horizontalScrollBar().maximum(), 0)
+        scroll.close()
+        scroll.deleteLater()
+
+    def test_scroll_area_uses_layout_minimum_for_dynamic_content(self) -> None:
+        scroll = MonkezScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        for index in range(8):
+            row = QLabel(f"Row {index + 1}")
+            row.setMinimumHeight(28)
+            layout.addWidget(row)
+        scroll.setWidget(content)
+        scroll.resize(220, 100)
+        scroll.show()
+        for _ in range(5):
+            self.app.processEvents()
+
+        self.assertGreater(content.minimumHeight(), scroll.viewport().height())
+        self.assertGreater(scroll.verticalScrollBar().maximum(), 0)
+        self.assertTrue(scroll.verticalScrollBar().isVisible())
+        self.assertEqual(scroll.horizontalScrollBar().maximum(), 0)
+        scroll.close()
+        scroll.deleteLater()
+
+    def test_scroll_area_preserves_explicit_content_minimum(self) -> None:
+        scroll = MonkezScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content.setMinimumSize(260, 180)
+        child = QLabel("X", content)
+        child.setGeometry(8, 8, 24, 24)
+        scroll.setWidget(content)
+        scroll.resize(180, 100)
+        scroll.show()
+        for _ in range(5):
+            self.app.processEvents()
+
+        self.assertEqual(content.minimumSize(), QSize(260, 180))
+        self.assertGreater(scroll.horizontalScrollBar().maximum(), 0)
+        self.assertGreater(scroll.verticalScrollBar().maximum(), 0)
+        scroll.autoContentSize = False
+        self.assertEqual(content.minimumSize(), QSize(260, 180))
+        scroll.close()
+        scroll.deleteLater()
+
     def test_image_does_not_lock_parent_window_after_growing(self) -> None:
         window = QWidget()
         layout = QVBoxLayout(window)

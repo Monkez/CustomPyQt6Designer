@@ -62,9 +62,14 @@ Updated: 2026-08-02
 - `MonkezImage` uses Ignored horizontal/vertical size policies and a zero
   minimum hint, so its outer layout owns widget geometry before the selected
   scale mode transforms the pixmap.
-- `MonkezScrollArea` preserves the stock `QScrollArea` runtime defaults and
-  only adds theme/style properties. Its Designer XML uses Qt's native
-  `scrollAreaWidgetContents` structure without a custom fixed-page extension.
+- `MonkezScrollArea` preserves the stock `QScrollArea` API/default policies and
+  adds `autoContentSize`: child geometry and layout minimums automatically drive
+  AsNeeded scrollbar visibility. Its Designer XML uses Qt's native
+  `scrollAreaWidgetContents` structure and explicitly selects both AsNeeded
+  policies without a custom fixed-page extension.
+- Designer plugins are grouped into nine numbered workflow groups: actions,
+  text/file inputs, numeric/range inputs, date/time, navigation, feedback/status,
+  data display/gauges, containers and media.
 - Stylesheet-backed `QColor` properties preserve alpha channels.
 - Sliders support horizontal and vertical orientation; progress-bar height no
   longer overrides `textVisible`.
@@ -100,7 +105,7 @@ Updated: 2026-08-02
 
 ## Latest verification
 
-- The automated suite contains 106 passing tests and covers all 34 public
+- The automated suite contains 109 passing tests and covers all 34 public
   runtime components and 33 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 33 Designer plugins.

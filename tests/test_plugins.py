@@ -134,16 +134,17 @@ class PluginTests(unittest.TestCase):
 
     def test_plugins_are_arranged_in_logical_palette_groups(self) -> None:
         expected_groups = {
-            "Monkez 01 Controls",
-            "Monkez 02 Inputs",
-            "Monkez 03 Value Editors",
-            "Monkez 04 Display",
-            "Monkez 05 Gauges",
-            "Monkez 06 Containers",
-            "Monkez 07 Media",
-            "Monkez 08 Navigation",
+            "Monkez 01 Actions & Selection",
+            "Monkez 02 Text & File Inputs",
+            "Monkez 03 Numeric & Range Inputs",
+            "Monkez 04 Date & Time",
+            "Monkez 05 Navigation",
+            "Monkez 06 Feedback & Status",
+            "Monkez 07 Data Display & Gauges",
+            "Monkez 08 Containers",
+            "Monkez 09 Media",
         }
-        groups = set()
+        groups = {}
         for path in sorted(PLUGIN_DIR.glob("*_plugin.py")):
             module = importlib.import_module(path.stem)
             plugin_class = next(
@@ -153,9 +154,16 @@ class PluginTests(unittest.TestCase):
                 and issubclass(value, QPyDesignerCustomWidgetPlugin)
                 and value is not QPyDesignerCustomWidgetPlugin
             )
-            groups.add(plugin_class().group())
+            plugin = plugin_class()
+            groups[plugin.name()] = plugin.group()
 
-        self.assertEqual(groups, expected_groups)
+        self.assertEqual(set(groups.values()), expected_groups)
+        self.assertEqual(groups["MonkezDateEdit"], "Monkez 04 Date & Time")
+        self.assertEqual(groups["MonkezTimeEdit"], "Monkez 04 Date & Time")
+        self.assertEqual(groups["MonkezProgressBar"], "Monkez 06 Feedback & Status")
+        self.assertEqual(groups["MonkezLoadingOverlay"], "Monkez 06 Feedback & Status")
+        self.assertEqual(groups["MonkezRadialGauge"], "Monkez 07 Data Display & Gauges")
+        self.assertEqual(groups["MonkezScrollArea"], "Monkez 08 Containers")
 
     def test_scroll_area_uses_native_designer_structure(self) -> None:
         scroll_plugin = importlib.import_module("monkez_scroll_area_plugin")
@@ -169,6 +177,18 @@ class PluginTests(unittest.TestCase):
         )
         self.assertIn(
             '<widget class="QWidget" name="scrollAreaWidgetContents">',
+            xml,
+        )
+        self.assertIn(
+            '<property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property>',
+            xml,
+        )
+        self.assertIn(
+            '<property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property>',
+            xml,
+        )
+        self.assertIn(
+            '<property name="autoContentSize"><bool>true</bool></property>',
             xml,
         )
 

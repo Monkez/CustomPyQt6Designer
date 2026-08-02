@@ -31,7 +31,7 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 | Value/Date-time | Range, step, format, orientation, keyboard và signals dùng API Qt chuẩn; các property hình học/màu riêng đã có trong Designer. |
 | Display/Gauge | LCD và Radial Gauge là hai khoảng trống API rõ nhất và đã được hoàn thiện; Arc/Linear Gauge đã có threshold, target và orientation. |
 | Media | Image đã có Fit/Fill/Stretch/Original, file/Qt/NumPy frame; Camera đã có backend, source, resolution, FPS, mirror và reconnect. |
-| Container/Startup | Frame, GroupBox, ScrollArea và Splash đã có geometry, theme và runtime lifecycle cần thiết. |
+| Container/Startup | Frame, GroupBox và Splash đã có geometry, theme và runtime lifecycle cần thiết. ScrollArea tự theo dõi layout/widget con để bật tắt scrollbar AsNeeded. |
 
 ## Nguyên tắc tiếp tục phát triển
 

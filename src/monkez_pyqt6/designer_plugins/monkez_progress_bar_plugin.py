@@ -7,9 +7,9 @@ from monkez_pyqt6.monkez_widgets import MonkezProgressBar
 from monkez_pyqt6.monkez_widgets.designer_icons import designer_icon
 
 try:
-    from plugin_groups import GROUP_DISPLAY
+    from plugin_groups import GROUP_FEEDBACK
 except ModuleNotFoundError:
-    from .plugin_groups import GROUP_DISPLAY
+    from .plugin_groups import GROUP_FEEDBACK
 
 try:
     from _probe import write_probe
@@ -43,7 +43,7 @@ class MonkezProgressBarPlugin(QPyDesignerCustomWidgetPlugin):
         return "MonkezProgressBar"
 
     def group(self) -> str:
-        return GROUP_DISPLAY
+        return GROUP_FEEDBACK
 
     def icon(self) -> QIcon:
         return designer_icon("progress")

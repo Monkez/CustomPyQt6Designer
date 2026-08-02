@@ -2,10 +2,10 @@ from monkez_pyqt6.monkez_widgets import MonkezLoadingOverlay
 
 try:
     from plugin_factory import PluginSpec, create_plugin
-    from plugin_groups import GROUP_CONTAINERS
+    from plugin_groups import GROUP_FEEDBACK
 except ModuleNotFoundError:
     from .plugin_factory import PluginSpec, create_plugin
-    from .plugin_groups import GROUP_CONTAINERS
+    from .plugin_groups import GROUP_FEEDBACK
 
 
 MonkezLoadingOverlayPlugin = create_plugin(
@@ -13,6 +13,6 @@ MonkezLoadingOverlayPlugin = create_plugin(
         MonkezLoadingOverlay, "MonkezLoadingOverlay", "monkezLoadingOverlay", "loading",
         "Loading overlay surface", "Loading surface with spinner and status message.", 240, 150,
         properties_xml='  <property name="message"><string>Loading…</string></property>',
-        group=GROUP_CONTAINERS,
+        group=GROUP_FEEDBACK,
     ), __name__
 )

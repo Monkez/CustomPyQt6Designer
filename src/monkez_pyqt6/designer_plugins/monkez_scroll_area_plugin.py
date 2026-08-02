@@ -22,6 +22,9 @@ MonkezScrollAreaPlugin = create_plugin(
         group=GROUP_CONTAINERS,
         properties_xml="""
   <property name="widgetResizable"><bool>true</bool></property>
+  <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property>
+  <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property>
+  <property name="autoContentSize"><bool>true</bool></property>
 """,
         children_xml="""
   <widget class="QWidget" name="scrollAreaWidgetContents">

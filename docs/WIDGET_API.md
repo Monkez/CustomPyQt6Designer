@@ -431,7 +431,7 @@ date_edit.setSizeTokens(control_height=34, radius=8)
 |---|---|
 | `MonkezFrame` | `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation` |
 | `MonkezGroupBox` | `title`, `subtitle`, `subtitleVisible`, `backgroundColor`, `headerColor`, `borderColor`, `titleColor`, `subtitleColor`, `accentColor`, `contentPadding`, `autoHeaderHeight` |
-| `MonkezScrollArea` | `backgroundColor`, `borderColor`, `scrollbarColor`, `scrollbarTrackColor`, `scrollbarWidth`, `radius` |
+| `MonkezScrollArea` | `autoContentSize`, `backgroundColor`, `borderColor`, `scrollbarColor`, `scrollbarTrackColor`, `scrollbarWidth`, `radius` |
 
 | Method | Description |
 |---|---|
@@ -451,11 +451,13 @@ box.setContentPadding(14)
 box.setSubtitleVisible(False)
 ```
 
-`MonkezScrollArea` giữ nguyên cơ chế của `QScrollArea`; thư viện chỉ bổ sung theme
-và các property giao diện trong bảng trên. Khi tạo trực tiếp bằng Python, widget
-khởi đầu chưa có trang nội dung và giữ mặc định `widgetResizable` của Qt. Hãy tạo
-`QWidget`, gọi `scroll.setWidget(content)` và bật `setWidgetResizable(True)` khi
-ứng dụng cần.
+`MonkezScrollArea` giữ API chuẩn của `QScrollArea` và bổ sung `autoContentSize=True`.
+Chế độ này theo dõi layout, vị trí và minimum size của widget con để tự cập nhật
+minimum của content page; scrollbar `AsNeeded` vì vậy tự hiện khi nội dung tràn và
+tự ẩn khi nội dung thu gọn. Khi tạo trực tiếp bằng Python, hãy tạo `QWidget`, gọi
+`scroll.setWidget(content)` và bật `setWidgetResizable(True)` khi ứng dụng cần.
+Gọi `refreshContentSize()` sau thay đổi hình học do custom code không phát sinh
+Qt layout event, hoặc đặt `autoContentSize=False` để quản lý minimum size thủ công.
 
 Khi kéo mới trong Designer, plugin tạo cấu trúc chuẩn của Qt gồm trang
 `scrollAreaWidgetContents` và bật `widgetResizable`. Kéo widget con vào trang này,

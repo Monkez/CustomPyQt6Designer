@@ -351,9 +351,9 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
     WidgetDoc(
         "MonkezScrollArea",
         "Container",
-        "Scroll area co border, radius va scrollbar theme-aware.",
-        ("backgroundColor, borderColor", "scrollbarWidth, scrollbarColor, scrollbarTrackColor"),
-        ("setWidget(widget)", "setWidgetResizable(value)"),
+        "Scroll area tu theo doi kich thuoc content va hien scrollbar khi can.",
+        ("autoContentSize", "backgroundColor, borderColor", "scrollbarWidth, scrollbarColor, scrollbarTrackColor"),
+        ("setWidget(widget)", "setWidgetResizable(value)", "refreshContentSize()"),
         "scroll = MonkezScrollArea(); scroll.setWidget(content)",
     ),
     WidgetDoc(
@@ -566,6 +566,8 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
     ),
     "MonkezScrollArea": (
         ("setWidgetResizable(value)", "Resize child widget with the viewport.", "setWidgetResizable(True)", lambda widget: widget.setWidgetResizable(True)),
+        ("setAutoContentSize(value)", "Track child geometry and layout minimums for AsNeeded scrollbars.", "setAutoContentSize(True)", lambda widget: widget.setAutoContentSize(True)),
+        ("refreshContentSize()", "Recalculate content size after custom geometry changes.", "refreshContentSize()", lambda widget: widget.refreshContentSize()),
         ("setScrollbarWidth(width)", "Set scrollbar width.", "setScrollbarWidth(9)", lambda widget: widget.setScrollbarWidth(9)),
     ),
     "MonkezRadialGauge": (

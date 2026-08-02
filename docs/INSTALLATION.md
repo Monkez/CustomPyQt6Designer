@@ -90,7 +90,8 @@ cần mang theo Designer.
 2. Giải nén toàn bộ file ZIP.
 3. Giữ nguyên `MonkezDesigner.exe` và thư mục `_internal` cạnh nhau.
 4. Chạy `MonkezDesigner.exe`.
-5. Tìm widget trong các nhóm `Monkez 01 Controls` đến `Monkez 07 Media`.
+5. Tìm widget trong chín nhóm có thứ tự từ `Monkez 01 Actions & Selection` đến
+   `Monkez 09 Media`.
 6. Thiết kế và lưu file `.ui`.
 
 Property `themeIndex` và menu chuột phải `Monkez Theme` đều hỗ trợ:

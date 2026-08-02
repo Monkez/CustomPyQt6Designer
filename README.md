@@ -191,16 +191,15 @@ python -m venv .venv
 
 | Nhóm | Widgets |
 |---|---|
-| Action | `MonkezButton` (Standard/Icon + loading), `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
-| Input | `MonkezTextInput`, `MonkezFilePicker`, `MonkezComboBox`, `MonkezSpinBox`, `MonkezDoubleSpinBox` |
-| Value | `MonkezSlider`, `MonkezRangeSlider`, `MonkezDial`, `MonkezProgressBar`, `MonkezLCDNumber` |
-| Navigation | `MonkezPagination`, `MonkezSegmentedControl`, `MonkezBreadcrumb` |
-| Feedback | `MonkezStatusBadge`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`, `MonkezToast` |
-| Date/time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
-| Media | `MonkezImage`, `MonkezUSBCamera` |
-| Container | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea` |
-| Gauge | `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
-| Startup | `MonkezSplashScreen` |
+| 01 Actions & Selection | `MonkezButton` (Standard/Icon + loading), `MonkezSwitch`, `MonkezCheckBox`, `MonkezRadioButton` |
+| 02 Text & File Inputs | `MonkezTextInput`, `MonkezComboBox`, `MonkezFilePicker` |
+| 03 Numeric & Range Inputs | `MonkezSpinBox`, `MonkezDoubleSpinBox`, `MonkezSlider`, `MonkezRangeSlider`, `MonkezDial` |
+| 04 Date & Time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
+| 05 Navigation | `MonkezBreadcrumb`, `MonkezSegmentedControl`, `MonkezPagination` |
+| 06 Feedback & Status | `MonkezStatusBadge`, `MonkezProgressBar`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`, runtime-only `MonkezToast` |
+| 07 Data Display & Gauges | `MonkezLCDNumber`, `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
+| 08 Containers | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea`; `MonkezSplashScreen` is runtime/template-only |
+| 09 Media | `MonkezImage`, `MonkezUSBCamera` |
 
 Các widget giao diện hỗ trợ:
 
@@ -227,10 +226,11 @@ Khi nằm trong layout, `MonkezImage` luôn nhận toàn bộ kích thước do 
 ngoài cấp; kích thước ảnh nguồn không chi phối geometry của widget. Các mode
 `Fit`, `Fill`, `Stretch`, `Original` chỉ thay đổi pixmap hiển thị bên trong.
 
-`MonkezScrollArea` dùng nguyên cơ chế container của `QScrollArea`, chỉ bổ sung
-theme và các property màu, border, radius, scrollbar. Trong Designer, kéo widget
-con vào `scrollAreaWidgetContents` như Scroll Area mặc định. Khi tạo bằng Python,
-hãy dùng `setWidget()` và `setWidgetResizable()` theo API chuẩn của Qt.
+`MonkezScrollArea` theo dõi layout và hình học widget con khi `autoContentSize=True`,
+tự cập nhật minimum của `scrollAreaWidgetContents` để scrollbar `AsNeeded` xuất
+hiện và biến mất đúng lúc. Trong Designer, kéo widget con vào trang content như
+Scroll Area mặc định. Có thể gọi `refreshContentSize()` sau một thay đổi hình học
+đặc biệt hoặc tắt `autoContentSize` để dùng hoàn toàn cơ chế kích thước thủ công.
 
 `MonkezUSBCamera` import OpenCV theo nhu cầu, hỗ trợ backend, camera index/source/name, resolution, capture FPS, display FPS, FourCC, buffer size, mirror, reconnect, auto start và preview trong Designer khi bật `previewAutoStart`.
 

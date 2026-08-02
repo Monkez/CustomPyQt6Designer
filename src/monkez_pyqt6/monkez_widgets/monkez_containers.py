@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, QTimer, Qt, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen
-from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea
+from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGroupBox, QScrollArea, QWidget
 
 from .theme_support import ThemeSupportMixin
 from .themes import color_to_css, theme_color, theme_int, theme_radius
@@ -497,7 +497,141 @@ class MonkezScrollArea(QScrollArea, ThemeSupportMixin):
         self._scrollbar_track_color = QColor()
         self._radius = 8
         self._scrollbar_width = 10
+        self._auto_content_size = True
+        self._content_size_sync_pending = False
+        self._content_base_minimum = QSize(0, 0)
+        self._auto_applied_minimum: QSize | None = None
+        self._observed_content_widgets: set[QWidget] = set()
         self.setTheme("material")
+
+    def setWidget(self, widget: QWidget) -> None:
+        self._detach_content_observers(restore_minimum=True)
+        super().setWidget(widget)
+        self._content_base_minimum = QSize(widget.minimumSize())
+        self._auto_applied_minimum = None
+        self._install_content_observers(widget)
+        self.refreshContentSize()
+
+    def takeWidget(self):
+        self._detach_content_observers(restore_minimum=True)
+        widget = super().takeWidget()
+        self._content_base_minimum = QSize(0, 0)
+        self._auto_applied_minimum = None
+        return widget
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched in self._observed_content_widgets:
+            if event.type() == QEvent.Type.ChildAdded:
+                child = event.child()
+                if isinstance(child, QWidget):
+                    self._install_content_observers(child)
+            if event.type() in {
+                QEvent.Type.ChildAdded,
+                QEvent.Type.ChildRemoved,
+                QEvent.Type.LayoutRequest,
+                QEvent.Type.Resize,
+                QEvent.Type.Move,
+                QEvent.Type.Show,
+                QEvent.Type.Hide,
+                QEvent.Type.FontChange,
+                QEvent.Type.StyleChange,
+            }:
+                self._schedule_content_size_sync()
+        return super().eventFilter(watched, event)
+
+    def _install_content_observers(self, widget: QWidget) -> None:
+        widgets = (widget, *widget.findChildren(QWidget))
+        for observed in widgets:
+            if observed in self._observed_content_widgets:
+                continue
+            observed.installEventFilter(self)
+            self._observed_content_widgets.add(observed)
+
+    def _detach_content_observers(self, restore_minimum: bool) -> None:
+        content = self.widget()
+        for observed in tuple(self._observed_content_widgets):
+            try:
+                observed.removeEventFilter(self)
+            except RuntimeError:
+                pass
+        self._observed_content_widgets.clear()
+        if (
+            restore_minimum
+            and content is not None
+            and self._auto_applied_minimum is not None
+            and content.minimumSize() == self._auto_applied_minimum
+        ):
+            content.setMinimumSize(self._content_base_minimum)
+
+    def _schedule_content_size_sync(self) -> None:
+        if not self._auto_content_size or self._content_size_sync_pending:
+            return
+        self._content_size_sync_pending = True
+        QTimer.singleShot(0, self._sync_content_minimum)
+
+    def _required_content_size(self, content: QWidget) -> QSize:
+        required = QSize(0, 0)
+        layout = content.layout()
+        if layout is not None:
+            layout.activate()
+            required = required.expandedTo(layout.minimumSize())
+
+        margins = content.contentsMargins()
+        for child in content.findChildren(
+            QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly
+        ):
+            if child.isHidden():
+                continue
+            # A layout's minimumSize already describes managed children. Using
+            # their current stretched geometry here would feed the viewport
+            # width back into the minimum and could create a false horizontal
+            # scrollbar when only vertical overflow exists.
+            if layout is not None and layout.indexOf(child) >= 0:
+                continue
+            hint = child.minimumSizeHint().expandedTo(child.minimumSize())
+            rect = child.geometry()
+            required_width = rect.x() + max(rect.width(), hint.width()) + margins.right()
+            required_height = rect.y() + max(rect.height(), hint.height()) + margins.bottom()
+            required = required.expandedTo(QSize(required_width, required_height))
+        return required
+
+    def _sync_content_minimum(self) -> None:
+        self._content_size_sync_pending = False
+        content = self.widget()
+        if content is None or not self._auto_content_size:
+            return
+        self._install_content_observers(content)
+
+        current_minimum = content.minimumSize()
+        if self._auto_applied_minimum is None or current_minimum != self._auto_applied_minimum:
+            self._content_base_minimum = QSize(current_minimum)
+
+        required = self._required_content_size(content)
+        target = self._content_base_minimum.expandedTo(required)
+        if current_minimum != target:
+            content.setMinimumSize(target)
+        self._auto_applied_minimum = QSize(target)
+
+    def refreshContentSize(self) -> None:
+        """Recalculate the content minimum used by AsNeeded scrollbars."""
+        self._schedule_content_size_sync()
+
+    def getAutoContentSize(self) -> bool:
+        return self._auto_content_size
+
+    def setAutoContentSize(self, value: bool) -> None:
+        enabled = bool(value)
+        if enabled == self._auto_content_size:
+            return
+        self._auto_content_size = enabled
+        if enabled:
+            content = self.widget()
+            if content is not None:
+                self._install_content_observers(content)
+            self.refreshContentSize()
+            return
+        self._detach_content_observers(restore_minimum=True)
+        self._auto_applied_minimum = None
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface")
@@ -581,3 +715,4 @@ class MonkezScrollArea(QScrollArea, ThemeSupportMixin):
     scrollbarTrackColor = pyqtProperty(QColor, getScrollbarTrackColor, setScrollbarTrackColor)
     radius = pyqtProperty(int, getRadius, setRadius)
     scrollbarWidth = pyqtProperty(int, getScrollbarWidth, setScrollbarWidth)
+    autoContentSize = pyqtProperty(bool, getAutoContentSize, setAutoContentSize)
