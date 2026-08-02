@@ -68,7 +68,9 @@ Updated: 2026-08-02
   `displayText`, can resize its digit count automatically, and provides
   `displayFormatted()` for US- or European-style numeric formatting.
 - `MonkezLCDNumber` comma punctuation now follows the actual segment baseline
-  with a proportional dot and curved tail. Designer-friendly numeric properties
+  with a proportional head and a high-contrast curved stroke that remains
+  distinguishable from a decimal point in compact Gallery/Designer previews.
+  Designer-friendly numeric properties
   cover decimal places, decimal/group separators, grouping and the source number.
 - `MonkezPagination` adds Rounded, Pill, Minimal and Compact navigation styles,
   responsive ellipsis, page-count and item-count modes, mouse/keyboard/wheel

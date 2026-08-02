@@ -9,7 +9,8 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 ## Kết quả đã bổ sung
 
 - `MonkezLCDNumber`: dấu phẩy được vẽ theo đúng baseline của segment với đầu
-  chấm và đuôi cong; hỗ trợ cấu hình số bằng `number`, `decimalPlaces`,
+  chấm và nét đuôi cong đủ rõ ở cả preview nhỏ; hỗ trợ cấu hình số bằng
+  `number`, `decimalPlaces`,
   `decimalSeparator`, `groupSeparator`, `groupingEnabled`, `autoDigitCount`.
 - `MonkezPagination`: bổ sung điều hướng trang 1-based với ellipsis responsive,
   bốn style Rounded/Pill/Minimal/Compact, cấu hình theo số trang hoặc

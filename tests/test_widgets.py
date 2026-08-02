@@ -824,6 +824,15 @@ class WidgetTests(unittest.TestCase):
 
         self.assertEqual("1234,56", lcd.displayText)
         self.assertNotEqual(dot_image, comma_image)
+        changed_pixels = [
+            (x, y)
+            for y in range(comma_image.height())
+            for x in range(comma_image.width())
+            if comma_image.pixelColor(x, y) != dot_image.pixelColor(x, y)
+        ]
+        self.assertTrue(changed_pixels)
+        changed_y = [point[1] for point in changed_pixels]
+        self.assertGreaterEqual(max(changed_y) - min(changed_y), 8)
         lcd.autoDigitCount = True
         self.assertEqual("12.345,67", lcd.displayFormatted(12345.67, 2, ",", "."))
         self.assertEqual(7, lcd.digitCount())

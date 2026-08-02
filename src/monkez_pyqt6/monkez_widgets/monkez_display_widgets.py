@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import QFrame, QLCDNumber
 
 from .theme_support import ThemeSupportMixin
@@ -156,18 +156,28 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         for character in self._display_text:
             if character == "," and occupied_slots:
                 x = content.left() + (leading_slots + occupied_slots) * slot_width - slot_width * 0.08
-                mark_size = max(2.5, min(slot_width * 0.08, content.height() * 0.04))
+                # A QLCDNumber only understands a decimal point.  Keep that
+                # native point as the comma head, then paint a deliberately
+                # stronger tail: the previous 2.5 px mark collapsed back into
+                # a second dot in compact Designer/Gallery previews.
+                mark_size = max(3.5, min(slot_width * 0.14, content.height() * 0.065))
                 y = content.bottom() - content.height() * 0.17
-                painter.drawEllipse(QPointF(x, y), mark_size * 0.48, mark_size * 0.48)
-                tail = QPainterPath(QPointF(x + mark_size * 0.22, y + mark_size * 0.2))
+                painter.drawEllipse(QPointF(x, y), mark_size * 0.52, mark_size * 0.52)
+
+                tail = QPainterPath(QPointF(x + mark_size * 0.2, y + mark_size * 0.22))
                 tail.cubicTo(
-                    QPointF(x + mark_size * 0.5, y + mark_size * 0.85),
-                    QPointF(x - mark_size * 0.05, y + mark_size * 1.5),
-                    QPointF(x - mark_size * 0.75, y + mark_size * 1.95),
+                    QPointF(x + mark_size * 0.45, y + mark_size * 0.95),
+                    QPointF(x - mark_size * 0.02, y + mark_size * 1.65),
+                    QPointF(x - mark_size * 0.72, y + mark_size * 2.05),
                 )
-                tail.lineTo(QPointF(x - mark_size * 0.15, y + mark_size * 0.75))
-                tail.closeSubpath()
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                tail_pen = QPen(self._digit_color, max(1.5, mark_size * 0.42))
+                tail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                tail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(tail_pen)
                 painter.drawPath(tail)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(self._digit_color)
             elif character not in ".,":
                 occupied_slots += 1
 
