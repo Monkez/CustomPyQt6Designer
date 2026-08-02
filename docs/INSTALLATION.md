@@ -92,6 +92,8 @@ cần mang theo Designer.
 4. Chạy `MonkezDesigner.exe`.
 5. Tìm widget trong chín nhóm có thứ tự từ `Monkez 01 Actions & Selection` đến
    `Monkez 09 Media`.
+   Thứ tự này ổn định ở cả bản source và portable; sau khi nâng cấp, hãy đóng
+   toàn bộ cửa sổ Designer rồi mở lại để thư mục plugin được quét lại.
 6. Thiết kế và lưu file `.ui`.
 
 Property `themeIndex` và menu chuột phải `Monkez Theme` đều hỗ trợ:

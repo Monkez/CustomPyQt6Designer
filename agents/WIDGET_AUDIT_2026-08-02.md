@@ -36,3 +36,6 @@ The Designer palette is ordered into nine workflow groups rather than grouping
 unrelated controls by implementation base class. `MonkezScrollArea` also owns
 automatic content-minimum tracking so AsNeeded scrollbars work for both layouts
 and freely positioned Designer children while preserving explicit minimums.
+The numeric order is enforced in plugin module filenames as well as group
+labels: Designer orders groups by the first plugin file that introduces each
+group and does not sort those labels lexicographically.

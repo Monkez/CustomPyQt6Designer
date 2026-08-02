@@ -69,7 +69,9 @@ Updated: 2026-08-02
   policies without a custom fixed-page extension.
 - Designer plugins are grouped into nine numbered workflow groups: actions,
   text/file inputs, numeric/range inputs, date/time, navigation, feedback/status,
-  data display/gauges, containers and media.
+  data display/gauges, containers and media. Plugin module filenames carry the
+  same `01`-`09` prefixes because Qt Designer preserves first-discovery order
+  instead of sorting the visible group labels.
 - Stylesheet-backed `QColor` properties preserve alpha channels.
 - Sliders support horizontal and vertical orientation; progress-bar height no
   longer overrides `textVisible`.
@@ -114,7 +116,7 @@ Updated: 2026-08-02
   three UI-loading APIs successfully.
 - The current portable build initializes and constructs all 33 Designer
   plugins successfully.
-- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,665 entries (266.5 MB) and
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,698 entries (266.5 MiB) and
   passes a full entry read/CRC integrity check.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully

@@ -107,7 +107,7 @@ class PluginTests(unittest.TestCase):
         button.deleteLater()
 
     def test_image_plugin_registers_its_designer_task_menu(self) -> None:
-        image_plugin = importlib.import_module("monkez_image_plugin")
+        image_plugin = importlib.import_module("monkez_09_image_plugin")
         theme_task_menu = importlib.import_module("theme_task_menu")
         manager = QExtensionManager()
 
@@ -133,7 +133,7 @@ class PluginTests(unittest.TestCase):
         image.deleteLater()
 
     def test_plugins_are_arranged_in_logical_palette_groups(self) -> None:
-        expected_groups = {
+        expected_groups = [
             "Monkez 01 Actions & Selection",
             "Monkez 02 Text & File Inputs",
             "Monkez 03 Numeric & Range Inputs",
@@ -143,8 +143,9 @@ class PluginTests(unittest.TestCase):
             "Monkez 07 Data Display & Gauges",
             "Monkez 08 Containers",
             "Monkez 09 Media",
-        }
+        ]
         groups = {}
+        discovered_groups = []
         for path in sorted(PLUGIN_DIR.glob("*_plugin.py")):
             module = importlib.import_module(path.stem)
             plugin_class = next(
@@ -156,8 +157,15 @@ class PluginTests(unittest.TestCase):
             )
             plugin = plugin_class()
             groups[plugin.name()] = plugin.group()
+            if plugin.domXml() and plugin.group() not in discovered_groups:
+                discovered_groups.append(plugin.group())
+            self.assertTrue(
+                path.name.startswith(f"monkez_{plugin.group()[7:9]}_"),
+                f"{path.name} does not preserve the Designer group load order",
+            )
 
-        self.assertEqual(set(groups.values()), expected_groups)
+        self.assertEqual(set(groups.values()), set(expected_groups))
+        self.assertEqual(discovered_groups, expected_groups)
         self.assertEqual(groups["MonkezDateEdit"], "Monkez 04 Date & Time")
         self.assertEqual(groups["MonkezTimeEdit"], "Monkez 04 Date & Time")
         self.assertEqual(groups["MonkezProgressBar"], "Monkez 06 Feedback & Status")
@@ -166,7 +174,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(groups["MonkezScrollArea"], "Monkez 08 Containers")
 
     def test_scroll_area_uses_native_designer_structure(self) -> None:
-        scroll_plugin = importlib.import_module("monkez_scroll_area_plugin")
+        scroll_plugin = importlib.import_module("monkez_08_scroll_area_plugin")
         plugin = scroll_plugin.MonkezScrollAreaPlugin()
         xml = plugin.domXml()
 
