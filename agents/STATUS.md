@@ -64,17 +64,13 @@ Updated: 2026-08-02
 - Stylesheet-backed `QColor` properties preserve alpha channels.
 - Sliders support horizontal and vertical orientation; progress-bar height no
   longer overrides `textVisible`.
-- `MonkezLCDNumber` accepts literal dot/comma separators through `display()` and
-  `displayText`, can resize its digit count automatically, and provides
-  `displayFormatted()` for US- or European-style numeric formatting.
-- `MonkezLCDNumber` comma punctuation now follows the actual segment baseline
-  as one filled teardrop with no join between its head and tail, remaining
-  distinguishable from a decimal point in compact Gallery/Designer previews.
-  Its color is resolved from the same live foreground palette as native LCD
-  segments. `digitColor` now has component-level stylesheet priority over
-  broad application styles while explicit per-widget styles can still override it.
-  Designer-friendly numeric properties
-  cover decimal places, decimal/group separators, grouping and the source number.
+- `MonkezLCDNumber` deliberately uses only QLCDNumber's native decimal point;
+  comma painting and locale/grouping separator properties have been removed.
+  Literal commas are stripped for compatibility with older Designer forms.
+  `displayFormatted(value, decimals)` produces an ungrouped dot-decimal value,
+  while `displayText`, `number`, `decimalPlaces` and `autoDigitCount` remain.
+  `digitColor` has component-level stylesheet priority over broad application
+  styles while explicit per-widget styles can still override it.
 - `MonkezPagination` adds Rounded, Pill, Minimal and Compact navigation styles,
   responsive ellipsis, page-count and item-count modes, mouse/keyboard/wheel
   navigation, state colors, runtime signals and a Designer style task menu.

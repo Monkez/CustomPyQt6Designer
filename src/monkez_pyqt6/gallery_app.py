@@ -256,10 +256,10 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
     WidgetDoc(
         "MonkezLCDNumber",
         "Display",
-        "LCD number cho counter, sensor value, co ho tro dau cham va dau phay.",
+        "LCD number cho counter va sensor value, dung dau cham thap phan chuan.",
         ("displayText, autoDigitCount", "digitCount, segmentStyle", "digitColor, backgroundColor, borderColor"),
-        ("display(value)", "setDisplayText(text)", "displayFormatted(value, decimals, decimal_separator, group_separator)"),
-        "lcd = MonkezLCDNumber(); lcd.displayFormatted(1234.56, 2, ',', '.')",
+        ("display(value)", "setDisplayText(text)", "displayFormatted(value, decimals)"),
+        "lcd = MonkezLCDNumber(); lcd.displayFormatted(1234.56, 2)",
     ),
     WidgetDoc(
         "MonkezPagination",
@@ -454,9 +454,9 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("setGridVisible(value)", "Show or hide date grid.", "setGridVisible(False)", lambda widget: widget.setGridVisible(False)),
     ),
     "MonkezLCDNumber": (
-        ("display(value)", "Display a number or text containing dots and commas.", 'display("1,234.56")', lambda widget: widget.display("1,234.56")),
-        ("setDisplayText(text)", "Display literal numeric text with dot/comma separators.", 'setDisplayText("1.234,56")', lambda widget: widget.setDisplayText("1.234,56")),
-        ("displayFormatted(value, ...)", "Format a number with chosen decimal and grouping separators.", 'displayFormatted(1234.56, 2, ",", ".")', lambda widget: widget.displayFormatted(1234.56, 2, ",", ".")),
+        ("display(value)", "Display a number using the native decimal point.", 'display("1234.56")', lambda widget: widget.display("1234.56")),
+        ("setDisplayText(text)", "Display literal numeric text; commas are removed.", 'setDisplayText("1234.56")', lambda widget: widget.setDisplayText("1234.56")),
+        ("displayFormatted(value, decimals)", "Format a number with a decimal point and no grouping separator.", "displayFormatted(1234.56, 2)", lambda widget: widget.displayFormatted(1234.56, 2)),
         ("setDigitCount(count)", "Set digit count.", "setDigitCount(4)", lambda widget: widget.setDigitCount(4)),
     ),
     "MonkezPagination": (
@@ -1654,7 +1654,7 @@ def _calendar_preview() -> QWidget:
 def _lcd_preview() -> QWidget:
     widget = MonkezLCDNumber()
     widget.setAutoDigitCount(True)
-    widget.setDisplayText("1.234,56")
+    widget.setDisplayText("1234.56")
     widget.setMinimumSize(220, 80)
     return widget
 

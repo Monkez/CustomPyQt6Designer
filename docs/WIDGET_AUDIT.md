@@ -8,13 +8,12 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 
 ## Kết quả đã bổ sung
 
-- `MonkezLCDNumber`: dấu phẩy được vẽ theo đúng baseline của segment thành một
-  khối giọt liền nét từ đầu đến đuôi ở cả preview nhỏ; màu dấu phẩy luôn lấy từ
-  foreground thực tế giống segment; `digitColor` không còn bị stylesheet chung
-  của ứng dụng lấn át nhưng vẫn cho phép stylesheet gắn trực tiếp ghi đè; hỗ trợ
-  cấu hình số bằng
-  `number`, `decimalPlaces`,
-  `decimalSeparator`, `groupSeparator`, `groupingEnabled`, `autoDigitCount`.
+- `MonkezLCDNumber`: chỉ dùng dấu chấm thập phân nguyên bản của `QLCDNumber`;
+  đã bỏ phần vẽ dấu phẩy cùng các property separator/grouping để giao diện ổn
+  định và nhất quán. Chuỗi cũ chứa dấu phẩy được tự loại bỏ khi nạp; hỗ trợ cấu
+  hình số bằng `number`, `decimalPlaces`, `displayText`, `autoDigitCount`.
+  `digitColor` không bị stylesheet chung của ứng dụng lấn át nhưng vẫn cho phép
+  stylesheet gắn trực tiếp ghi đè.
 - `MonkezPagination`: bổ sung điều hướng trang 1-based với ellipsis responsive,
   bốn style Rounded/Pill/Minimal/Compact, cấu hình theo số trang hoặc
   `totalItems`/`pageSize`, điều hướng bàn phím, loop, wheel và đầy đủ màu/trạng

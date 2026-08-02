@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette
+from PyQt6.QtCore import QSize, pyqtProperty, pyqtSignal
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QFrame, QLCDNumber
 
 from .theme_support import ThemeSupportMixin
@@ -22,9 +22,6 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         self._auto_digit_count = False
         self._number = 123.45
         self._decimal_places = 2
-        self._decimal_separator = "."
-        self._group_separator = ","
-        self._grouping_enabled = False
         self.setDigitCount(6)
         self.setSmallDecimalPoint(True)
         self.setSegmentStyle(QLCDNumber.SegmentStyle.Flat)
@@ -39,15 +36,18 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         return QSize(40, 24)
 
     def display(self, value) -> None:
-        """Display text while preserving both decimal dots and comma separators."""
-        text = str(value)
+        """Display numeric text using QLCDNumber's native decimal point only."""
+        # Commas are deliberately unsupported. Silently remove them so older
+        # Designer forms continue loading without rendering a blank/invalid
+        # LCD character or reviving custom punctuation.
+        text = str(value).replace(",", "")
         if isinstance(value, (int, float)):
             self._number = float(value)
         self._display_text = text
         if self._auto_digit_count:
-            visible_digits = sum(character not in ".," for character in text)
+            visible_digits = sum(character != "." for character in text)
             self.setDigitCount(max(1, visible_digits))
-        super().display(text.replace(",", "."))
+        super().display(text)
         self.update()
 
     def getDisplayText(self) -> str:
@@ -68,23 +68,11 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
         self,
         value: int | float,
         decimals: int = 2,
-        decimal_separator: str = ".",
-        group_separator: str = ",",
     ) -> str:
-        """Format and display a numeric value with configurable separators."""
+        """Format and display a number with the native decimal point."""
         decimals = max(0, int(decimals))
-        if decimal_separator not in (".", ","):
-            raise ValueError("decimal_separator must be '.' or ','")
-        if group_separator not in ("", ".", ","):
-            raise ValueError("group_separator must be empty, '.' or ','")
-        if group_separator == decimal_separator and group_separator:
-            raise ValueError("group_separator and decimal_separator must differ")
-
         self._number = float(value)
-        formatted = f"{self._number:,.{decimals}f}"
-        marker = "\u202f"
-        formatted = formatted.replace(",", marker).replace(".", decimal_separator)
-        formatted = formatted.replace(marker, group_separator)
+        formatted = f"{self._number:.{decimals}f}"
         self.display(formatted)
         return formatted
 
@@ -93,13 +81,7 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
 
     def setNumber(self, value: float) -> None:
         self._number = float(value)
-        group_separator = self._group_separator if self._grouping_enabled else ""
-        self.displayFormatted(
-            self._number,
-            self._decimal_places,
-            self._decimal_separator,
-            group_separator,
-        )
+        self.displayFormatted(self._number, self._decimal_places)
 
     def getDecimalPlaces(self) -> int:
         return self._decimal_places
@@ -107,94 +89,6 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
     def setDecimalPlaces(self, value: int) -> None:
         self._decimal_places = min(12, max(0, int(value)))
         self.setNumber(self._number)
-
-    def getDecimalSeparator(self) -> str:
-        return self._decimal_separator
-
-    def setDecimalSeparator(self, value: str) -> None:
-        value = str(value)
-        if value not in (".", ","):
-            return
-        self._decimal_separator = value
-        if self._group_separator == value:
-            self._group_separator = "," if value == "." else "."
-        self.setNumber(self._number)
-
-    def getGroupSeparator(self) -> str:
-        return self._group_separator
-
-    def setGroupSeparator(self, value: str) -> None:
-        value = str(value)
-        if value not in ("", ".", ",") or value == self._decimal_separator:
-            return
-        self._group_separator = value
-        self.setNumber(self._number)
-
-    def getGroupingEnabled(self) -> bool:
-        return self._grouping_enabled
-
-    def setGroupingEnabled(self, value: bool) -> None:
-        self._grouping_enabled = bool(value)
-        self.setNumber(self._number)
-
-    def paintEvent(self, event) -> None:
-        super().paintEvent(event)
-        if "," not in self._display_text or self.digitCount() <= 0:
-            return
-
-        content = QRectF(self.rect()).adjusted(9, 9, -9, -9)
-        if content.width() <= 0 or content.height() <= 0:
-            return
-        slot_width = content.width() / self.digitCount()
-        character_slots = sum(character not in ".," for character in self._display_text)
-        leading_slots = max(0, self.digitCount() - character_slots)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        # Resolve the same foreground role QLCDNumber uses for its segments.
-        # Designer, a parent stylesheet, or an application palette may override
-        # that role after ``digitColor`` was applied; using the cached theme
-        # value here would make only the custom comma retain the stale color.
-        comma_color = self.palette().color(self.foregroundRole())
-        if not comma_color.isValid():
-            comma_color = QColor(self._digit_color)
-        painter.setBrush(comma_color)
-        occupied_slots = 0
-        for character in self._display_text:
-            if character == "," and occupied_slots:
-                x = content.left() + (leading_slots + occupied_slots) * slot_width - slot_width * 0.08
-                # QLCDNumber renders the comma as a native decimal point. Draw
-                # one filled teardrop over that point, rather than joining a
-                # separately stroked tail to it.  The overlap hides rounding
-                # gaps at every scale and makes the punctuation read as one
-                # continuous seven-segment comma.
-                mark_size = max(3.5, min(slot_width * 0.15, content.height() * 0.07))
-                y = content.bottom() - content.height() * 0.17
-                comma = QPainterPath(QPointF(x, y - mark_size * 0.62))
-                comma.cubicTo(
-                    QPointF(x + mark_size * 0.62, y - mark_size * 0.62),
-                    QPointF(x + mark_size * 0.72, y - mark_size * 0.12),
-                    QPointF(x + mark_size * 0.58, y + mark_size * 0.42),
-                )
-                comma.cubicTo(
-                    QPointF(x + mark_size * 0.48, y + mark_size * 1.15),
-                    QPointF(x - mark_size * 0.12, y + mark_size * 1.85),
-                    QPointF(x - mark_size * 0.92, y + mark_size * 2.28),
-                )
-                comma.cubicTo(
-                    QPointF(x - mark_size * 0.58, y + mark_size * 1.45),
-                    QPointF(x - mark_size * 0.30, y + mark_size * 0.86),
-                    QPointF(x - mark_size * 0.42, y + mark_size * 0.38),
-                )
-                comma.cubicTo(
-                    QPointF(x - mark_size * 0.72, y + mark_size * 0.08),
-                    QPointF(x - mark_size * 0.62, y - mark_size * 0.62),
-                    QPointF(x, y - mark_size * 0.62),
-                )
-                comma.closeSubpath()
-                painter.drawPath(comma)
-            elif character not in ".,":
-                occupied_slots += 1
 
     def _apply_theme(self) -> None:
         self._background_color = theme_color(self._theme, "surface_alt")
@@ -260,6 +154,3 @@ class MonkezLCDNumber(QLCDNumber, ThemeSupportMixin):
     autoDigitCount = pyqtProperty(bool, getAutoDigitCount, setAutoDigitCount)
     number = pyqtProperty(float, getNumber, setNumber)
     decimalPlaces = pyqtProperty(int, getDecimalPlaces, setDecimalPlaces)
-    decimalSeparator = pyqtProperty(str, getDecimalSeparator, setDecimalSeparator)
-    groupSeparator = pyqtProperty(str, getGroupSeparator, setGroupSeparator)
-    groupingEnabled = pyqtProperty(bool, getGroupingEnabled, setGroupingEnabled)

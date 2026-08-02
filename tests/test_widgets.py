@@ -809,7 +809,7 @@ class WidgetTests(unittest.TestCase):
         radio.deleteLater()
         dial.deleteLater()
 
-    def test_lcd_displays_dot_and_comma_separators(self) -> None:
+    def test_lcd_uses_decimal_points_and_removes_commas(self) -> None:
         lcd = MonkezLCDNumber()
         lcd.resize(240, 80)
         lcd.setDigitCount(7)
@@ -818,51 +818,18 @@ class WidgetTests(unittest.TestCase):
         lcd.setDisplayText("1234.56")
         self.app.processEvents()
         dot_image = lcd.grab().toImage()
-        lcd.setDisplayText("1234,56")
+        lcd.setDisplayText("1,234.56")
         self.app.processEvents()
-        comma_image = lcd.grab().toImage()
+        sanitized_image = lcd.grab().toImage()
 
-        self.assertEqual("1234,56", lcd.displayText)
-        self.assertNotEqual(dot_image, comma_image)
-        changed_pixels = [
-            (x, y)
-            for y in range(comma_image.height())
-            for x in range(comma_image.width())
-            if comma_image.pixelColor(x, y) != dot_image.pixelColor(x, y)
-        ]
-        self.assertTrue(changed_pixels)
-        changed_y = [point[1] for point in changed_pixels]
-        self.assertGreaterEqual(max(changed_y) - min(changed_y), 8)
-
-        # The comma is a single filled teardrop. Its foreground pixels must
-        # continue through every scanline from the head into the tail; this
-        # catches the visually detached "dot + hook" regression.
-        scale = comma_image.devicePixelRatio()
-        content_width = lcd.width() - 18
-        content_height = lcd.height() - 18
-        slot_width = content_width / lcd.digitCount()
-        comma_x = 9 + (1 + 4) * slot_width - slot_width * 0.08
-        comma_y = 9 + content_height - content_height * 0.17
-        mark_size = max(3.5, min(slot_width * 0.15, content_height * 0.07))
-        left = round((comma_x - mark_size) * scale)
-        right = round((comma_x + mark_size) * scale)
-        top = round((comma_y - mark_size * 0.5) * scale)
-        # Stay inside the filled core; the final tapered pixels are
-        # intentionally antialiased and need not equal the solid RGBA value.
-        bottom = round((comma_y + mark_size * 1.8) * scale)
-        foreground = lcd.palette().color(lcd.foregroundRole()).rgba()
-        uninterrupted_rows = [
-            any(
-                comma_image.pixelColor(x, y).rgba() == foreground
-                for x in range(left, right + 1)
-            )
-            for y in range(top, bottom + 1)
-        ]
-        self.assertTrue(all(uninterrupted_rows))
+        self.assertEqual("1234.56", lcd.displayText)
+        self.assertEqual(dot_image, sanitized_image)
+        self.assertFalse(hasattr(lcd, "decimalSeparator"))
+        self.assertFalse(hasattr(lcd, "groupSeparator"))
+        self.assertFalse(hasattr(lcd, "groupingEnabled"))
 
         # An explicit widget stylesheet can override the resolved QLCDNumber
-        # foreground without changing our cached digitColor property. The
-        # custom comma must follow the same resolved palette as native segments.
+        # foreground without changing our cached digitColor property.
         configured_digit_color = lcd.digitColor
         resolved_digit_color = QColor("#111827")
         lcd.setStyleSheet(
@@ -891,14 +858,11 @@ class WidgetTests(unittest.TestCase):
         self.assertNotIn(resolved_digit_color.rgba(), runtime_colors)
 
         lcd.autoDigitCount = True
-        self.assertEqual("12.345,67", lcd.displayFormatted(12345.67, 2, ",", "."))
+        self.assertEqual("12345.67", lcd.displayFormatted(12345.67, 2))
         self.assertEqual(7, lcd.digitCount())
         lcd.decimalPlaces = 1
-        lcd.decimalSeparator = ","
-        lcd.groupSeparator = "."
-        lcd.groupingEnabled = True
         lcd.number = 9876.54
-        self.assertEqual("9.876,5", lcd.displayText)
+        self.assertEqual("9876.5", lcd.displayText)
         lcd.close()
         lcd.deleteLater()
 

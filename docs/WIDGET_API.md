@@ -275,7 +275,7 @@ switch.setTrack("#e2e8f0").setAccent("#22c55e").setThumb("#ffffff")
 | `MonkezSlider` | `grooveColor`, `filledColor`, `handleColor`, `grooveHeight`, `handleSize` |
 | `MonkezProgressBar` | `barColor`, `trackColor`, `textColor`, `barHeight`, `radius` |
 | `MonkezDial` | `trackColor`, `valueColor`, `handleColor`, `trackWidth`, `handleSize`, `dialStyle` |
-| `MonkezLCDNumber` | `displayText`, `number`, `autoDigitCount`, `decimalPlaces`, `decimalSeparator`, `groupSeparator`, `groupingEnabled` |
+| `MonkezLCDNumber` | `displayText`, `number`, `autoDigitCount`, `decimalPlaces` |
 | `MonkezRadialGauge` | `activeTicksColor`, `inactiveTicksColor`, `needleColor`, `valueTextColor`, `scaleTextColor` |
 | `MonkezArcGauge` | `arcWidth`, `warningThreshold`, `dangerThreshold`, `segmented`, `segmentCount` |
 | `MonkezLinearGauge` | `vertical`, `barThickness`, `targetValue`, `showTarget`, `rounded` |
@@ -312,10 +312,7 @@ gauge.setValueTextColor("#052e16")
 lcd = MonkezLCDNumber()
 lcd.autoDigitCount = True
 lcd.decimalPlaces = 2
-lcd.decimalSeparator = ","
-lcd.groupSeparator = "."
-lcd.groupingEnabled = True
-lcd.number = 1234.56  # 1.234,56
+lcd.number = 1234.56  # 1234.56
 ```
 
 ### Pagination

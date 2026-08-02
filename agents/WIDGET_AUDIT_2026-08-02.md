@@ -7,8 +7,8 @@ Designer properties/plugins, Gallery probes/previews, fluent aliases and tests.
 
 - Add the missing navigation primitive as `MonkezPagination` with a complete
   runtime/Designer/Gallery surface rather than a demo-only composite.
-- Expand `MonkezLCDNumber` into a locale-configurable numeric display and align
-  comma painting to the actual QLCD segment baseline.
+- Keep `MonkezLCDNumber` numeric formatting compact. The locale-configurable
+  comma experiment was later removed in favor of the native decimal point only.
 - Keep standard Qt capabilities inherited. Do not duplicate `QLineEdit`
   validation/echo/clear APIs, `QAbstractSlider` range/step APIs, combo editability,
   progress format, or date/time signals as parallel Monkez properties.
