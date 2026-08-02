@@ -2,7 +2,7 @@
 
 Cập nhật: 2026-08-02
 
-Package hiện có 34 runtime widget/component và 33 plugin Qt Designer. `MonkezToast`
+Package hiện có 35 runtime widget/component và 34 plugin Qt Designer. `MonkezToast`
 chỉ dùng ở runtime nên không xuất hiện trong Widget Box. Việc rà soát tập
 trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung cấp thuận tiện,
 đồng thời không tạo property trùng lặp với API kế thừa sẵn có.
@@ -19,6 +19,10 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
   bốn style Rounded/Pill/Minimal/Compact, cấu hình theo số trang hoặc
   `totalItems`/`pageSize`, điều hướng bàn phím, loop, wheel và đầy đủ màu/trạng
   thái trong Designer.
+- `MonkezTable`: data grid native theo kiến trúc model/view, không tạo item cho
+  từng cell; có global/per-column filter, stable multi-sort, local/server
+  pagination, typed delegates, selection/editing, CSV, state persistence và
+  bốn style cùng ba mật độ hiển thị.
 - `MonkezRadialGauge`: tiếp tục dùng các tên màu theo đúng thành phần trực quan
   (`activeTicksColor`, `inactiveTicksColor`, `needleColor`, `valueTextColor`,
   `scaleTextColor`) thay cho việc buộc người dùng đoán vai trò màu chung chung.
@@ -29,7 +33,7 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
 |---|---|
 | Action/Input | Các hành vi chuẩn như checked, tri-state, editable, validator, clear button, echo mode và signals đã có từ Qt; package chỉ bổ sung theme, icon, popup và kích thước. |
 | Value/Date-time | Range, step, format, orientation, keyboard và signals dùng API Qt chuẩn; các property hình học/màu riêng đã có trong Designer. |
-| Display/Gauge | LCD và Radial Gauge là hai khoảng trống API rõ nhất và đã được hoàn thiện; Arc/Linear Gauge đã có threshold, target và orientation. |
+| Display/Gauge | Table có workflow dữ liệu chuyên nghiệp; LCD và ba gauge có formatting, color role, threshold, target và orientation cần thiết. |
 | Media | Image đã có Fit/Fill/Stretch/Original, file/Qt/NumPy frame; Camera đã có backend, source, resolution, FPS, mirror và reconnect. |
 | Container/Startup | Frame, GroupBox và Splash đã có geometry, theme và runtime lifecycle cần thiết. ScrollArea tự theo dõi layout/widget con để bật tắt scrollbar AsNeeded. |
 

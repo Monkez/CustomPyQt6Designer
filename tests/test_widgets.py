@@ -45,6 +45,7 @@ from monkez_pyqt6.monkez_widgets import (
     MonkezScrollArea,
     MonkezSegmentedControl,
     MonkezStatusBadge,
+    MonkezTable,
     MonkezUSBCamera,
     MonkezToast,
     MonkezFilePicker,
@@ -1114,6 +1115,94 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(f"Page 5 of {pagination.pageCount}", pagination.accessibleDescription())
         pagination.close()
         pagination.deleteLater()
+
+    def test_table_filters_sorts_paginates_and_restores_state(self) -> None:
+        table = MonkezTable()
+        table.setColumns(
+            [
+                {"key": "id", "title": "ID", "type": "number", "width": 70},
+                {"key": "name", "title": "Name", "width": 180, "editable": True},
+                {"key": "status", "title": "Status", "type": "badge"},
+                {"key": "progress", "title": "Progress", "type": "progress"},
+            ]
+        )
+        rows = [
+            {"id": index, "name": f"Camera {index}", "status": "Online" if index % 2 else "Offline", "progress": index}
+            for index in range(55)
+        ]
+        table.setRows(rows)
+        self.assertEqual(55, table.filteredRowCount())
+        self.assertEqual(20, table.visibleRowCount())
+        table.setCurrentPage(3)
+        self.assertEqual(15, table.visibleRowCount())
+        self.assertEqual(40, table.rowData(0)["id"])
+
+        table.setSearchText("Camera 4")
+        self.assertEqual(1, table.currentPage)
+        self.assertEqual(11, table.filteredRowCount())
+        table.setColumnFilter("status", "online")
+        self.assertEqual(5, table.filteredRowCount())
+        table.setSearchText("")
+        table.setColumnFilter("status", "")
+        table.setSort("status")
+        table.setSort("progress", descending=True, additive=True)
+        self.assertEqual(54, table.rowData(0)["progress"])
+
+        table.setColumnVisible("progress", False)
+        state = table.saveState()
+        table.setColumnVisible("progress", True)
+        table.setDensityIndex(2)
+        table.restoreState(state)
+        self.assertTrue(table.tableView().isColumnHidden(3))
+        self.assertEqual(state["densityIndex"], table.densityIndex)
+        table.setBackground("#f8fafc").setForeground("#0f172a").setBorder("#94a3b8").setAccent("#7c3aed")
+        table.setStyleIndex(3)
+        self.assertEqual(QColor("#f8fafc"), table.backgroundColor)
+        self.assertEqual(QColor("#7c3aed"), table.accentColor)
+
+        edits = []
+        table.cellEdited.connect(lambda row, key, value: edits.append((row, key, value)))
+        table.setEditable(True)
+        self.assertTrue(table.sourceModel().setData(table.sourceModel().index(0, 1), "Updated camera"))
+        self.assertEqual([(0, "name", "Updated camera")], edits)
+        table.tableView().selectRow(0)
+        self.assertIs(table.rowData(0), table.selectedRows()[0])
+        with tempfile.TemporaryDirectory() as directory:
+            csv_path = table.exportCsv(Path(directory) / "table.csv")
+            csv_text = csv_path.read_text(encoding="utf-8-sig")
+            self.assertIn("ID,Name,Status", csv_text)
+            self.assertNotIn("Progress", csv_text.splitlines()[0])
+        table.resize(720, 420)
+        table.show()
+        self.app.processEvents()
+        self.assertFalse(table.grab().isNull())
+        table.close()
+        table.deleteLater()
+
+    def test_table_server_mode_and_large_model_are_zero_copy(self) -> None:
+        table = MonkezTable()
+        table.setColumns([{"key": "id", "type": "number"}, {"key": "name"}])
+        rows = [{"id": index, "name": f"Row {index}"} for index in range(50_000)]
+        table.setRows(rows)
+        self.assertEqual(50_000, table.sourceModel().rowCount())
+        self.assertEqual(20, table.visibleRowCount())
+        self.assertIs(rows[123], table.sourceModel().rowData(123))
+        table.setSearchText("Row 49999")
+        self.assertEqual(1, table.filteredRowCount())
+
+        queries = []
+        table.queryChanged.connect(queries.append)
+        table.setServerMode(True)
+        table.setRows([{"id": 1, "name": "Current page"}], total=12_345)
+        table.setSearchText("remote search")
+        table.setColumnFilter("name", "camera")
+        table.setSort("id", descending=True)
+        self.assertEqual(1, table.visibleRowCount())
+        self.assertEqual(12_345, table.totalItems)
+        self.assertEqual("remote search", queries[-1]["search"])
+        self.assertEqual({"name": "camera"}, queries[-1]["filters"])
+        self.assertEqual([{"key": "id", "descending": True}], queries[-1]["sort"])
+        table.deleteLater()
 
     def test_radial_gauge_exposes_part_specific_color_names(self) -> None:
         gauge = MonkezRadialGauge()

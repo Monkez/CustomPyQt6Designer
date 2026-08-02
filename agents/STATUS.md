@@ -10,8 +10,8 @@ Updated: 2026-08-02
 
 ## Supported surface
 
-- 34 public runtime widgets/components.
-- 33 Qt Designer plugins; runtime-only `MonkezToast` is intentionally excluded.
+- 35 public runtime widgets/components.
+- 34 Qt Designer plugins; runtime-only `MonkezToast` is intentionally excluded.
 - Six themes: Material, iOS, Fluent, Bootstrap, Minimal and Dark.
 - Canonical distribution/import names are `monkez-pyqt6` and `monkez_pyqt6`;
   `custom_pyqt6_designer` remains as a compatibility namespace and launcher.
@@ -85,6 +85,11 @@ Updated: 2026-08-02
 - `MonkezPagination` adds Rounded, Pill, Minimal and Compact navigation styles,
   responsive ellipsis, page-count and item-count modes, mouse/keyboard/wheel
   navigation, state colors, runtime signals and a Designer style task menu.
+- `MonkezTable` is a native high-performance model/view grid with mapping,
+  sequence and object rows; typed columns/delegates; global and per-column
+  filtering; stable multi-sort; local and server pagination; search debounce;
+  selection/editing, CSV export and persisted column/query state. Designer and
+  Gallery expose four visual styles and three density modes without WebEngine.
 - Eight practical components complete the feedback/navigation workflow:
   `MonkezStatusBadge`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`,
   runtime-only `MonkezToast`, `MonkezRangeSlider`, `MonkezSegmentedControl`,
@@ -107,17 +112,19 @@ Updated: 2026-08-02
 
 ## Latest verification
 
-- The automated suite contains 109 passing tests and covers all 34 public
-  runtime components and 33 Designer plugins.
+- The automated suite contains 111 passing tests and covers all 35 public
+  runtime components and 34 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
-  verification targets all 33 Designer plugins.
+  verification targets all 34 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated
   wheel install imports the canonical package, compatibility namespace and all
   three UI-loading APIs successfully.
-- The current portable build initializes and constructs all 33 Designer
+- The current portable build initializes and constructs all 34 Designer
   plugins successfully.
-- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,698 entries (266.5 MiB) and
+- `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,703 entries (266.6 MiB) and
   passes a full entry read/CRC integrity check.
+- Its SHA-256 is
+  `DEBB52943A6BFE50DDC99F864DDF25EB67B4F0C0014586300B83BC8E6B5B5088`.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully
   without terminating the existing process.

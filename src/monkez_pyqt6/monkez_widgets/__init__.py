@@ -30,6 +30,7 @@ _WIDGET_MODULES = {
     "MonkezImage": ".monkez_image",
     "MonkezProgressBar": ".monkez_progress_bar",
     "MonkezPagination": ".monkez_pagination",
+    "MonkezTable": ".monkez_table",
     "MonkezRangeSlider": ".monkez_range_slider",
     "MonkezSegmentedControl": ".monkez_navigation_widgets",
     "MonkezBreadcrumb": ".monkez_navigation_widgets",

@@ -359,6 +359,26 @@ pages.pageChanged.connect(load_page)
 In Qt Designer, `styleHint` documents the indexes and the widget context menu
 offers all four styles directly.
 
+### MonkezTable
+
+`MonkezTable` is a native `QTableView`-based data grid. It uses a lightweight
+`QAbstractTableModel`, a filter/sort proxy and a zero-copy page proxy rather
+than allocating a `QTableWidgetItem` for every cell.
+
+| Capability | API |
+|---|---|
+| Schema and data | `setColumns()`, `setRows()`, `appendRows()`, `rowData()` |
+| Search/filter | `setSearchText()`, `setColumnFilter()`, `clearFilters()` |
+| Sorting | `setSort(key, descending=False, additive=False)`, `clearSort()` |
+| Pagination | `pageSize`, `currentPage`, `paginationEnabled` |
+| Remote data | `serverMode`, `totalItems`, `queryChanged` |
+| Selection/editing | `selectedRows()`, `rowActivated`, `cellEdited`, `editable` |
+| Persistence/export | `saveState()`, `restoreState()`, `copySelection()`, `exportCsv()` |
+| Presentation | `styleIndex`, `densityIndex`, `rowNumbers`, `columnLines` |
+
+See [the complete MonkezTable guide](TABLE.md) for column types, local/server
+workflows and state persistence.
+
 ### Feedback, loading and modern navigation
 
 | Widget | Core API |

@@ -154,7 +154,7 @@ nhưng code và form mới nên chuyển sang `monkez_pyqt6`.
 1. Tải thư mục release `MonkezDesigner` từ [GitHub Releases](https://github.com/Monkez/CustomPyQt6Designer/releases).
 2. Giữ nguyên toàn bộ cấu trúc thư mục sau khi giải nén.
 3. Chạy `MonkezDesigner.exe`.
-4. Trong Widget Box, tìm các nhóm đánh số từ **Monkez 01 Controls** đến **Monkez 07 Media**.
+4. Trong Widget Box, tìm các nhóm đánh số từ **Monkez 01 Actions & Selection** đến **Monkez 09 Media**.
 
 Bản portable đã chứa Qt Designer, PyQt6 Designer bridge, plugin Python và runtime cần thiết. Máy thiết kế giao diện không cần cài Python.
 
@@ -197,7 +197,7 @@ python -m venv .venv
 | 04 Date & Time | `MonkezDateEdit`, `MonkezTimeEdit`, `MonkezDateTimeEdit`, `MonkezCalendarWidget` |
 | 05 Navigation | `MonkezBreadcrumb`, `MonkezSegmentedControl`, `MonkezPagination` |
 | 06 Feedback & Status | `MonkezStatusBadge`, `MonkezProgressBar`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`, runtime-only `MonkezToast` |
-| 07 Data Display & Gauges | `MonkezLCDNumber`, `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
+| 07 Data Display & Gauges | `MonkezTable`, `MonkezLCDNumber`, `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
 | 08 Containers | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea`; `MonkezSplashScreen` is runtime/template-only |
 | 09 Media | `MonkezImage`, `MonkezUSBCamera` |
 

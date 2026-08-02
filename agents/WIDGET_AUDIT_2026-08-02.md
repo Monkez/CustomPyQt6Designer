@@ -39,3 +39,8 @@ and freely positioned Designer children while preserving explicit minimums.
 The numeric order is enforced in plugin module filenames as well as group
 labels: Designer orders groups by the first plugin file that introduces each
 group and does not sort those labels lexicographically.
+
+`MonkezTable` was added to group 07 as a native model/view grid. Its data model,
+filter/sort proxy and page proxy remain separate so local tables do not allocate
+per-cell items and server mode can emit query state without filtering the
+already paged response a second time.

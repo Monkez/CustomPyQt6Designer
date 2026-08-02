@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 from PyQt6.QtDesigner import QPyDesignerCustomWidgetPlugin
 
 from monkez_pyqt6.monkez_widgets.designer_icons import designer_icon
@@ -37,6 +38,7 @@ class PluginSpec:
     children_xml: str = ""
     group: str = GROUP_ACTIONS
     palette_visible: bool = True
+    setup_widget: Callable | None = None
 
 
 def create_plugin(spec: PluginSpec, module_name: str):
@@ -57,7 +59,10 @@ def create_plugin(spec: PluginSpec, module_name: str):
 
     def create_widget(self, parent):
         write_probe(f"{spec.class_name}Plugin.createWidget")
-        return spec.widget_type(parent)
+        widget = spec.widget_type(parent)
+        if spec.setup_widget is not None:
+            spec.setup_widget(widget)
+        return widget
 
     def name(self) -> str:
         return spec.class_name

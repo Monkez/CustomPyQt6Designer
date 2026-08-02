@@ -50,7 +50,7 @@ def collect_diagnostics() -> list[DiagnosticCheck]:
         ),
         DiagnosticCheck(
             "Monkez plugins",
-            len(plugins) == 33,
+            len(plugins) == 34,
             f"{len(plugins)} plugin modules in {plugin_dir()}",
             "Reinstall the package or download a complete portable release.",
         ),

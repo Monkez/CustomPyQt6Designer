@@ -286,6 +286,21 @@ def _draw_pagination(painter: QPainter) -> None:
     painter.drawLine(29, 35, 35, 35)
 
 
+def _draw_table(painter: QPainter) -> None:
+    painter.setPen(QPen(MUTED, 2))
+    painter.setBrush(SURFACE)
+    painter.drawRoundedRect(QRectF(6, 10, 52, 44), 5, 5)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(PRIMARY)
+    painter.drawRoundedRect(QRectF(7, 11, 50, 11), 4, 4)
+    painter.drawRect(QRectF(7, 17, 50, 6))
+    painter.setPen(QPen(MUTED, 1.5))
+    for y in (32, 42):
+        painter.drawLine(10, y, 54, y)
+    for x in (25, 42):
+        painter.drawLine(x, 23, x, 51)
+
+
 _DRAWERS = {
     "button": _draw_button,
     "checkbox": _draw_checkbox,
@@ -313,6 +328,7 @@ _DRAWERS = {
     "calendar": _draw_calendar,
     "lcd": _draw_lcd,
     "pagination": _draw_pagination,
+    "table": _draw_table,
     "badge": _draw_radio,
     "loading": _draw_dial,
     "segments": _draw_pagination,

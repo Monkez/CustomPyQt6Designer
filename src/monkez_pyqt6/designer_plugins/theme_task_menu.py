@@ -35,6 +35,7 @@ TASK_MENU_CLASS_NAMES = {
     "MonkezLinearGauge",
     "MonkezProgressBar",
     "MonkezPagination",
+    "MonkezTable",
     "MonkezRangeSlider",
     "MonkezSegmentedControl",
     "MonkezBreadcrumb",
@@ -90,6 +91,24 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
                 action = QAction(f"Pagination Style: {label}", self)
                 action.triggered.connect(
                     lambda checked=False, value=index, name=label: self._apply_pagination_style(value, name)
+                )
+                self._actions.append(action)
+
+        if type(widget).__name__ == "MonkezTable":
+            for label, index in (("Modern", 0), ("Bordered", 1), ("Minimal", 2), ("Card", 3)):
+                action = QAction(f"Table Style: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, value=index, name=label: self._apply_widget_property(
+                        "styleIndex", value, "TableStyle", name
+                    )
+                )
+                self._actions.append(action)
+            for label, index in (("Compact", 0), ("Default", 1), ("Comfortable", 2)):
+                action = QAction(f"Table Density: {label}", self)
+                action.triggered.connect(
+                    lambda checked=False, value=index, name=label: self._apply_widget_property(
+                        "densityIndex", value, "TableDensity", name
+                    )
                 )
                 self._actions.append(action)
 
@@ -164,7 +183,10 @@ class MonkezThemeTaskMenu(QPyDesignerTaskMenuExtension):
         self._apply_button_property("styleIndex", index, "Style", name)
 
     def _apply_button_property(self, property_name: str, index: int, kind: str, name: str) -> None:
-        write_probe(f"MonkezButton.taskMenu{kind}={index}/{name}")
+        self._apply_widget_property(property_name, index, f"Button{kind}", name)
+
+    def _apply_widget_property(self, property_name: str, index: int, kind: str, name: str) -> None:
+        write_probe(f"{type(self._widget).__name__}.taskMenu{kind}={index}/{name}")
         self._widget.setProperty(property_name, index)
 
         form = QDesignerFormWindowInterface.findFormWindow(self._widget)

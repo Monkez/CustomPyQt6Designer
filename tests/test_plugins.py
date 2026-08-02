@@ -45,9 +45,10 @@ class PluginTests(unittest.TestCase):
             names.append(plugin.name())
             widget.deleteLater()
 
-        self.assertEqual(len(names), 33)
+        self.assertEqual(len(names), 34)
         self.assertNotIn("MetricCard", names)
         self.assertIn("MonkezStatusBadge", names)
+        self.assertIn("MonkezTable", names)
 
     def test_theme_task_menu_exposes_all_runtime_themes(self) -> None:
         theme_task_menu = importlib.import_module("theme_task_menu")
@@ -91,6 +92,18 @@ class PluginTests(unittest.TestCase):
             ],
         )
         pagination.deleteLater()
+
+        table = importlib.import_module("monkez_pyqt6.monkez_widgets").MonkezTable()
+        table_menu = theme_task_menu.MonkezThemeTaskMenu(table)
+        self.assertEqual(
+            [action.text() for action in table_menu.taskActions() if action.text().startswith("Table Style:")],
+            ["Table Style: Modern", "Table Style: Bordered", "Table Style: Minimal", "Table Style: Card"],
+        )
+        self.assertEqual(
+            [action.text() for action in table_menu.taskActions() if action.text().startswith("Table Density:")],
+            ["Table Density: Compact", "Table Density: Default", "Table Density: Comfortable"],
+        )
+        table.deleteLater()
 
         button = importlib.import_module(
             "monkez_pyqt6.monkez_widgets"

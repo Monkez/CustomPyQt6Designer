@@ -61,6 +61,7 @@ from .monkez_widgets import (
     MonkezSpinBox,
     MonkezSwitch,
     MonkezStatusBadge,
+    MonkezTable,
     MonkezTextInput,
     MonkezTimeEdit,
     MonkezToast,
@@ -273,6 +274,24 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         ("displayText, autoDigitCount", "digitCount, segmentStyle", "digitColor, backgroundColor, borderColor"),
         ("display(value)", "setDisplayText(text)", "displayFormatted(value, decimals)"),
         "lcd = MonkezLCDNumber(); lcd.displayFormatted(1234.56, 2)",
+    ),
+    WidgetDoc(
+        "MonkezTable",
+        "Display",
+        "Bang du lieu model/view hieu nang cao voi search, filter, multi-sort, pagination va server mode.",
+        (
+            "styleIndex: 0 Modern | 1 Bordered | 2 Minimal | 3 Card",
+            "densityIndex: 0 Compact | 1 Default | 2 Comfortable",
+            "pageSize, currentPage, paginationEnabled, serverMode, totalItems",
+            "searchEnabled, filtersEnabled, sortingEnabled, editable, rowNumbers, columnLines",
+            "backgroundColor, alternateRowColor, headerBackgroundColor, textColor, borderColor, accentColor",
+        ),
+        (
+            "setColumns(schema)", "setRows(rows, total=None)", "setSearchText(text)",
+            "setColumnFilter(key, value)", "setSort(key, descending, additive)",
+            "selectedRows()", "saveState()", "restoreState(state)", "exportCsv(path)",
+        ),
+        "table = MonkezTable(); table.setColumns(schema); table.setRows(rows)",
     ),
     WidgetDoc(
         "MonkezPagination",
@@ -532,6 +551,17 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("nextPage()", "Move forward, respecting loopNavigation.", "nextPage()", lambda widget: widget.nextPage()),
         ("previousPage()", "Move backward, respecting loopNavigation.", "previousPage()", lambda widget: widget.previousPage()),
     ),
+    "MonkezTable": (
+        ("setSearchText(text)", "Search across all visible data columns.", 'setSearchText("camera")', lambda widget: widget.setSearchText("camera")),
+        ("setColumnFilter(key, value)", "Filter one column by its key.", 'setColumnFilter("status", "online")', lambda widget: widget.setColumnFilter("status", "online")),
+        ("setSort(key, descending, additive)", "Apply single or multi-column sorting.", 'setSort("progress", True)', lambda widget: widget.setSort("progress", True)),
+        ("setCurrentPage(page)", "Select a local or remote data page.", "setCurrentPage(2)", lambda widget: widget.setCurrentPage(2)),
+        ("setPageSize(size)", "Set rows per page.", "setPageSize(10)", lambda widget: widget.setPageSize(10)),
+        ("setStyleIndex(index)", "Switch Modern, Bordered, Minimal or Card style.", "setStyleIndex(3)", lambda widget: widget.setStyleIndex(3)),
+        ("setDensityIndex(index)", "Switch Compact, Default or Comfortable density.", "setDensityIndex(0)", lambda widget: widget.setDensityIndex(0)),
+        ("setLoading(value)", "Show or hide the loading state.", "setLoading(True)", lambda widget: widget.setLoading(True)),
+        ("clearFilters()", "Clear global and per-column filters.", "clearFilters()", lambda widget: widget.clearFilters()),
+    ),
     "MonkezImage": (
         ("setScaleMode(mode)", "Set Fit, Fill, Stretch or Original scaling.", "setScaleMode(MonkezImage.ScaleMode.Fill)", lambda widget: widget.setScaleMode(MonkezImage.ScaleMode.Fill)),
         ("setSmoothScaling(value)", "Enable or disable smooth scaling.", "setSmoothScaling(True)", lambda widget: widget.setSmoothScaling(True)),
@@ -738,7 +768,7 @@ class GalleryWindow(QMainWindow):
         title_box.addWidget(subtitle)
         layout.addLayout(title_box, 1)
 
-        for label, value in (("Widgets", "34"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
+        for label, value in (("Widgets", "35"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
             layout.addWidget(self._metric(label, value))
         return header
 
@@ -1768,6 +1798,27 @@ def _pagination_preview() -> QWidget:
     return widget
 
 
+def _table_preview() -> QWidget:
+    widget = MonkezTable()
+    widget.setColumns(
+        [
+            {"key": "camera", "title": "Camera", "width": 150},
+            {"key": "status", "title": "Status", "type": "badge", "width": 100},
+            {"key": "location", "title": "Location", "width": 150},
+            {"key": "progress", "title": "Quality", "type": "progress", "width": 130},
+        ]
+    )
+    widget.setRows(
+        [
+            {"camera": f"Camera {index:02d}", "status": "Online" if index % 3 else "Offline", "location": f"Line {(index % 4) + 1}", "progress": 48 + index * 4}
+            for index in range(1, 13)
+        ]
+    )
+    widget.setPageSize(10)
+    widget.setMinimumSize(570, 330)
+    return widget
+
+
 def _image_preview() -> QWidget:
     widget = MonkezImage()
     widget.set_image(_demo_pixmap())
@@ -1929,6 +1980,7 @@ _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
     "MonkezCalendarWidget": _calendar_preview,
     "MonkezLCDNumber": _lcd_preview,
     "MonkezPagination": _pagination_preview,
+    "MonkezTable": _table_preview,
     "MonkezImage": _image_preview,
     "MonkezUSBCamera": _camera_preview,
     "MonkezSplashScreen": _splash_preview,
