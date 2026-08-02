@@ -64,6 +64,15 @@ Updated: 2026-08-02
 - Stylesheet-backed `QColor` properties preserve alpha channels.
 - Sliders support horizontal and vertical orientation; progress-bar height no
   longer overrides `textVisible`.
+- `MonkezLCDNumber` accepts literal dot/comma separators through `display()` and
+  `displayText`, can resize its digit count automatically, and provides
+  `displayFormatted()` for US- or European-style numeric formatting.
+- `MonkezRadialGauge` exposes part-specific Designer/Python color names for
+  active ticks, inactive ticks, the needle, central value and scale text while
+  retaining the older generic color properties for compatibility.
+- Gallery combines branding and search into one compact top row, and its Live
+  Preview uses a centered grid cell so widgets with unusual size policies no
+  longer drift toward or clip against the lower edge.
 - Text buttons honor `textColor`; text-input trailing icons use completed-click
   semantics and do not retain stale hit areas after removal.
 - Group-box child layouts reserve the header exactly once and refresh that
@@ -74,7 +83,7 @@ Updated: 2026-08-02
 
 ## Latest verification
 
-- All 98 automated tests pass for 0.5.0.
+- All 100 automated tests pass for 0.5.0.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification passes with all 25 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated

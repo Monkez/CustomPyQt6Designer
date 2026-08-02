@@ -275,8 +275,8 @@ switch.setTrack("#e2e8f0").setAccent("#22c55e").setThumb("#ffffff")
 | `MonkezSlider` | `grooveColor`, `filledColor`, `handleColor`, `grooveHeight`, `handleSize` |
 | `MonkezProgressBar` | `barColor`, `trackColor`, `textColor`, `barHeight`, `radius` |
 | `MonkezDial` | `trackColor`, `valueColor`, `handleColor`, `trackWidth`, `handleSize`, `dialStyle` |
-| `MonkezLCDNumber` | `backgroundColor`, `digitColor`, `borderColor`, `radius` |
-| `MonkezRadialGauge` | `trackColor`, `valueColor`, `textColor`, `warningColor`, `dangerColor` |
+| `MonkezLCDNumber` | `displayText`, `autoDigitCount`, `backgroundColor`, `digitColor`, `borderColor`, `radius` |
+| `MonkezRadialGauge` | `activeTicksColor`, `inactiveTicksColor`, `needleColor`, `valueTextColor`, `scaleTextColor` |
 | `MonkezArcGauge` | `arcWidth`, `warningThreshold`, `dangerThreshold`, `segmented`, `segmentCount` |
 | `MonkezLinearGauge` | `vertical`, `barThickness`, `targetValue`, `showTarget`, `rounded` |
 
@@ -304,7 +304,15 @@ gauge = MonkezRadialGauge()
 gauge.setRange(0, 100)
 gauge.setValue(64)
 gauge.setLabel("Pressure")
-gauge.setAccent("#16a34a").setTrack("#dcfce7").setForeground("#052e16")
+gauge.setActiveTicksColor("#16a34a")
+gauge.setInactiveTicksColor("#dcfce7")
+gauge.setNeedleColor("#ef4444")
+gauge.setValueTextColor("#052e16")
+
+lcd = MonkezLCDNumber()
+lcd.autoDigitCount = True
+lcd.setDisplayText("1,234.56")
+lcd.displayFormatted(1234.56, 2, decimal_separator=",", group_separator=".")
 ```
 
 ### Date and Time Widgets

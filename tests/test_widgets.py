@@ -34,6 +34,7 @@ from monkez_pyqt6.monkez_widgets import (
     MonkezGroupBox,
     MonkezImage,
     MonkezLinearGauge,
+    MonkezLCDNumber,
     MonkezRadialGauge,
     MonkezRadioButton,
     MonkezScrollArea,
@@ -806,6 +807,45 @@ class WidgetTests(unittest.TestCase):
             gauge.deleteLater()
         radio.deleteLater()
         dial.deleteLater()
+
+    def test_lcd_displays_dot_and_comma_separators(self) -> None:
+        lcd = MonkezLCDNumber()
+        lcd.resize(240, 80)
+        lcd.setDigitCount(7)
+        lcd.show()
+
+        lcd.setDisplayText("1234.56")
+        self.app.processEvents()
+        dot_image = lcd.grab().toImage()
+        lcd.setDisplayText("1234,56")
+        self.app.processEvents()
+        comma_image = lcd.grab().toImage()
+
+        self.assertEqual("1234,56", lcd.displayText)
+        self.assertNotEqual(dot_image, comma_image)
+        lcd.autoDigitCount = True
+        self.assertEqual("12.345,67", lcd.displayFormatted(12345.67, 2, ",", "."))
+        self.assertEqual(7, lcd.digitCount())
+        lcd.close()
+        lcd.deleteLater()
+
+    def test_radial_gauge_exposes_part_specific_color_names(self) -> None:
+        gauge = MonkezRadialGauge()
+        gauge.setActiveTicksColor("#22c55e")
+        gauge.setInactiveTicksColor("#cbd5e1")
+        gauge.setNeedleColor("#ef4444")
+        gauge.setValueTextColor("#0f172a")
+        gauge.setScaleTextColor("#64748b")
+
+        self.assertEqual("#22c55e", gauge.activeTicksColor.name())
+        self.assertEqual("#cbd5e1", gauge.inactiveTicksColor.name())
+        self.assertEqual("#ef4444", gauge.needleColor.name())
+        self.assertEqual("#0f172a", gauge.valueTextColor.name())
+        self.assertEqual("#64748b", gauge.scaleTextColor.name())
+        self.assertEqual(gauge.activeTicksColor, gauge.valueColor)
+        self.assertEqual(gauge.inactiveTicksColor, gauge.trackColor)
+        self.assertEqual(gauge.needleColor, gauge.dangerColor)
+        gauge.deleteLater()
 
     def test_combo_popup_has_no_native_black_frame_or_shadow(self) -> None:
         combo = MonkezComboBox()

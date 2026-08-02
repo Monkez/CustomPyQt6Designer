@@ -237,11 +237,49 @@ class MonkezRadialGauge(_GaugeBase):
         self._show_scale_labels = bool(value)
         self.update()
 
+    # Clear RadialGauge-specific aliases. The generic color API remains
+    # available for backward compatibility with existing .ui files and code.
+    def getInactiveTicksColor(self) -> QColor:
+        return self.getTrackColor()
+
+    def setInactiveTicksColor(self, value: QColor) -> None:
+        self.setTrackColor(value)
+
+    def getActiveTicksColor(self) -> QColor:
+        return self.getValueColor()
+
+    def setActiveTicksColor(self, value: QColor) -> None:
+        self.setValueColor(value)
+
+    def getValueTextColor(self) -> QColor:
+        return self.getTextColor()
+
+    def setValueTextColor(self, value: QColor) -> None:
+        self.setTextColor(value)
+
+    def getScaleTextColor(self) -> QColor:
+        return QColor(self._muted_color)
+
+    def setScaleTextColor(self, value: QColor) -> None:
+        self._muted_color = QColor(value)
+        self.update()
+
+    def getNeedleColor(self) -> QColor:
+        return self.getDangerColor()
+
+    def setNeedleColor(self, value: QColor) -> None:
+        self.setDangerColor(value)
+
     _declare_gauge_properties(locals())
     majorTicks = pyqtProperty(int, getMajorTicks, setMajorTicks)
     minorTicks = pyqtProperty(int, getMinorTicks, setMinorTicks)
     showNeedle = pyqtProperty(bool, getShowNeedle, setShowNeedle)
     showScaleLabels = pyqtProperty(bool, getShowScaleLabels, setShowScaleLabels)
+    inactiveTicksColor = pyqtProperty(QColor, getInactiveTicksColor, setInactiveTicksColor)
+    activeTicksColor = pyqtProperty(QColor, getActiveTicksColor, setActiveTicksColor)
+    valueTextColor = pyqtProperty(QColor, getValueTextColor, setValueTextColor)
+    scaleTextColor = pyqtProperty(QColor, getScaleTextColor, setScaleTextColor)
+    needleColor = pyqtProperty(QColor, getNeedleColor, setNeedleColor)
 
 
 class MonkezArcGauge(_GaugeBase):

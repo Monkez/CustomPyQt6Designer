@@ -255,10 +255,10 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
     WidgetDoc(
         "MonkezLCDNumber",
         "Display",
-        "LCD number cho counter, sensor value hoac status numeric.",
-        ("value", "digitCount, segmentStyle, foreground/background colors"),
-        ("display(value)", "setDigitCount(count)"),
-        "lcd = MonkezLCDNumber(); lcd.display(128)",
+        "LCD number cho counter, sensor value, co ho tro dau cham va dau phay.",
+        ("displayText, autoDigitCount", "digitCount, segmentStyle", "digitColor, backgroundColor, borderColor"),
+        ("display(value)", "setDisplayText(text)", "displayFormatted(value, decimals, decimal_separator, group_separator)"),
+        "lcd = MonkezLCDNumber(); lcd.displayFormatted(1234.56, 2, ',', '.')",
     ),
     WidgetDoc(
         "MonkezImage",
@@ -333,9 +333,9 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         "MonkezRadialGauge",
         "Gauge",
         "Gauge tron co ticks, needle, label va scale labels.",
-        ("value, label, suffix", "majorTicks, minorTicks, showNeedle, showScaleLabels", "trackColor, valueColor"),
-        ("setRange(min, max)", "setValue(value)", "setLabel(text)"),
-        "gauge = MonkezRadialGauge(); gauge.setLabel('Pressure'); gauge.setValue(76)",
+        ("value, label, suffix", "majorTicks, minorTicks, showNeedle, showScaleLabels", "activeTicksColor, inactiveTicksColor, needleColor", "valueTextColor, scaleTextColor"),
+        ("setRange(min, max)", "setValue(value)", "setActiveTicksColor(color)", "setNeedleColor(color)"),
+        "gauge = MonkezRadialGauge(); gauge.setActiveTicksColor('#16a34a'); gauge.setNeedleColor('#ef4444')",
     ),
     WidgetDoc(
         "MonkezArcGauge",
@@ -440,7 +440,9 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("setGridVisible(value)", "Show or hide date grid.", "setGridVisible(False)", lambda widget: widget.setGridVisible(False)),
     ),
     "MonkezLCDNumber": (
-        ("display(value)", "Display a number.", "display(128)", lambda widget: widget.display(128)),
+        ("display(value)", "Display a number or text containing dots and commas.", 'display("1,234.56")', lambda widget: widget.display("1,234.56")),
+        ("setDisplayText(text)", "Display literal numeric text with dot/comma separators.", 'setDisplayText("1.234,56")', lambda widget: widget.setDisplayText("1.234,56")),
+        ("displayFormatted(value, ...)", "Format a number with chosen decimal and grouping separators.", 'displayFormatted(1234.56, 2, ",", ".")', lambda widget: widget.displayFormatted(1234.56, 2, ",", ".")),
         ("setDigitCount(count)", "Set digit count.", "setDigitCount(4)", lambda widget: widget.setDigitCount(4)),
     ),
     "MonkezImage": (
@@ -484,6 +486,11 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("setValue(value)", "Set gauge value.", "setValue(76)", lambda widget: widget.setValue(76)),
         ("setLabel(text)", "Set gauge label.", 'setLabel("Pressure")', lambda widget: widget.setLabel("Pressure")),
         ("setSuffix(text)", "Set value suffix.", 'setSuffix("%")', lambda widget: widget.setSuffix("%")),
+        ("setActiveTicksColor(color)", "Set the color of ticks covered by the current value.", 'setActiveTicksColor("#22c55e")', lambda widget: widget.setActiveTicksColor("#22c55e")),
+        ("setInactiveTicksColor(color)", "Set the color of ticks above the current value.", 'setInactiveTicksColor("#dbe4ee")', lambda widget: widget.setInactiveTicksColor("#dbe4ee")),
+        ("setNeedleColor(color)", "Set the gauge needle and center-cap color.", 'setNeedleColor("#ef4444")', lambda widget: widget.setNeedleColor("#ef4444")),
+        ("setValueTextColor(color)", "Set the central numeric value color.", 'setValueTextColor("#0f172a")', lambda widget: widget.setValueTextColor("#0f172a")),
+        ("setScaleTextColor(color)", "Set scale-number and label text color.", 'setScaleTextColor("#64748b")', lambda widget: widget.setScaleTextColor("#64748b")),
     ),
     "MonkezArcGauge": (
         ("setValue(value)", "Set gauge value.", "setValue(68)", lambda widget: widget.setValue(68)),
@@ -519,21 +526,8 @@ class GalleryWindow(QMainWindow):
         root = QFrame()
         root.setObjectName("appRoot")
         root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(18, 16, 18, 18)
-        root_layout.setSpacing(12)
-
-        header = QFrame()
-        header.setObjectName("topHeader")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        title = QLabel("Monkez Widget Docs Lab")
-        title.setObjectName("heroTitle")
-        subtitle = QLabel("Search widgets, inspect supported runtime methods, and apply methods directly to a live preview.")
-        subtitle.setObjectName("heroSubtitle")
-        subtitle.setWordWrap(True)
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        root_layout.addWidget(header)
+        root_layout.setContentsMargins(14, 10, 14, 14)
+        root_layout.setSpacing(8)
         root_layout.addWidget(self._build_docs_tab(), 1)
 
         self.setCentralWidget(root)
@@ -829,13 +823,26 @@ class GalleryWindow(QMainWindow):
     def _build_docs_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(4, 12, 4, 4)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         tools = QHBoxLayout()
+        tools.setSpacing(10)
+        branding = QVBoxLayout()
+        branding.setSpacing(0)
+        title = QLabel("Monkez Widget Docs Lab")
+        title.setObjectName("heroTitle")
+        subtitle = QLabel("Search widgets and test their runtime methods.")
+        subtitle.setObjectName("heroSubtitle")
+        branding.addWidget(title)
+        branding.addWidget(subtitle)
+        tools.addLayout(branding)
+        tools.addSpacing(12)
+
         search = QLineEdit()
         search.setPlaceholderText("Search widget, property or method...")
         search.setObjectName("docsSearch")
+        search.setMinimumWidth(420)
         search.textChanged.connect(self._filter_docs)
         tools.addWidget(search, 1)
 
@@ -888,10 +895,8 @@ class GalleryWindow(QMainWindow):
 
         self._docs_preview_slot = QFrame()
         self._docs_preview_slot.setObjectName("docsPreviewSlot")
-        self._docs_preview_slot_layout = QVBoxLayout(self._docs_preview_slot)
+        self._docs_preview_slot_layout = QGridLayout(self._docs_preview_slot)
         self._docs_preview_slot_layout.setContentsMargins(14, 14, 14, 14)
-        self._docs_preview_slot_layout.setSpacing(8)
-        self._docs_preview_slot_layout.addStretch(1)
         layout.addWidget(self._docs_preview_slot, 1)
 
         self._docs_method_input = QLineEdit()
@@ -1334,9 +1339,7 @@ class GalleryWindow(QMainWindow):
         widget.setObjectName("docsLiveWidget")
         if hasattr(widget, "setThemeIndex"):
             widget.setThemeIndex(0)
-        layout.addStretch(1)
-        layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignCenter)
-        layout.addStretch(1)
+        layout.addWidget(widget, 0, 0, Qt.AlignmentFlag.AlignCenter)
         self._docs_preview_widget = widget
 
     def _reset_doc_preview(self) -> None:
@@ -1856,11 +1859,12 @@ QFrame#topHeader {
 }
 QLabel#heroTitle {
     color: #111827;
-    font-size: 23pt;
+    font-size: 17pt;
     font-weight: 800;
 }
 QLabel#heroSubtitle {
     color: #637083;
+    font-size: 9pt;
 }
 QStackedWidget#galleryStack {
     background: transparent;
@@ -1960,7 +1964,7 @@ QLineEdit#docsSearch {
     background: #ffffff;
     border: 1px solid #d8e0ea;
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 8px 11px;
 }
 QLineEdit#docsSearch:focus {
     border: 2px solid #2563eb;

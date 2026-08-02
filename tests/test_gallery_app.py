@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit
 
 from monkez_pyqt6.gallery_app import (
     FLUENT_METHOD_PROBES,
@@ -52,6 +52,8 @@ class GalleryAppTests(unittest.TestCase):
     def test_gallery_window_can_be_created(self) -> None:
         window = GalleryWindow()
         try:
+            window.show()
+            self.app.processEvents()
             self.assertEqual("Monkez Widget Docs Lab", window.windowTitle())
             self.assertFalse(hasattr(window, "_tabs"))
             self.assertGreater(window._docs_list.count(), 0)
@@ -104,6 +106,20 @@ class GalleryAppTests(unittest.TestCase):
             window._run_doc_method()
             self.assertEqual("#2563eb", window._docs_preview_widget.backgroundColor.name())
             self.assertNotIn("Error:", window._docs_method_status.text())
+
+            image_items = window._docs_list.findItems("MonkezImage", Qt.MatchFlag.MatchExactly)
+            self.assertEqual(1, len(image_items))
+            window._docs_list.setCurrentItem(image_items[0])
+            self.app.processEvents()
+            preview_center = window._docs_preview_widget.geometry().center()
+            slot_center = window._docs_preview_slot.contentsRect().center()
+            self.assertLessEqual(abs(preview_center.x() - slot_center.x()), 2)
+            self.assertLessEqual(abs(preview_center.y() - slot_center.y()), 2)
+
+            title = next(label for label in window.findChildren(QLabel) if label.objectName() == "heroTitle")
+            search = window.findChild(QLineEdit, "docsSearch")
+            self.assertIsNotNone(search)
+            self.assertLessEqual(abs(title.geometry().center().y() - search.geometry().center().y()), 24)
         finally:
             window.close()
             window.deleteLater()
