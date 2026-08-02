@@ -285,6 +285,7 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
             "pageSize, currentPage, paginationEnabled, serverMode, totalItems",
             "searchEnabled, filtersEnabled, sortingEnabled, editable, rowNumbers, columnLines",
             "backgroundColor, alternateRowColor, headerBackgroundColor, textColor, borderColor, accentColor",
+            "borderWidth, borderRadius, controlRadius, controlHeight",
         ),
         (
             "setColumns(schema)", "setRows(rows, total=None)", "setSearchText(text)",

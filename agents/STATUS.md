@@ -90,6 +90,9 @@ Updated: 2026-08-02
   filtering; stable multi-sort; local and server pagination; search debounce;
   selection/editing, CSV export and persisted column/query state. Designer and
   Gallery expose four visual styles and three density modes without WebEngine.
+  Its outer frame, toolbar/footer corners and controls share one coherent
+  geometry system; outer border width/radius and control height/radius are
+  separately editable in Designer.
 - Eight practical components complete the feedback/navigation workflow:
   `MonkezStatusBadge`, `MonkezLoadingIndicator`, `MonkezLoadingOverlay`,
   runtime-only `MonkezToast`, `MonkezRangeSlider`, `MonkezSegmentedControl`,
@@ -124,7 +127,7 @@ Updated: 2026-08-02
 - `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,703 entries (266.6 MiB) and
   passes a full entry read/CRC integrity check.
 - Its SHA-256 is
-  `DEBB52943A6BFE50DDC99F864DDF25EB67B4F0C0014586300B83BC8E6B5B5088`.
+  `34F6BF0D24D5D83FFD9C57368CB59C36699E3E296E4043C358F845C6B5EEDE58`.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully
   without terminating the existing process.

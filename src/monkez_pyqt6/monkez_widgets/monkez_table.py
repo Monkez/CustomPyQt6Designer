@@ -12,6 +12,7 @@ from PyQt6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
     QPoint,
+    QRect,
     QSortFilterProxyModel,
     Qt,
     QTimer,
@@ -41,12 +42,52 @@ from PyQt6.QtWidgets import (
 
 from .monkez_pagination import MonkezPagination
 from .theme_support import ThemeSupportMixin
-from .themes import color_to_css, theme_color, theme_radius
+from .themes import color_to_css, theme_color
 
 
 RAW_VALUE_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 COLUMN_KEY_ROLE = RAW_VALUE_ROLE + 1
 COLUMN_TYPE_ROLE = RAW_VALUE_ROLE + 2
+
+
+def _draw_control_chevron(widget: QWidget, painter: QPainter, color: QColor) -> None:
+    """Draw a consistent dropdown chevron independent of the Windows style."""
+    center_x = widget.width() - 17
+    center_y = widget.height() // 2
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(color, 1.5))
+    painter.drawLine(center_x - 4, center_y - 2, center_x, center_y + 2)
+    painter.drawLine(center_x, center_y + 2, center_x + 4, center_y - 2)
+    painter.restore()
+
+
+class _TableComboBox(QComboBox):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._chevron_color = QColor("#64748b")
+
+    def setChevronColor(self, color: QColor) -> None:
+        self._chevron_color = QColor(color)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        _draw_control_chevron(self, QPainter(self), self._chevron_color)
+
+
+class _TableMenuButton(QToolButton):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._chevron_color = QColor("#64748b")
+
+    def setChevronColor(self, color: QColor) -> None:
+        self._chevron_color = QColor(color)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        _draw_control_chevron(self, QPainter(self), self._chevron_color)
 
 
 @dataclass(frozen=True, slots=True)
@@ -473,15 +514,18 @@ class MonkezTableDelegate(QStyledItemDelegate):
                 progress = max(0.0, min(100.0, float(value)))
             except (TypeError, ValueError):
                 progress = 0.0
-            bar = rect.adjusted(0, max(0, (rect.height() - 8) // 2), 0, -max(0, (rect.height() - 8) // 2))
+            value_width = min(44, max(30, rect.width() // 4))
+            track_width = max(8, rect.width() - value_width - 8)
+            track_rect = QRect(rect.left(), rect.center().y() - 4, track_width, 8)
+            value_rect = QRect(track_rect.right() + 8, rect.top(), max(0, rect.right() - track_rect.right() - 7), rect.height())
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(self._table._surface_alt)
-            painter.drawRoundedRect(bar, 4, 4)
-            fill = bar.adjusted(0, 0, -round(bar.width() * (1 - progress / 100)), 0)
+            painter.drawRoundedRect(track_rect, 4, 4)
+            fill = track_rect.adjusted(0, 0, -round(track_rect.width() * (1 - progress / 100)), 0)
             painter.setBrush(self._table._accent)
             painter.drawRoundedRect(fill, 4, 4)
             painter.setPen(self._table._text)
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{progress:g}%")
+            painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, f"{progress:g}%")
         else:
             text = ("Yes" if bool(value) else "No") if kind == "boolean" else str(value or "")
             positive = bool(value) if kind == "boolean" else text.casefold() in {
@@ -537,6 +581,10 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._column_lines = False
         self._toolbar_visible = True
         self._footer_visible = True
+        self._border_width = 1
+        self._border_radius = 12
+        self._control_radius = 8
+        self._control_height = 36
         self._empty_text = "No data to display"
         self._loading_text = "Loading data..."
         self._loading = False
@@ -551,6 +599,9 @@ class MonkezTable(QWidget, ThemeSupportMixin):
 
         self._build_ui()
         self._connect_signals()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._toolbar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._footer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFont(QFont("Segoe UI", 9))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAccessibleName("Data table")
@@ -574,7 +625,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._search.setAccessibleName("Search table")
         tools.addWidget(self._search, 1)
         tools.addStretch(1)
-        self._columns_button = QToolButton(self._toolbar)
+        self._columns_button = _TableMenuButton(self._toolbar)
         self._columns_button.setObjectName("monkezTableColumns")
         self._columns_button.setText("Columns")
         self._columns_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -625,7 +676,10 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._pagination.setButtonSize(30)
         self._pagination.setCurrentPage(1)
         footer.addWidget(self._pagination)
-        self._page_size_combo = QComboBox(self._footer)
+        self._page_size_label = QLabel("Rows per page", self._footer)
+        self._page_size_label.setObjectName("monkezTablePageSizeLabel")
+        footer.addWidget(self._page_size_label)
+        self._page_size_combo = _TableComboBox(self._footer)
         self._page_size_combo.setObjectName("monkezTablePageSize")
         self._page_size_combo.addItems(["10", "20", "50", "100", "250"])
         self._page_size_combo.setCurrentText("20")
@@ -802,6 +856,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
             return
         column = self._model.columns[column_index]
         menu = QMenu(self)
+        menu.setObjectName("monkezTableMenu")
         if column.sortable and self._sorting_enabled:
             ascending = menu.addAction("Sort ascending")
             descending = menu.addAction("Sort descending")
@@ -824,6 +879,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
 
     def _rebuild_columns_menu(self) -> None:
         menu = QMenu(self._columns_button)
+        menu.setObjectName("monkezTableMenu")
         for index, column in enumerate(self._model.columns):
             action = QAction(column.title, menu, checkable=True)
             action.setChecked(not self._view.isColumnHidden(index))
@@ -878,6 +934,8 @@ class MonkezTable(QWidget, ThemeSupportMixin):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._page_size_label.setVisible(self._pagination_enabled and self.width() >= 660)
+        self._summary.setVisible(self.width() >= 520)
         self._refresh_state()
 
     def _emit_query(self) -> None:
@@ -935,6 +993,10 @@ class MonkezTable(QWidget, ThemeSupportMixin):
             "pageSize": self.getPageSize(),
             "styleIndex": self._style_index,
             "densityIndex": self._density_index,
+            "borderWidth": self._border_width,
+            "borderRadius": self._border_radius,
+            "controlRadius": self._control_radius,
+            "controlHeight": self._control_height,
         }
 
     def restoreState(self, state: Mapping[str, Any]) -> None:
@@ -951,6 +1013,10 @@ class MonkezTable(QWidget, ThemeSupportMixin):
             self._view.setColumnHidden(logical, not bool(saved.get("visible", True)))
         self.setStyleIndex(int(state.get("styleIndex", self._style_index)))
         self.setDensityIndex(int(state.get("densityIndex", self._density_index)))
+        self.setBorderWidth(int(state.get("borderWidth", self._border_width)))
+        self.setBorderRadius(int(state.get("borderRadius", self._border_radius)))
+        self.setControlRadius(int(state.get("controlRadius", self._control_radius)))
+        self.setControlHeight(int(state.get("controlHeight", self._control_height)))
         self.setPageSize(int(state.get("pageSize", self.getPageSize())))
         self.setSearchText(str(state.get("search", "")))
         for key, value in dict(state.get("filters", {})).items():
@@ -991,14 +1057,25 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._refresh_styles()
 
     def _refresh_styles(self) -> None:
-        radius = theme_radius(self._theme)
-        border_width = 0 if self._style_index == 2 else 1
-        outer_radius = radius + 4 if self._style_index == 3 else (max(2, radius // 2) if self._style_index == 1 else radius)
+        outer_radius = self._border_radius
+        control_radius = min(self._control_radius, self._control_height // 2)
+        inner_radius = max(0, outer_radius - self._border_width)
+        border_width = self._border_width
         divider_width = 0 if self._style_index == 2 else 1
         row_height = (34, 42, 50)[self._density_index]
         self._view.verticalHeader().setDefaultSectionSize(row_height)
         self._view.setShowGrid(self._column_lines or self._style_index == 1)
         self._pagination.setTheme(self._theme)
+        self._pagination.setRadius(control_radius)
+        self._pagination.setButtonSize(max(26, self._control_height - 6))
+        self._columns_button.setChevronColor(self._muted)
+        self._page_size_combo.setChevronColor(self._muted)
+        self._search.setFixedHeight(self._control_height)
+        self._columns_button.setFixedHeight(self._control_height)
+        self._columns_button.setMinimumWidth(116)
+        self._page_size_combo.setFixedSize(88, self._control_height)
+        if self.layout() is not None:
+            self.layout().setContentsMargins(border_width, border_width, border_width, border_width)
         surface = color_to_css(self._surface)
         alt = color_to_css(self._surface_alt)
         header = color_to_css(self._header)
@@ -1010,18 +1087,39 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self.setStyleSheet(f"""
             MonkezTable {{ background: {surface}; border: {border_width}px solid {border}; border-radius: {outer_radius}px; }}
             QWidget#monkezTableToolbar, QWidget#monkezTableFooter {{ background: {surface}; color: {text}; }}
-            QWidget#monkezTableToolbar {{ border-bottom: {divider_width}px solid {border}; }}
-            QWidget#monkezTableFooter {{ border-top: {divider_width}px solid {border}; }}
-            QLineEdit#monkezTableSearch, QComboBox#monkezTablePageSize {{ background: {alt}; color: {text}; border: 1px solid {border}; border-radius: {radius}px; padding: 6px 10px; }}
+            QWidget#monkezTableToolbar {{ border-bottom: {divider_width}px solid {border}; border-top-left-radius: {inner_radius}px; border-top-right-radius: {inner_radius}px; }}
+            QWidget#monkezTableFooter {{ border-top: {divider_width}px solid {border}; border-bottom-left-radius: {inner_radius}px; border-bottom-right-radius: {inner_radius}px; }}
+            QLineEdit#monkezTableSearch, QComboBox#monkezTablePageSize {{ background: {surface}; color: {text}; border: 1px solid {border}; border-radius: {control_radius}px; padding: 0 11px; }}
             QLineEdit#monkezTableSearch:focus, QComboBox#monkezTablePageSize:focus {{ border-color: {accent}; }}
-            QToolButton#monkezTableColumns {{ color: {text}; background: {alt}; border: 1px solid {border}; border-radius: {radius}px; padding: 6px 12px; }}
-            QToolButton#monkezTableColumns:hover {{ border-color: {accent}; }}
+            QComboBox#monkezTablePageSize {{ padding-right: 28px; }}
+            QComboBox#monkezTablePageSize::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: 0; background: transparent; }}
+            QComboBox#monkezTablePageSize::down-arrow {{ image: none; width: 0; height: 0; }}
+            QComboBox#monkezTablePageSize QAbstractItemView {{ background: {surface}; color: {text}; border: 1px solid {border}; selection-background-color: {alt}; selection-color: {text}; outline: 0; padding: 4px; }}
+            QToolButton#monkezTableColumns {{ color: {text}; background: {surface}; border: 1px solid {border}; border-radius: {control_radius}px; padding: 0 30px 0 13px; }}
+            QToolButton#monkezTableColumns:hover {{ background: {alt}; border-color: {accent}; }}
+            QToolButton#monkezTableColumns:pressed, QToolButton#monkezTableColumns:open {{ background: {alt}; border-color: {accent}; }}
+            QToolButton#monkezTableColumns::menu-indicator {{ image: none; width: 0; height: 0; }}
+            QMenu#monkezTableMenu {{ background: {surface}; color: {text}; border: 1px solid {border}; border-radius: {control_radius}px; padding: 6px; }}
+            QMenu#monkezTableMenu::item {{ min-height: 28px; padding: 2px 26px 2px 10px; border-radius: {max(3, control_radius - 3)}px; }}
+            QMenu#monkezTableMenu::item:selected {{ background: {alt}; color: {text}; }}
+            QMenu#monkezTableMenu::separator {{ height: 1px; background: {border}; margin: 5px 8px; }}
             QTableView#monkezTableView {{ background: {surface}; alternate-background-color: {alt}; color: {text}; border: 0; gridline-color: {border}; outline: 0; selection-background-color: {accent}; selection-color: {on_accent}; }}
             QTableView#monkezTableView::item {{ padding: 0 9px; border-bottom: 1px solid {border if self._style_index == 1 else alt}; }}
             QTableView#monkezTableView::item:hover:!selected {{ background: {alt}; }}
             QHeaderView::section {{ background: {header}; color: {text}; border: 0; border-bottom: 1px solid {border}; padding: 8px 10px; font-weight: 600; }}
             QLabel#monkezTableState {{ color: {muted}; background: {surface}; font-size: 14px; }}
-            QLabel#monkezTableSummary {{ color: {muted}; }}
+            QLabel#monkezTableSummary, QLabel#monkezTablePageSizeLabel {{ color: {muted}; background: transparent; }}
+            QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+            QScrollBar::handle:vertical {{ background: {border}; min-height: 28px; border-radius: 3px; }}
+            QScrollBar::handle:vertical:hover {{ background: {muted}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+            QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+            QScrollBar::handle:horizontal {{ background: {border}; min-width: 28px; border-radius: 3px; }}
+            QScrollBar::handle:horizontal:hover {{ background: {muted}; }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
+            QTableView#monkezTableView QTableCornerButton::section {{ background: {header}; border: 0; }}
         """)
         self._view.viewport().update()
 
@@ -1043,6 +1141,40 @@ class MonkezTable(QWidget, ThemeSupportMixin):
 
     def setDensityIndex(self, value: int) -> None:
         self._density_index = min(len(self.DENSITY_NAMES) - 1, max(0, int(value)))
+        self._refresh_styles()
+
+    def getBorderWidth(self) -> int:
+        return self._border_width
+
+    def setBorderWidth(self, value: int) -> None:
+        self._border_width = min(8, max(0, int(value)))
+        self._refresh_styles()
+
+    def getBorderRadius(self) -> int:
+        return self._border_radius
+
+    def setBorderRadius(self, value: int) -> None:
+        self._border_radius = min(48, max(0, int(value)))
+        self._refresh_styles()
+
+    def getRadius(self) -> int:
+        return self.getBorderRadius()
+
+    def setRadius(self, value: int) -> None:
+        self.setBorderRadius(value)
+
+    def getControlRadius(self) -> int:
+        return self._control_radius
+
+    def setControlRadius(self, value: int) -> None:
+        self._control_radius = min(24, max(0, int(value)))
+        self._refresh_styles()
+
+    def getControlHeight(self) -> int:
+        return self._control_height
+
+    def setControlHeight(self, value: int) -> None:
+        self._control_height = min(56, max(28, int(value)))
         self._refresh_styles()
 
     def _color_accessors(name: str):
@@ -1128,6 +1260,7 @@ class MonkezTable(QWidget, ThemeSupportMixin):
         self._page_proxy.setEnabled(self._pagination_enabled and not self._server_mode)
         self._pagination.setVisible(self._pagination_enabled)
         self._page_size_combo.setVisible(self._pagination_enabled)
+        self._page_size_label.setVisible(self._pagination_enabled and self.width() >= 660)
         self._refresh_paging()
 
     def getLoading(self) -> bool:
@@ -1200,6 +1333,10 @@ class MonkezTable(QWidget, ThemeSupportMixin):
     styleHint = pyqtProperty(str, getStyleHint, _ignore_hint, stored=False)
     densityIndex = pyqtProperty(int, getDensityIndex, setDensityIndex)
     densityHint = pyqtProperty(str, getDensityHint, _ignore_hint, stored=False)
+    borderWidth = pyqtProperty(int, getBorderWidth, setBorderWidth)
+    borderRadius = pyqtProperty(int, getBorderRadius, setBorderRadius)
+    controlRadius = pyqtProperty(int, getControlRadius, setControlRadius)
+    controlHeight = pyqtProperty(int, getControlHeight, setControlHeight)
     currentPage = pyqtProperty(int, getCurrentPage, setCurrentPage, notify=pageChanged)
     pageSize = pyqtProperty(int, getPageSize, setPageSize, notify=pageSizeChanged)
     totalItems = pyqtProperty(int, getTotalItems, setTotalItems)

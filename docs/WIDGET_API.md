@@ -374,7 +374,7 @@ than allocating a `QTableWidgetItem` for every cell.
 | Remote data | `serverMode`, `totalItems`, `queryChanged` |
 | Selection/editing | `selectedRows()`, `rowActivated`, `cellEdited`, `editable` |
 | Persistence/export | `saveState()`, `restoreState()`, `copySelection()`, `exportCsv()` |
-| Presentation | `styleIndex`, `densityIndex`, `rowNumbers`, `columnLines` |
+| Presentation | `styleIndex`, `densityIndex`, `rowNumbers`, `columnLines`, `borderWidth`, `borderRadius`, `controlRadius`, `controlHeight` |
 
 See [the complete MonkezTable guide](TABLE.md) for column types, local/server
 workflows and state persistence.

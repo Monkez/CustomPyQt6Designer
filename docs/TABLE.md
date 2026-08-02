@@ -93,6 +93,13 @@ Designer also exposes `backgroundColor`, `alternateRowColor`,
 helpers such as `setBackground()`, `setForeground()`, `setBorder()` and
 `setAccent()` map to the same color roles.
 
+The outer frame and toolbar controls can be tuned independently with
+`borderWidth`, `borderRadius`, `controlRadius` and `controlHeight`. The default
+table uses a one-pixel rounded outer frame and consistent 36-pixel search,
+column-menu and page-size controls. Set `borderWidth=0` for a borderless embed,
+or increase `borderRadius` for a card-like surface. These properties are also
+available directly in Qt Designer.
+
 `saveState()` returns a JSON-compatible dictionary containing column order,
 widths and visibility plus search, filters, sort, page size, style and density.
 Pass the dictionary back to `restoreState()` after recreating the same schema.
