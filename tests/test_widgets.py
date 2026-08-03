@@ -978,6 +978,15 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(3, badge.statusIndex)
         self.assertIn("Camera offline", badge.text())
 
+        for theme_index in range(6):
+            badge.themeIndex = theme_index
+            badge.resize(badge.sizeHint())
+            badge.show()
+            self.app.processEvents()
+            badge_image = badge.grab().toImage()
+            self.assertEqual(0, badge_image.pixelColor(0, 0).alpha())
+            self.assertGreater(badge_image.pixelColor(badge_image.width() // 2, 0).alpha(), 200)
+
         spinner = MonkezLoadingIndicator()
         spinner.resize(48, 48)
         spinner.speed = 45

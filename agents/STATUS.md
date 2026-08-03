@@ -41,6 +41,9 @@ Updated: 2026-08-03
   The rule covers combo popups, group boxes, radios, switches, pagination,
   calendar cells, table frames/badges, range-slider handles and dial handles,
   preventing clipped or uneven antialiasing at widget edges.
+- `MonkezStatusBadge` now paints its translucent rounded surface itself and
+  clamps the effective radius to live geometry. All six themes retain clean,
+  transparent corners instead of relying on inconsistent Qt stylesheet clipping.
 - Gallery's color-format selector now uses `MonkezComboBox` instead of a native
   combo, so its right edge, chevron and rounded frame form one coherent control.
 - `MonkezImage` renders directly in its outer widget without a fixed-style
@@ -137,7 +140,7 @@ Updated: 2026-08-03
 - `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,705 entries (266.6 MiB) and
   passes a full entry read/CRC integrity check.
 - Its SHA-256 is
-  `ADEE7785BD2A99AAF9901000993746674172D13722135974EC61CCEA9062B126`.
+  `8783D89EA54C02A73DD6DE780D9462552291BD7E3DABE1D93987F3A2860D618B`.
 - A real same-version running Designer triggered the timestamped build fallback;
   the isolated portable output then built, verified and archived successfully
   without terminating the existing process.

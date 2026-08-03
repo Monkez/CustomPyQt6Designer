@@ -39,6 +39,9 @@ trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung c
   cộng thêm độ dày border.
 - Combobox chọn định dạng màu trong Gallery dùng trực tiếp `MonkezComboBox`, loại
   bỏ phần drop-down native bị lệch viền và khác kiểu với các control bên cạnh.
+- `MonkezStatusBadge` vẽ trực tiếp nền alpha, viền và text bằng QPainter thay vì
+  dựa vào clipping của Qt stylesheet. Radius được giới hạn theo kích thước thực,
+  nên sáu theme đều giữ góc bo rõ ràng kể cả khi radius theme lớn hơn nửa chiều cao.
 
 ## Phạm vi đã kiểm tra
 

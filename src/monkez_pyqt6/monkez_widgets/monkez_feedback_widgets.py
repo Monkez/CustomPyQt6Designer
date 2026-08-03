@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtCore import QRectF, QSize, Qt, QTimer, pyqtProperty, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from ._painting import aligned_corner_radius, aligned_stroke_rect
 from .theme_support import ThemeSupportMixin
 from .themes import color_to_css, theme_color, theme_radius
 
@@ -32,6 +33,8 @@ class MonkezStatusBadge(QLabel, ThemeSupportMixin):
         self._base_text = "Online"
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
         self.setTheme("material")
 
     def sizeHint(self) -> QSize:
@@ -55,14 +58,34 @@ class MonkezStatusBadge(QLabel, ThemeSupportMixin):
         self.setStyleSheet(
             "MonkezStatusBadge {"
             f"color: {color_to_css(self._foreground_color)};"
-            f"background-color: {color_to_css(self._background_color)};"
-            f"border: 1px solid {color_to_css(self._accent_color)};"
-            f"border-radius: {self._radius}px;"
-            f"padding: {self._padding_y}px {self._padding_x}px;"
+            "background-color: transparent;"
+            "border: none;"
+            "padding: 0px;"
             "font-weight: 600;"
             "}"
         )
         self.updateGeometry()
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setOpacity(1.0 if self.isEnabled() else 0.52)
+
+        border_width = 1.0
+        bounds = QRectF(self.rect())
+        badge_rect = aligned_stroke_rect(bounds, border_width)
+        radius = aligned_corner_radius(bounds, self._radius, border_width)
+        painter.setPen(QPen(self._accent_color, border_width))
+        painter.setBrush(self._background_color)
+        painter.drawRoundedRect(badge_rect, radius, radius)
+
+        font = QFont(self.font())
+        font.setWeight(QFont.Weight.DemiBold)
+        painter.setFont(font)
+        painter.setPen(self._foreground_color)
+        text_rect = bounds.adjusted(self._padding_x, self._padding_y, -self._padding_x, -self._padding_y)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self.text())
 
     def setText(self, text: str) -> None:
         self._base_text = str(text)
