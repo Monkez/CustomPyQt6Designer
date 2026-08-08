@@ -135,11 +135,13 @@ Updated: 2026-08-08
   Explorer drag/drop for static images and GIF animation, viewport navigation,
   bounded undo/redo history, debounced autosave, process-local session
   checkpoints and application-data persistence with managed media copies.
+  Edit mode also exposes a compact Save/zoom/fit/alignment toolbar, multi-select
+  through the scene or Layers list, and right-button blank-canvas viewport pan.
   See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification
 
-- The automated suite contains 118 passing tests and covers all 36 public
+- The automated suite contains 119 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

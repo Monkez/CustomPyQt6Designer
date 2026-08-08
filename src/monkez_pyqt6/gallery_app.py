@@ -168,6 +168,7 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         (
             "addElement(type, x, y)", "addNode(text, x, y)", "addChart(values, type)",
             "addMedia(path)", "renameElement(id, new_id)", "updateElement(id, **values)",
+            "selectElements(ids)", "selectedElementIds()", "alignSelected(edge)",
             "connectElements(source, target)", "setElementColor(id, color)",
             "saveSession()", "savePersistent()", "undo()", "redo()",
             "fitContent()", "zoomIn()", "zoomOut()", "moveViewport(dx, dy)",
@@ -481,6 +482,7 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("zoomIn()", "Zoom the canvas viewport in.", "zoomIn()", lambda widget: widget.zoomIn()),
         ("zoomOut()", "Zoom the canvas viewport out.", "zoomOut()", lambda widget: widget.zoomOut()),
         ("saveSession()", "Create an in-memory checkpoint for the current app session.", "saveSession()", lambda widget: widget.saveSession()),
+        ("alignSelected(edge)", "Align two or more selected items.", "alignSelected('left')", lambda widget: widget.alignSelected("left")),
     ),
     "MonkezButton": (
         ("setButtonTypeIndex(index)", "Switch button style: 0 Filled, 1 Outlined, 2 Text.", "setButtonTypeIndex(1)", lambda widget: widget.setButtonTypeIndex(1)),

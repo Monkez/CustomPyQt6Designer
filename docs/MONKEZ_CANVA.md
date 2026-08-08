@@ -32,6 +32,14 @@ Editor có năm tab:
   và chuyển đổi pan/select mode.
 - **Save**: checkpoint trong phiên, lưu/đọc bền, undo và redo.
 
+Khi bật Edit Mode, thanh quick actions nằm ngay phía trên canvas cung cấp Save,
+zoom out, 100%, zoom in, Fit và các lệnh căn Left, Right, Top, Bottom, tâm ngang,
+tâm dọc hoặc đúng tâm hai chiều. Các nút căn chỉ bật khi có từ hai item được chọn.
+
+Có ba cách chọn nhiều item: giữ `Ctrl` khi bấm, kéo rubber-band qua nhiều item,
+hoặc chọn nhiều dòng trong tab Layers. Giữ chuột phải trên vùng canvas trống rồi
+kéo để di chuyển viewport mà không làm mất selection hiện tại.
+
 `fitContent()` có thể được gọi trước `show()`; canvas sẽ hoãn việc tính tỷ lệ đến
 khi viewport có kích thước thật. Zoom tự động được giới hạn trong khoảng dễ thao
 tác, tránh graph bị thu thành một chấm nhỏ trên màn hình lớn.
@@ -83,6 +91,11 @@ canvas.selectElement("camera-input")
 canvas.renameElement("camera-input", "usb-camera-01")
 canvas.duplicateSelected()
 canvas.bringSelectedToFront()
+
+canvas.selectElements(["usb-camera-01", "result-node"])
+canvas.alignSelected("top")
+canvas.alignSelected("hcenter")
+canvas.alignSelected("center")
 ```
 
 Không thể dùng ID rỗng hoặc trùng. Connector giữ tham chiếu đúng khi ID endpoint
@@ -91,7 +104,8 @@ mapping riêng.
 
 Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`,
 `elementClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và
-`documentChanged()`.
+`documentChanged()`. Signal `selectionSetChanged(list)` cung cấp toàn bộ ID đang
+được chọn; `selectedElementIds()` trả về cùng tập ID theo thứ tự document.
 
 ## Lưu và đọc tài liệu
 

@@ -168,6 +168,50 @@ class WidgetTests(unittest.TestCase):
         self.assertFalse(item.flags() & item.GraphicsItemFlag.ItemIsMovable)
         canvas.deleteLater()
 
+    def test_canva_quick_toolbar_multiselect_alignment_and_right_pan(self) -> None:
+        window = QDialog()
+        layout = QVBoxLayout(window)
+        canvas = MonkezCanva()
+        layout.addWidget(canvas)
+        first = canvas.addElement("rectangle", 0, 0, 100, 60, element_id="first")
+        second = canvas.addElement("rectangle", 220, 100, 160, 80, element_id="second")
+        third = canvas.addElement("rectangle", 480, 220, 120, 90, element_id="third")
+        window.resize(900, 600)
+        window.show()
+        canvas.setEditMode(True)
+        self.app.processEvents()
+
+        self.assertFalse(canvas._quick_toolbar.isHidden())
+        self.assertEqual([first, second, third], canvas.selectElements([first, second, third]))
+        self.assertEqual([first, second, third], canvas.selectedElementIds())
+        self.assertTrue(all(button.isEnabled() for button in canvas._quick_toolbar._align_buttons))
+
+        self.assertTrue(canvas.alignSelected("left"))
+        left_edges = [canvas.element(element_id).sceneBoundingRect().left() for element_id in (first, second, third)]
+        self.assertAlmostEqual(left_edges[0], left_edges[1])
+        self.assertAlmostEqual(left_edges[1], left_edges[2])
+
+        canvas.selectElements([first, second, third])
+        self.assertTrue(canvas.alignSelected("center"))
+        centers = [canvas.element(element_id).sceneBoundingRect().center() for element_id in (first, second, third)]
+        self.assertAlmostEqual(centers[0].x(), centers[1].x())
+        self.assertAlmostEqual(centers[1].x(), centers[2].x())
+        self.assertAlmostEqual(centers[0].y(), centers[1].y())
+        self.assertAlmostEqual(centers[1].y(), centers[2].y())
+
+        view = canvas.view()
+        start = QPoint(view.viewport().width() // 2, view.viewport().height() // 2)
+        before = view.horizontalScrollBar().value()
+        QTest.mousePress(view.viewport(), Qt.MouseButton.RightButton, pos=start)
+        QTest.mouseMove(view.viewport(), start + QPoint(70, 0), delay=10)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.RightButton, pos=start + QPoint(70, 0))
+        self.assertNotEqual(before, view.horizontalScrollBar().value())
+
+        canvas.setEditMode(False)
+        self.assertTrue(canvas._quick_toolbar.isHidden())
+        window.close()
+        window.deleteLater()
+
     def test_canva_editor_chord_toggles_edit_mode(self) -> None:
         window = QDialog()
         layout = QVBoxLayout(window)

@@ -34,6 +34,7 @@ from PyQt6.QtGui import (
     QShortcut,
 )
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QColorDialog,
     QDialog,
     QDoubleSpinBox,
@@ -370,6 +371,7 @@ class _CanvasEditorToolbox(QDialog):
     def __init__(self, canvas: "MonkezCanva") -> None:
         super().__init__(canvas.window())
         self.canvas = canvas
+        self._syncing_layers = False
         self.setWindowTitle("MonkezCanva Editor")
         self.setWindowFlag(Qt.WindowType.Tool, True)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
@@ -391,6 +393,7 @@ class _CanvasEditorToolbox(QDialog):
         canvas.elementAdded.connect(lambda _element_id: self.refreshLayers())
         canvas.elementRemoved.connect(lambda _element_id: self.refreshLayers())
         canvas.selectionChanged.connect(self._sync_inspector)
+        canvas.selectionSetChanged.connect(lambda _element_ids: self.refreshLayers())
         canvas.autoSaved.connect(self._show_save_status)
         self.refreshLayers()
 
@@ -492,7 +495,8 @@ class _CanvasEditorToolbox(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         self._layers = QListWidget()
-        self._layers.currentItemChanged.connect(self._select_layer)
+        self._layers.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._layers.itemSelectionChanged.connect(self._select_layers)
         layout.addWidget(self._layers, 1)
         refresh = QPushButton("Refresh item list")
         refresh.clicked.connect(self.refreshLayers)
@@ -537,7 +541,7 @@ class _CanvasEditorToolbox(QDialog):
         persistent = QGroupBox("Persistent across app restarts")
         persistent_layout = QVBoxLayout(persistent)
         save_persistent = QPushButton("Save persistent now")
-        save_persistent.clicked.connect(self.canvas.savePersistent)
+        save_persistent.clicked.connect(lambda: self.canvas.savePersistent())
         load_persistent = QPushButton("Load persistent data")
         load_persistent.clicked.connect(self.canvas.loadPersistent)
         persistent_layout.addWidget(save_persistent)
@@ -621,23 +625,91 @@ class _CanvasEditorToolbox(QDialog):
         del blockers
 
     def refreshLayers(self) -> None:
-        selected = self.canvas.selectedElementId()
+        if self._syncing_layers:
+            return
+        selected = set(self.canvas.selectedElementIds())
         blocker = QSignalBlocker(self._layers)
         self._layers.clear()
         for item in sorted(self.canvas._elements.values(), key=lambda value: value.zValue(), reverse=True):
             label = QListWidgetItem(f"{item.element_id}  ·  {item.kind}  ·  {item.text}")
             label.setData(Qt.ItemDataRole.UserRole, item.element_id)
             self._layers.addItem(label)
-            if item.element_id == selected:
-                self._layers.setCurrentItem(label)
+            if item.element_id in selected:
+                label.setSelected(True)
         del blocker
 
-    def _select_layer(self, current: QListWidgetItem | None, _previous) -> None:
-        if current is not None:
-            self.canvas.selectElement(str(current.data(Qt.ItemDataRole.UserRole)))
+    def _select_layers(self) -> None:
+        element_ids = [
+            str(item.data(Qt.ItemDataRole.UserRole))
+            for item in self._layers.selectedItems()
+        ]
+        self._syncing_layers = True
+        try:
+            self.canvas.selectElements(element_ids)
+        finally:
+            self._syncing_layers = False
+        self.refreshLayers()
 
     def _show_save_status(self, target: str) -> None:
         self._save_status.setText(f"Saved: {target}")
+
+
+class _CanvasQuickToolbar(QFrame):
+    """Compact in-canvas actions shown only while runtime editing is active."""
+
+    def __init__(self, canvas: "MonkezCanva") -> None:
+        super().__init__(canvas)
+        self.canvas = canvas
+        self.setObjectName("monkezCanvaQuickToolbar")
+        self.setStyleSheet(
+            "#monkezCanvaQuickToolbar { background: #ffffff; border: 1px solid #dbe3ee; }"
+            "#monkezCanvaQuickToolbar QToolButton { padding: 5px 8px; min-height: 24px; }"
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 5, 8, 5)
+        layout.setSpacing(4)
+        self._button("Save", lambda _checked=False: canvas.savePersistent(), "Save persistent data now")
+        self._separator(layout)
+        self._button("-", canvas.zoomOut, "Zoom out")
+        self._button("1:1", canvas.resetZoom, "Reset zoom to 100%")
+        self._button("+", canvas.zoomIn, "Zoom in")
+        self._button("Fit", canvas.fitContent)
+        self._separator(layout)
+        self._align_buttons: list[QToolButton] = []
+        for label, alignment in (
+            ("Left", "left"), ("H-C", "hcenter"), ("Right", "right"),
+            ("Top", "top"), ("V-C", "vcenter"), ("Bottom", "bottom"),
+            ("Center", "center"),
+        ):
+            button = self._button(
+                label,
+                lambda _checked=False, value=alignment: canvas.alignSelected(value),
+            )
+            button.setToolTip(f"Align selected items: {alignment}")
+            self._align_buttons.append(button)
+        layout.addStretch(1)
+        canvas.selectionSetChanged.connect(self._update_alignment_state)
+        self._update_alignment_state(canvas.selectedElementIds())
+
+    def _button(self, label: str, callback, tooltip: str = "") -> QToolButton:
+        button = QToolButton(self)
+        button.setText(label)
+        button.setToolTip(tooltip or label)
+        button.clicked.connect(callback)
+        self.layout().addWidget(button)
+        return button
+
+    @staticmethod
+    def _separator(layout: QHBoxLayout) -> None:
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.VLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(line)
+
+    def _update_alignment_state(self, element_ids: list[str]) -> None:
+        enabled = len(element_ids) >= 2
+        for button in self._align_buttons:
+            button.setEnabled(enabled)
 
 
 class _CanvasView(QGraphicsView):
@@ -649,6 +721,8 @@ class _CanvasView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAcceptDrops(True)
+        self._right_pan_active = False
+        self._right_pan_origin = None
 
     def wheelEvent(self, event) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -662,7 +736,34 @@ class _CanvasView(QGraphicsView):
             return
         super().wheelEvent(event)
 
+    def mousePressEvent(self, event) -> None:
+        point = event.position().toPoint()
+        if event.button() == Qt.MouseButton.RightButton and self.itemAt(point) is None:
+            self._right_pan_active = True
+            self._right_pan_origin = point
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._right_pan_active and self._right_pan_origin is not None:
+            point = event.position().toPoint()
+            delta = point - self._right_pan_origin
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            self._right_pan_origin = point
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
     def mouseReleaseEvent(self, event) -> None:
+        if self._right_pan_active and event.button() == Qt.MouseButton.RightButton:
+            self._right_pan_active = False
+            self._right_pan_origin = None
+            self.viewport().unsetCursor()
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
         item = self.itemAt(event.position().toPoint())
         if isinstance(item, _CanvasElement):
@@ -713,6 +814,7 @@ class MonkezCanva(QWidget):
     elementRemoved = pyqtSignal(str)
     elementClicked = pyqtSignal(str)
     selectionChanged = pyqtSignal(str)
+    selectionSetChanged = pyqtSignal(list)
     documentChanged = pyqtSignal()
     diagnosticMessage = pyqtSignal(str)
     itemIdChanged = pyqtSignal(str, str)
@@ -748,6 +850,10 @@ class MonkezCanva(QWidget):
         self._view = _CanvasView(self, self._scene)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._quick_toolbar = _CanvasQuickToolbar(self)
+        self._quick_toolbar.hide()
+        layout.addWidget(self._quick_toolbar)
         layout.addWidget(self._view)
         self._toolbox: _CanvasEditorToolbox | None = None
         self._scene.selectionChanged.connect(self._emit_selection)
@@ -796,8 +902,15 @@ class MonkezCanva(QWidget):
         return list(self._elements)
 
     def selectedElementId(self) -> str:
-        selected = self._scene.selectedItems()
-        return selected[0].element_id if selected and isinstance(selected[0], _CanvasElement) else ""
+        selected = self.selectedElementIds()
+        return selected[0] if selected else ""
+
+    def selectedElementIds(self) -> list[str]:
+        return [
+            element_id
+            for element_id, item in self._elements.items()
+            if item.isSelected()
+        ]
 
     def addElement(
         self,
@@ -856,16 +969,97 @@ class MonkezCanva(QWidget):
         options.setdefault("text", Path(source).name)
         return self.addElement(kind, x, y, source=source, **options)
 
-    def selectElement(self, element_id: str) -> bool:
+    def selectElement(self, element_id: str, additive: bool = False) -> bool:
         item = self._elements.get(str(element_id))
         if item is None:
             return False
-        self._scene.clearSelection()
+        if not additive:
+            self._scene.clearSelection()
         if self._edit_mode:
             item.setSelected(True)
+        else:
+            self.selectionChanged.emit(item.element_id)
+            self.selectionSetChanged.emit([item.element_id])
         self._view.centerOn(item)
-        self.selectionChanged.emit(item.element_id)
         return True
+
+    def selectElements(self, element_ids, clear: bool = True) -> list[str]:
+        requested = [str(element_id) for element_id in element_ids]
+        if clear:
+            self._scene.clearSelection()
+        if not self._edit_mode:
+            return []
+        selected = []
+        for element_id in requested:
+            item = self._elements.get(element_id)
+            if item is not None:
+                item.setSelected(True)
+                selected.append(element_id)
+        return selected
+
+    def alignSelected(self, alignment: str) -> bool:
+        alignment = str(alignment).lower().replace("-", "").replace("_", "")
+        aliases = {"horizontalcenter": "hcenter", "verticalcenter": "vcenter", "middle": "center"}
+        alignment = aliases.get(alignment, alignment)
+        supported = {"left", "right", "top", "bottom", "hcenter", "vcenter", "center"}
+        if alignment not in supported:
+            raise ValueError(f"Unsupported MonkezCanva alignment: {alignment}")
+        items = [self._elements[element_id] for element_id in self.selectedElementIds()]
+        if len(items) < 2:
+            return False
+        bounds = [item.sceneBoundingRect() for item in items]
+        group = QRectF(bounds[0])
+        for item_bounds in bounds[1:]:
+            group = group.united(item_bounds)
+
+        previous_restoring = self._restoring
+        previous_snap = self._snap_to_grid
+        self._restoring = True
+        self._snap_to_grid = False
+        try:
+            for item, item_bounds in zip(items, bounds):
+                dx = 0.0
+                dy = 0.0
+                if alignment == "left":
+                    dx = group.left() - item_bounds.left()
+                elif alignment == "right":
+                    dx = group.right() - item_bounds.right()
+                elif alignment == "top":
+                    dy = group.top() - item_bounds.top()
+                elif alignment == "bottom":
+                    dy = group.bottom() - item_bounds.bottom()
+                elif alignment == "hcenter":
+                    dx = group.center().x() - item_bounds.center().x()
+                elif alignment == "vcenter":
+                    dy = group.center().y() - item_bounds.center().y()
+                else:
+                    dx = group.center().x() - item_bounds.center().x()
+                    dy = group.center().y() - item_bounds.center().y()
+                item.setPos(item.pos() + QPointF(dx, dy))
+        finally:
+            self._snap_to_grid = previous_snap
+            self._restoring = previous_restoring
+        if not previous_restoring:
+            self.documentChanged.emit()
+        self.diagnosticMessage.emit(
+            f"Aligned {len(items)} items: {alignment}"
+        )
+        return True
+
+    def alignSelectedLeft(self) -> bool:
+        return self.alignSelected("left")
+
+    def alignSelectedRight(self) -> bool:
+        return self.alignSelected("right")
+
+    def alignSelectedTop(self) -> bool:
+        return self.alignSelected("top")
+
+    def alignSelectedBottom(self) -> bool:
+        return self.alignSelected("bottom")
+
+    def alignSelectedCenter(self) -> bool:
+        return self.alignSelected("center")
 
     def renameElement(self, element_id: str, new_id: str) -> str:
         item = self._required_element(element_id)
@@ -1296,6 +1490,7 @@ class MonkezCanva(QWidget):
         self._edit_mode = enabled
         for item in self._elements.values():
             item.setEditable(enabled)
+        self._quick_toolbar.setVisible(enabled)
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag if enabled else QGraphicsView.DragMode.ScrollHandDrag)
         if enabled:
             if self._toolbox is None:
@@ -1389,7 +1584,9 @@ class MonkezCanva(QWidget):
         self.documentChanged.emit()
 
     def _emit_selection(self) -> None:
-        self.selectionChanged.emit(self.selectedElementId())
+        element_ids = self.selectedElementIds()
+        self.selectionChanged.emit(element_ids[0] if element_ids else "")
+        self.selectionSetChanged.emit(element_ids)
 
     editMode = pyqtProperty(bool, getEditMode, setEditMode)
     editorShortcutEnabled = pyqtProperty(bool, getShortcutEnabled, setShortcutEnabled)
