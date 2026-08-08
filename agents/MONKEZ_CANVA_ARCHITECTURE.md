@@ -26,7 +26,8 @@ can ignore the signal or route it into their own logger.
 - `_CanvasScene`: background/grid painting.
 - `_CanvasElement`: shape, node and chart rendering plus resize.
 - `_CanvasConnector`: cubic edge tracking both endpoints.
-- `_CanvasToolbox`: owned `Qt.Tool` palette.
+- `_CanvasEditorToolbox`: five-tab editor for element creation, deep property
+  inspection, ID/layer management, viewport controls and persistence/history.
 - `monkez_10_canva_plugin.py`: Designer adapter and preview.
 
 Elements and connectors use stable string IDs. Application code must retain IDs
@@ -38,16 +39,23 @@ Document format version 1 is JSON-only and does not evaluate Python. Loading
 validates the format and supported element kinds. Future custom element plugins
 need a registry/allowlist; importing module names from documents is unacceptable.
 
+## Autosave and durable storage
+
+Autosave is debounce-based. It updates the in-memory draft and bounded history;
+when `persistenceKey` is configured it also writes the durable JSON. Explicit
+session checkpoints remain process-local. Persistent saves copy media into the
+application-data asset directory so a restart does not depend on a temporary
+drag source.
+
 ## Roadmap
 
-1. Command-based undo/redo, clipboard and keyboard nudging.
+1. Clipboard, keyboard nudging and mixed-value multi-selection editing.
 2. Public element registry using schema + renderer/editor factories.
 3. Typed ports, connector validation, orthogonal routing and auto layout.
-4. Property inspector with mixed-value multi-selection editing.
-5. Declarative data bindings and throttled live chart updates.
-6. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
-7. Large-scene profiling, level-of-detail rendering and culling tests.
-8. Collaboration after operation IDs and conflict semantics are stable.
+4. Declarative data bindings and throttled live chart updates.
+5. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
+6. Large-scene profiling, level-of-detail rendering and culling tests.
+7. Collaboration after operation IDs and conflict semantics are stable.
 
 ## Verification focus
 

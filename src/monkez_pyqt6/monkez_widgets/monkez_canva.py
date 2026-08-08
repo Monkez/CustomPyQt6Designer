@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import (
+    QSignalBlocker,
+    QStandardPaths,
     QEasingCurve,
     QPointF,
     QPropertyAnimation,
@@ -23,14 +26,19 @@ from PyQt6.QtGui import (
     QColor,
     QFont,
     QKeySequence,
+    QMovie,
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QShortcut,
 )
 from PyQt6.QtWidgets import (
     QColorDialog,
     QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
     QFrame,
     QGraphicsItem,
     QGraphicsObject,
@@ -41,8 +49,11 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
-    QScrollArea,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -57,6 +68,8 @@ _ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
     "node": (180, 96),
     "bar_chart": (260, 160),
     "line_chart": (260, 160),
+    "image": (280, 180),
+    "animated_image": (280, 180),
 }
 
 
@@ -111,6 +124,9 @@ class _CanvasElement(QGraphicsObject):
         self.text_color = _color(options.get("textColor", "#0f172a"), "#0f172a")
         self.data = list(options.get("data", [32, 68, 46, 82, 58]))
         self.metadata = dict(options.get("metadata", {}))
+        self.source = str(options.get("source", ""))
+        self._pixmap = QPixmap()
+        self._movie: QMovie | None = None
         self._highlight = QColor()
         self._resizing = False
         self._resize_origin = QPointF()
@@ -120,6 +136,38 @@ class _CanvasElement(QGraphicsObject):
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
         self.setAcceptHoverEvents(True)
+        self.setOpacity(max(0.0, min(1.0, float(options.get("opacity", 1.0)))))
+        self.setRotation(float(options.get("rotation", 0.0)))
+        self.setZValue(float(options.get("z", 0.0)))
+        self._load_media()
+
+    def _load_media(self) -> None:
+        self.releaseMedia()
+        self._pixmap = QPixmap()
+        if not self.source:
+            return
+        if self.kind == "animated_image":
+            movie = QMovie(self.source)
+            if movie.isValid():
+                movie.frameChanged.connect(self.update)
+                movie.start()
+                self._movie = movie
+        elif self.kind == "image":
+            self._pixmap = QPixmap(self.source)
+
+    def releaseMedia(self) -> None:
+        if self._movie is not None:
+            self._movie.stop()
+            self._movie.setFileName("")
+            self._movie.deleteLater()
+            self._movie = None
+        self._pixmap = QPixmap()
+
+    def setSource(self, source: str) -> None:
+        self.source = str(source)
+        self._load_media()
+        self.update()
+        self.changed.emit(self.element_id)
 
     def boundingRect(self) -> QRectF:
         return self._rect.adjusted(-5, -5, 5, 5)
@@ -138,7 +186,9 @@ class _CanvasElement(QGraphicsObject):
         painter.setPen(QPen(outline, 2.0))
         painter.setBrush(self.background)
 
-        if self.kind == "ellipse":
+        if self.kind in ("image", "animated_image"):
+            self._paint_media(painter, rect)
+        elif self.kind == "ellipse":
             painter.drawEllipse(rect)
         elif self.kind in ("bar_chart", "line_chart"):
             painter.drawRoundedRect(rect, 10, 10)
@@ -171,6 +221,26 @@ class _CanvasElement(QGraphicsObject):
             painter.setPen(QPen(QColor("#2563eb"), 1.5))
             for point in (rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()):
                 painter.drawRect(QRectF(point.x() - 4, point.y() - 4, 8, 8))
+
+    def _paint_media(self, painter: QPainter, rect: QRectF) -> None:
+        pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
+        painter.drawRoundedRect(rect, 8, 8)
+        if pixmap.isNull():
+            painter.setPen(self.text_color)
+            painter.drawText(rect.adjusted(10, 10, -10, -10), Qt.AlignmentFlag.AlignCenter, "Drop image / GIF")
+            return
+        scaled = pixmap.scaled(
+            rect.size().toSize(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        target = QRectF(
+            rect.center().x() - scaled.width() / 2,
+            rect.center().y() - scaled.height() / 2,
+            scaled.width(),
+            scaled.height(),
+        )
+        painter.drawPixmap(target, scaled, QRectF(scaled.rect()))
 
     def _paint_chart(self, painter: QPainter, rect: QRectF) -> None:
         values = [float(value) for value in self.data if isinstance(value, (int, float))]
@@ -257,6 +327,10 @@ class _CanvasElement(QGraphicsObject):
             "textColor": self.text_color.name(QColor.NameFormat.HexArgb),
             "data": list(self.data),
             "metadata": dict(self.metadata),
+            "source": self.source,
+            "opacity": self.opacity(),
+            "rotation": self.rotation(),
+            "z": self.zValue(),
         }
 
 
@@ -290,27 +364,44 @@ class _CanvasConnector(QGraphicsPathItem):
         }
 
 
-class _CanvasToolbox(QDialog):
+class _CanvasEditorToolbox(QDialog):
+    """Floating multi-tab editor for elements, layers, viewport and persistence."""
+
     def __init__(self, canvas: "MonkezCanva") -> None:
         super().__init__(canvas.window())
         self.canvas = canvas
-        self.setWindowTitle("MonkezCanva Elements")
+        self.setWindowTitle("MonkezCanva Editor")
         self.setWindowFlag(Qt.WindowType.Tool, True)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        self.setMinimumWidth(260)
+        self.setMinimumSize(430, 600)
         root = QVBoxLayout(self)
-        title = QLabel("ELEMENTS")
+        title = QLabel("MONKEZ CANVA EDITOR")
         title.setStyleSheet("font-weight: 700; color: #64748b; padding: 4px")
         root.addWidget(title)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
+        tabs = QTabWidget()
+        tabs.addTab(self._elements_tab(), "Elements")
+        tabs.addTab(self._inspector_tab(), "Inspector")
+        tabs.addTab(self._layers_tab(), "Layers")
+        tabs.addTab(self._view_tab(), "View")
+        tabs.addTab(self._save_tab(), "Save")
+        root.addWidget(tabs, 1)
+        hint = QLabel("Ctrl+D, E: close · Delete: remove · Ctrl+wheel: zoom")
+        hint.setStyleSheet("color: #64748b; padding: 4px")
+        root.addWidget(hint)
+        canvas.elementAdded.connect(lambda _element_id: self.refreshLayers())
+        canvas.elementRemoved.connect(lambda _element_id: self.refreshLayers())
+        canvas.selectionChanged.connect(self._sync_inspector)
+        canvas.autoSaved.connect(self._show_save_status)
+        self.refreshLayers()
+
+    def _elements_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
         groups = {
             "Basics": (("Text", "text"), ("Rectangle", "rectangle"), ("Ellipse", "ellipse"), ("Button", "button")),
             "Charts": (("Bar chart", "bar_chart"), ("Line chart", "line_chart")),
-            "Flow diagram": (("Node", "node"),),
+            "Flow": (("Node", "node"),),
+            "Media": (("Image…", "image"), ("Animated GIF…", "animated_image")),
         }
         for group_name, entries in groups.items():
             group = QGroupBox(group_name)
@@ -318,37 +409,235 @@ class _CanvasToolbox(QDialog):
             for index, (label, kind) in enumerate(entries):
                 button = QToolButton()
                 button.setText(label)
-                button.setMinimumSize(98, 42)
-                button.clicked.connect(lambda _checked=False, value=kind: canvas.addElement(value))
+                button.setMinimumSize(110, 42)
+                if kind in ("image", "animated_image"):
+                    button.clicked.connect(lambda _checked=False, value=kind: self._choose_media(value))
+                else:
+                    button.clicked.connect(lambda _checked=False, value=kind: self.canvas.addElement(value))
                 grid.addWidget(button, index // 2, index % 2)
-            content_layout.addWidget(group)
-        content_layout.addStretch(1)
-        scroll.setWidget(content)
-        root.addWidget(scroll, 1)
+            layout.addWidget(group)
+        layout.addStretch(1)
+        buttons = QHBoxLayout()
+        duplicate = QPushButton("Duplicate")
+        duplicate.clicked.connect(self.canvas.duplicateSelected)
+        delete = QPushButton("Delete")
+        delete.clicked.connect(self.canvas.deleteSelected)
+        buttons.addWidget(duplicate)
+        buttons.addWidget(delete)
+        layout.addLayout(buttons)
+        drop_hint = QLabel("Drag PNG, JPG, WebP or GIF files directly onto the canvas.")
+        drop_hint.setWordWrap(True)
+        drop_hint.setStyleSheet("color: #64748b")
+        layout.addWidget(drop_hint)
+        return page
 
+    def _inspector_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        form = QFormLayout()
+        self._type_label = QLabel("No selection")
+        self._id_edit = QLineEdit()
+        self._text_edit = QLineEdit()
+        self._source_edit = QLineEdit()
+        form.addRow("Type", self._type_label)
+        form.addRow("Item ID", self._id_edit)
+        form.addRow("Text / title", self._text_edit)
+        form.addRow("Media source", self._source_edit)
+        self._number_fields: dict[str, QDoubleSpinBox] = {}
+        fields = (
+            ("x", "X", -100000.0, 100000.0, 1),
+            ("y", "Y", -100000.0, 100000.0, 1),
+            ("width", "Width", 24.0, 100000.0, 1),
+            ("height", "Height", 24.0, 100000.0, 1),
+            ("rotation", "Rotation", -3600.0, 3600.0, 1),
+            ("opacity", "Opacity", 0.0, 1.0, 2),
+            ("z", "Layer Z", -10000.0, 10000.0, 1),
+        )
+        for key, label, minimum, maximum, decimals in fields:
+            field = QDoubleSpinBox()
+            field.setRange(minimum, maximum)
+            field.setDecimals(decimals)
+            field.setSingleStep(0.1 if key == "opacity" else 1.0)
+            self._number_fields[key] = field
+            form.addRow(label, field)
+        layout.addLayout(form)
+        colors = QGridLayout()
+        for column, (label, role) in enumerate(
+            (("Accent", "accent"), ("Background", "background"), ("Text", "text"))
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, value=role: self._choose_color(value))
+            colors.addWidget(button, 0, column)
+        layout.addLayout(colors)
         actions = QHBoxLayout()
-        fit_button = QPushButton("Fit view")
-        fit_button.clicked.connect(canvas.fitContent)
-        color_button = QPushButton("Color")
-        color_button.clicked.connect(self._choose_color)
-        delete_button = QPushButton("Delete")
-        delete_button.clicked.connect(canvas.deleteSelected)
-        actions.addWidget(fit_button)
-        actions.addWidget(color_button)
-        actions.addWidget(delete_button)
-        root.addLayout(actions)
-        hint = QLabel("Ctrl+D, E: close edit mode\nDel: delete · Ctrl+wheel: zoom")
-        hint.setStyleSheet("color: #64748b; padding: 4px")
-        root.addWidget(hint)
+        browse = QPushButton("Browse media…")
+        browse.clicked.connect(self._browse_selected_media)
+        apply_button = QPushButton("Apply changes")
+        apply_button.clicked.connect(self._apply_inspector)
+        actions.addWidget(browse)
+        actions.addWidget(apply_button)
+        layout.addLayout(actions)
+        order = QHBoxLayout()
+        front = QPushButton("Bring front")
+        front.clicked.connect(self.canvas.bringSelectedToFront)
+        back = QPushButton("Send back")
+        back.clicked.connect(self.canvas.sendSelectedToBack)
+        order.addWidget(front)
+        order.addWidget(back)
+        layout.addLayout(order)
+        layout.addStretch(1)
+        return page
 
-    def _choose_color(self) -> None:
+    def _layers_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self._layers = QListWidget()
+        self._layers.currentItemChanged.connect(self._select_layer)
+        layout.addWidget(self._layers, 1)
+        refresh = QPushButton("Refresh item list")
+        refresh.clicked.connect(self.refreshLayers)
+        layout.addWidget(refresh)
+        return page
+
+    def _view_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QGridLayout(page)
+        actions = (
+            ("Zoom +", self.canvas.zoomIn, 0, 0), ("Zoom −", self.canvas.zoomOut, 0, 1),
+            ("100%", self.canvas.resetZoom, 1, 0), ("Fit all", self.canvas.fitContent, 1, 1),
+            ("←", lambda: self.canvas.moveViewport(-120, 0), 2, 0),
+            ("→", lambda: self.canvas.moveViewport(120, 0), 2, 1),
+            ("↑", lambda: self.canvas.moveViewport(0, -120), 3, 0),
+            ("↓", lambda: self.canvas.moveViewport(0, 120), 3, 1),
+            ("Center selection", self.canvas.centerOnSelection, 4, 0),
+            ("Pan / select", self.canvas.togglePanMode, 4, 1),
+        )
+        for label, callback, row, column in actions:
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            layout.addWidget(button, row, column)
+        layout.setRowStretch(5, 1)
+        return page
+
+    def _save_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self._save_status = QLabel("Autosave draft: waiting for changes")
+        self._save_status.setWordWrap(True)
+        layout.addWidget(self._save_status)
+        session = QGroupBox("Current app session")
+        session_layout = QVBoxLayout(session)
+        save_session = QPushButton("Save session checkpoint")
+        save_session.clicked.connect(self.canvas.saveSession)
+        restore_session = QPushButton("Restore session checkpoint")
+        restore_session.clicked.connect(self.canvas.restoreSession)
+        session_layout.addWidget(save_session)
+        session_layout.addWidget(restore_session)
+        layout.addWidget(session)
+        persistent = QGroupBox("Persistent across app restarts")
+        persistent_layout = QVBoxLayout(persistent)
+        save_persistent = QPushButton("Save persistent now")
+        save_persistent.clicked.connect(self.canvas.savePersistent)
+        load_persistent = QPushButton("Load persistent data")
+        load_persistent.clicked.connect(self.canvas.loadPersistent)
+        persistent_layout.addWidget(save_persistent)
+        persistent_layout.addWidget(load_persistent)
+        layout.addWidget(persistent)
+        history = QGroupBox("History")
+        history_layout = QHBoxLayout(history)
+        undo = QPushButton("Undo")
+        undo.clicked.connect(self.canvas.undo)
+        redo = QPushButton("Redo")
+        redo.clicked.connect(self.canvas.redo)
+        history_layout.addWidget(undo)
+        history_layout.addWidget(redo)
+        layout.addWidget(history)
+        path = QLabel(str(self.canvas.persistentPath()))
+        path.setWordWrap(True)
+        path.setStyleSheet("color: #64748b")
+        layout.addWidget(path)
+        layout.addStretch(1)
+        return page
+
+    def _choose_media(self, kind: str) -> None:
+        pattern = "Animated GIF (*.gif)" if kind == "animated_image" else "Images (*.png *.jpg *.jpeg *.bmp *.webp)"
+        path, _selected_filter = QFileDialog.getOpenFileName(self, "Add media", "", pattern)
+        if path:
+            self.canvas.addMedia(path, animated=kind == "animated_image")
+
+    def _choose_color(self, role: str) -> None:
+        item = self.canvas.element(self.canvas.selectedElementId())
+        if item is None:
+            return
+        current = item.background if role == "background" else item.text_color if role == "text" else item.color
+        chosen = QColorDialog.getColor(current, self, f"Choose {role} color")
+        if chosen.isValid():
+            self.canvas.setElementColor(item.element_id, chosen, role)
+
+    def _browse_selected_media(self) -> None:
+        item = self.canvas.element(self.canvas.selectedElementId())
+        if item is None or item.kind not in ("image", "animated_image"):
+            return
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self, "Choose media", item.source, "Media (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"
+        )
+        if path:
+            self._source_edit.setText(path)
+            self._apply_inspector()
+
+    def _apply_inspector(self) -> None:
         element_id = self.canvas.selectedElementId()
         if not element_id:
             return
-        current = self.canvas.element(element_id).color
-        chosen = QColorDialog.getColor(current, self, "Element color")
-        if chosen.isValid():
-            self.canvas.setElementColor(element_id, chosen)
+        requested_id = self._id_edit.text().strip()
+        if requested_id and requested_id != element_id:
+            element_id = self.canvas.renameElement(element_id, requested_id)
+        values = {key: field.value() for key, field in self._number_fields.items()}
+        values.update(text=self._text_edit.text(), source=self._source_edit.text())
+        self.canvas.updateElement(element_id, **values)
+        self.refreshLayers()
+
+    def _sync_inspector(self, element_id: str) -> None:
+        item = self.canvas.element(element_id)
+        widgets = [self._id_edit, self._text_edit, self._source_edit, *self._number_fields.values()]
+        blockers = [QSignalBlocker(widget) for widget in widgets]
+        if item is None:
+            self._type_label.setText("No selection")
+            self._id_edit.clear()
+            self._text_edit.clear()
+            self._source_edit.clear()
+        else:
+            self._type_label.setText(item.kind)
+            self._id_edit.setText(item.element_id)
+            self._text_edit.setText(item.text)
+            self._source_edit.setText(item.source)
+            values = {
+                "x": item.pos().x(), "y": item.pos().y(),
+                "width": item._rect.width(), "height": item._rect.height(),
+                "rotation": item.rotation(), "opacity": item.opacity(), "z": item.zValue(),
+            }
+            for key, value in values.items():
+                self._number_fields[key].setValue(value)
+        del blockers
+
+    def refreshLayers(self) -> None:
+        selected = self.canvas.selectedElementId()
+        blocker = QSignalBlocker(self._layers)
+        self._layers.clear()
+        for item in sorted(self.canvas._elements.values(), key=lambda value: value.zValue(), reverse=True):
+            label = QListWidgetItem(f"{item.element_id}  ·  {item.kind}  ·  {item.text}")
+            label.setData(Qt.ItemDataRole.UserRole, item.element_id)
+            self._layers.addItem(label)
+            if item.element_id == selected:
+                self._layers.setCurrentItem(label)
+        del blocker
+
+    def _select_layer(self, current: QListWidgetItem | None, _previous) -> None:
+        if current is not None:
+            self.canvas.selectElement(str(current.data(Qt.ItemDataRole.UserRole)))
+
+    def _show_save_status(self, target: str) -> None:
+        self._save_status.setText(f"Saved: {target}")
 
 
 class _CanvasView(QGraphicsView):
@@ -359,6 +648,7 @@ class _CanvasView(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setAcceptDrops(True)
 
     def wheelEvent(self, event) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -378,6 +668,37 @@ class _CanvasView(QGraphicsView):
         if isinstance(item, _CanvasElement):
             self.canvas.elementClicked.emit(item.element_id)
 
+    def dragEnterEvent(self, event) -> None:
+        if self._media_urls(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if self._media_urls(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        urls = self._media_urls(event.mimeData())
+        if not urls:
+            super().dropEvent(event)
+            return
+        scene_pos = self.mapToScene(event.position().toPoint())
+        for index, path in enumerate(urls):
+            self.canvas.addMedia(path, scene_pos.x() + index * 30, scene_pos.y() + index * 30)
+        event.acceptProposedAction()
+
+    @staticmethod
+    def _media_urls(mime_data) -> list[str]:
+        supported = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"}
+        return [
+            url.toLocalFile()
+            for url in mime_data.urls()
+            if url.isLocalFile() and Path(url.toLocalFile()).suffix.lower() in supported
+        ]
+
 
 class MonkezCanva(QWidget):
     """Canvas editor with runtime edit mode and a code-friendly element API.
@@ -394,6 +715,10 @@ class MonkezCanva(QWidget):
     selectionChanged = pyqtSignal(str)
     documentChanged = pyqtSignal()
     diagnosticMessage = pyqtSignal(str)
+    itemIdChanged = pyqtSignal(str, str)
+    autoSaved = pyqtSignal(str)
+    persistentSaved = pyqtSignal(str)
+    persistentLoaded = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -405,6 +730,16 @@ class MonkezCanva(QWidget):
         self._edit_mode = False
         self._shortcut_enabled = True
         self._fit_pending = False
+        self._pan_mode = False
+        self._persistent_key = ""
+        self._auto_save_enabled = True
+        self._auto_save_delay = 500
+        self._session_document: dict[str, Any] | None = None
+        self._draft_document: dict[str, Any] | None = None
+        self._history: list[dict[str, Any]] = []
+        self._history_index = -1
+        self._restoring = False
+        self._suppress_next_autosave = False
         self._animations: dict[str, QPropertyAnimation] = {}
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
@@ -414,8 +749,12 @@ class MonkezCanva(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._view)
-        self._toolbox: _CanvasToolbox | None = None
+        self._toolbox: _CanvasEditorToolbox | None = None
         self._scene.selectionChanged.connect(self._emit_selection)
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.timeout.connect(self._flush_autosave)
+        self.documentChanged.connect(self._queue_autosave)
         self._toggle_shortcuts: list[QShortcut] = []
         for sequence, label in (
             ("Ctrl+D, E", "Ctrl+D then E"),
@@ -436,6 +775,7 @@ class MonkezCanva(QWidget):
         delete_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         delete_shortcut.activated.connect(self.deleteSelected)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._push_history(self.toDocument())
 
     def sizeHint(self) -> QSize:
         return QSize(640, 420)
@@ -499,6 +839,104 @@ class MonkezCanva(QWidget):
     def addChart(self, values, chart_type: str = "bar", x: float = 0, y: float = 0, **options) -> str:
         kind = "line_chart" if str(chart_type).lower() == "line" else "bar_chart"
         return self.addElement(kind, x, y, data=list(values), **options)
+
+    def addMedia(
+        self,
+        path: str | Path,
+        x: float | None = None,
+        y: float | None = None,
+        animated: bool | None = None,
+        **options,
+    ) -> str:
+        source = str(Path(path).expanduser().resolve())
+        if not Path(source).is_file():
+            raise FileNotFoundError(source)
+        is_animated = Path(source).suffix.lower() == ".gif" if animated is None else bool(animated)
+        kind = "animated_image" if is_animated else "image"
+        options.setdefault("text", Path(source).name)
+        return self.addElement(kind, x, y, source=source, **options)
+
+    def selectElement(self, element_id: str) -> bool:
+        item = self._elements.get(str(element_id))
+        if item is None:
+            return False
+        self._scene.clearSelection()
+        if self._edit_mode:
+            item.setSelected(True)
+        self._view.centerOn(item)
+        self.selectionChanged.emit(item.element_id)
+        return True
+
+    def renameElement(self, element_id: str, new_id: str) -> str:
+        item = self._required_element(element_id)
+        requested = str(new_id).strip()
+        if not requested:
+            raise ValueError("MonkezCanva item ID cannot be empty")
+        if requested != element_id and requested in self._elements:
+            raise ValueError(f"Duplicate MonkezCanva element id: {requested}")
+        if requested == element_id:
+            return requested
+        self._elements.pop(element_id)
+        item.element_id = requested
+        self._elements[requested] = item
+        if element_id in self._animations:
+            self._animations[requested] = self._animations.pop(element_id)
+        self.itemIdChanged.emit(element_id, requested)
+        self.documentChanged.emit()
+        return requested
+
+    def updateElement(self, element_id: str, **values) -> "MonkezCanva":
+        item = self._required_element(element_id)
+        if "x" in values or "y" in values:
+            item.setPos(float(values.get("x", item.pos().x())), float(values.get("y", item.pos().y())))
+        if "width" in values or "height" in values:
+            item.prepareGeometryChange()
+            item._rect.setWidth(max(24.0, float(values.get("width", item._rect.width()))))
+            item._rect.setHeight(max(24.0, float(values.get("height", item._rect.height()))))
+        if "text" in values:
+            item.text = str(values["text"])
+        if "source" in values and str(values["source"]) != item.source:
+            source = str(values["source"])
+            if item.kind in ("image", "animated_image") and source:
+                item.kind = "animated_image" if Path(source).suffix.lower() == ".gif" else "image"
+            item.setSource(source)
+        if "rotation" in values:
+            item.setRotation(float(values["rotation"]))
+        if "opacity" in values:
+            item.setOpacity(max(0.0, min(1.0, float(values["opacity"]))))
+        if "z" in values:
+            item.setZValue(float(values["z"]))
+        if "metadata" in values:
+            item.metadata = dict(values["metadata"])
+        item.update()
+        item.changed.emit(item.element_id)
+        self.documentChanged.emit()
+        return self
+
+    def duplicateSelected(self) -> str:
+        item = self.element(self.selectedElementId())
+        if item is None:
+            return ""
+        values = item.to_dict()
+        values.pop("id", None)
+        kind = values.pop("type")
+        x = values.pop("x") + 30
+        y = values.pop("y") + 30
+        width = values.pop("width")
+        height = values.pop("height")
+        return self.addElement(kind, x, y, width, height, **values)
+
+    def bringSelectedToFront(self) -> None:
+        item = self.element(self.selectedElementId())
+        if item is not None:
+            item.setZValue(max((entry.zValue() for entry in self._elements.values()), default=0) + 1)
+            self.documentChanged.emit()
+
+    def sendSelectedToBack(self) -> None:
+        item = self.element(self.selectedElementId())
+        if item is not None:
+            item.setZValue(min((entry.zValue() for entry in self._elements.values()), default=0) - 1)
+            self.documentChanged.emit()
 
     def connectElements(self, source_id: str, target_id: str, color: Any = "#64748b", connector_id: str | None = None) -> str:
         source = self._elements.get(str(source_id))
@@ -581,6 +1019,7 @@ class MonkezCanva(QWidget):
         for key in attached:
             connector = self._connectors.pop(key)
             self._scene.removeItem(connector)
+        item.releaseMedia()
         self._scene.removeItem(item)
         item.deleteLater()
         self.elementRemoved.emit(str(element_id))
@@ -605,8 +1044,130 @@ class MonkezCanva(QWidget):
 
     def saveDocument(self, path: str | Path) -> Path:
         target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.toJson(), encoding="utf-8")
         return target
+
+    def persistentPath(self) -> Path:
+        root = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
+        key = self._persistent_key or self.objectName() or "monkez_canva"
+        safe_key = "".join(character if character.isalnum() or character in "-_." else "_" for character in key)
+        return root / "monkez_canva" / f"{safe_key}.json"
+
+    def setPersistenceKey(self, key: str) -> "MonkezCanva":
+        self._persistent_key = str(key).strip()
+        return self
+
+    def getPersistenceKey(self) -> str:
+        return self._persistent_key
+
+    def saveSession(self) -> dict[str, Any]:
+        self._session_document = json.loads(self.toJson(indent=None))
+        self.autoSaved.emit("session checkpoint")
+        return self._session_document
+
+    def restoreSession(self) -> bool:
+        if self._session_document is None:
+            return False
+        self._restore_document(self._session_document)
+        self.autoSaved.emit("session checkpoint restored")
+        return True
+
+    def savePersistent(self, document: dict[str, Any] | None = None) -> Path:
+        target = self.persistentPath()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.loads(json.dumps(document if document is not None else self.toDocument()))
+        assets = target.parent / "assets" / target.stem
+        for entry in payload.get("elements", []):
+            source_text = str(entry.get("source", ""))
+            if entry.get("type") not in ("image", "animated_image") or not source_text:
+                continue
+            source = Path(source_text)
+            if not source.is_file():
+                continue
+            safe_id = "".join(character if character.isalnum() or character in "-_" else "_" for character in str(entry["id"]))
+            destination = assets / f"{safe_id}-{source.name}"
+            assets.mkdir(parents=True, exist_ok=True)
+            if source.resolve() != destination.resolve():
+                shutil.copy2(source, destination)
+            entry["source"] = str(destination)
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.persistentSaved.emit(str(target))
+        self.autoSaved.emit(str(target))
+        return target
+
+    def loadPersistent(self) -> bool:
+        source = self.persistentPath()
+        if not source.is_file():
+            self.diagnosticMessage.emit(f"Persistent document not found: {source}")
+            return False
+        self._restore_document(json.loads(source.read_text(encoding="utf-8")))
+        self.persistentLoaded.emit(str(source))
+        self.autoSaved.emit(f"loaded {source}")
+        return True
+
+    def setAutoSaveEnabled(self, enabled: bool) -> None:
+        self._auto_save_enabled = bool(enabled)
+
+    def getAutoSaveEnabled(self) -> bool:
+        return self._auto_save_enabled
+
+    def setAutoSaveDelay(self, milliseconds: int) -> None:
+        self._auto_save_delay = max(100, int(milliseconds))
+
+    def getAutoSaveDelay(self) -> int:
+        return self._auto_save_delay
+
+    def _queue_autosave(self) -> None:
+        if self._restoring:
+            return
+        if self._suppress_next_autosave:
+            self._suppress_next_autosave = False
+            return
+        # Capture history synchronously so Undo never depends on whether the
+        # debounced persistence timer happened to fire before the next edit.
+        document = json.loads(self.toJson(indent=None))
+        self._draft_document = document
+        self._push_history(document)
+        self._autosave_timer.start(self._auto_save_delay)
+
+    def _flush_autosave(self) -> None:
+        if self._restoring:
+            return
+        document = json.loads(self.toJson(indent=None))
+        self._draft_document = document
+        self.autoSaved.emit("in-memory draft")
+        if self._auto_save_enabled and self._persistent_key:
+            self.savePersistent(document)
+
+    def _push_history(self, document: dict[str, Any]) -> None:
+        encoded = json.dumps(document, sort_keys=True)
+        if self._history and json.dumps(self._history[self._history_index], sort_keys=True) == encoded:
+            return
+        if self._history_index < len(self._history) - 1:
+            self._history = self._history[: self._history_index + 1]
+        self._history.append(document)
+        self._history = self._history[-80:]
+        self._history_index = len(self._history) - 1
+
+    def undo(self) -> bool:
+        self._flush_autosave()
+        if self._history_index <= 0:
+            return False
+        self._history_index -= 1
+        self._suppress_next_autosave = True
+        self._restore_document(self._history[self._history_index])
+        self.autoSaved.emit("undo")
+        return True
+
+    def redo(self) -> bool:
+        if self._history_index >= len(self._history) - 1:
+            return False
+        self._history_index += 1
+        self._suppress_next_autosave = True
+        self._restore_document(self._history[self._history_index])
+        self.autoSaved.emit("redo")
+        return True
 
     def loadDocument(self, document: dict[str, Any] | str | Path) -> "MonkezCanva":
         if isinstance(document, dict):
@@ -619,6 +1180,15 @@ class MonkezCanva(QWidget):
                 data = json.loads(Path(serialized).read_text(encoding="utf-8"))
         if data.get("format") != "monkez-canva":
             raise ValueError("Unsupported MonkezCanva document")
+        self._restore_document(data)
+        self.documentChanged.emit()
+        return self
+
+    def _restore_document(self, data: dict[str, Any]) -> None:
+        if data.get("format") != "monkez-canva":
+            raise ValueError("Unsupported MonkezCanva document")
+        previous = self._restoring
+        self._restoring = True
         self.clear()
         for entry in data.get("elements", []):
             values = dict(entry)
@@ -631,8 +1201,9 @@ class MonkezCanva(QWidget):
             self.addElement(kind, x, y, width, height, element_id, **values)
         for entry in data.get("connectors", []):
             self.connectElements(entry["source"], entry["target"], entry.get("color", "#64748b"), entry.get("id"))
-        self.documentChanged.emit()
-        return self
+        self._restoring = previous
+        if not previous:
+            self.documentChanged.emit()
 
     def fitContent(self) -> None:
         bounds = self._scene.itemsBoundingRect()
@@ -665,6 +1236,44 @@ class MonkezCanva(QWidget):
             f"Content fitted; items={bounds.width():.0f}x{bounds.height():.0f}; zoom={target:.2f}x"
         )
 
+    def zoomIn(self) -> None:
+        self._set_zoom(self._view.transform().m11() * 1.2)
+
+    def zoomOut(self) -> None:
+        self._set_zoom(self._view.transform().m11() / 1.2)
+
+    def resetZoom(self) -> None:
+        center = self._view.mapToScene(self._view.viewport().rect().center())
+        self._view.resetTransform()
+        self._view.centerOn(center)
+        self.diagnosticMessage.emit("Viewport zoom=1.00x")
+
+    def _set_zoom(self, target: float) -> None:
+        current = self._view.transform().m11()
+        target = min(4.0, max(0.2, float(target)))
+        if current > 0:
+            factor = target / current
+            self._view.scale(factor, factor)
+            self.diagnosticMessage.emit(f"Viewport zoom={target:.2f}x")
+
+    def moveViewport(self, dx: float, dy: float) -> None:
+        center = self._view.mapToScene(self._view.viewport().rect().center())
+        self._view.centerOn(center + QPointF(float(dx), float(dy)))
+
+    def centerOnSelection(self) -> bool:
+        item = self.element(self.selectedElementId())
+        if item is None:
+            return False
+        self._view.centerOn(item)
+        return True
+
+    def togglePanMode(self) -> bool:
+        self._pan_mode = not self._pan_mode
+        mode = QGraphicsView.DragMode.ScrollHandDrag if self._pan_mode else QGraphicsView.DragMode.RubberBandDrag
+        self._view.setDragMode(mode)
+        self.diagnosticMessage.emit(f"Pan mode={self._pan_mode}")
+        return self._pan_mode
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
         if self._fit_pending:
@@ -690,7 +1299,7 @@ class MonkezCanva(QWidget):
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag if enabled else QGraphicsView.DragMode.ScrollHandDrag)
         if enabled:
             if self._toolbox is None:
-                self._toolbox = _CanvasToolbox(self)
+                self._toolbox = _CanvasEditorToolbox(self)
             self._toolbox.setParent(self.window(), self._toolbox.windowFlags())
             self._toolbox.show()
             self._place_toolbox_on_screen()
@@ -789,8 +1398,14 @@ class MonkezCanva(QWidget):
     gridSize = pyqtProperty(int, getGridSize, setGridSize)
     backgroundColor = pyqtProperty(QColor, getBackgroundColor, setBackgroundColor)
     gridColor = pyqtProperty(QColor, getGridColor, setGridColor)
+    persistenceKey = pyqtProperty(str, getPersistenceKey, setPersistenceKey)
+    autoSaveEnabled = pyqtProperty(bool, getAutoSaveEnabled, setAutoSaveEnabled)
+    autoSaveDelay = pyqtProperty(int, getAutoSaveDelay, setAutoSaveDelay)
 
     def closeEvent(self, event) -> None:
+        if self._autosave_timer.isActive():
+            self._autosave_timer.stop()
+            self._flush_autosave()
         if self._toolbox is not None:
             self._toolbox.close()
         super().closeEvent(event)

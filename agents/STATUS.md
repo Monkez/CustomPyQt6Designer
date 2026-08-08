@@ -131,11 +131,15 @@ Updated: 2026-08-08
   nodes/connectors, grid snapping, JSON persistence and APIs for colors, text,
   chart data, highlight and animation. Deferred viewport fitting and bounded
   zoom prevent pre-show `fitContent()` calls from shrinking a graph to a dot.
+  The editor now includes deep item inspection, stable ID/layer management,
+  Explorer drag/drop for static images and GIF animation, viewport navigation,
+  bounded undo/redo history, debounced autosave, process-local session
+  checkpoints and application-data persistence with managed media copies.
   See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification
 
-- The automated suite contains 116 passing tests and covers all 36 public
+- The automated suite contains 118 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

@@ -22,6 +22,16 @@ Trong edit mode:
 - bấm `Fit view` để đưa toàn bộ nội dung về tỷ lệ dễ đọc;
 - đổi màu element đang chọn từ cửa sổ nổi.
 
+Editor có năm tab:
+
+- **Elements**: thêm shape, chart, node, ảnh và GIF; duplicate/xóa item.
+- **Inspector**: sửa ID, text, source, vị trí, kích thước, rotation, opacity,
+  z-order và ba vai trò màu.
+- **Layers**: quản lý toàn bộ item theo ID ổn định và chọn nhanh trên canvas.
+- **View**: zoom in/out, 100%, fit, di chuyển viewport bốn hướng, center selection
+  và chuyển đổi pan/select mode.
+- **Save**: checkpoint trong phiên, lưu/đọc bền, undo và redo.
+
 `fitContent()` có thể được gọi trước `show()`; canvas sẽ hoãn việc tính tỷ lệ đến
 khi viewport có kích thước thật. Zoom tự động được giới hạn trong khoảng dễ thao
 tác, tránh graph bị thu thành một chấm nhỏ trên màn hình lớn.
@@ -47,7 +57,37 @@ canvas.setElementColor(target, "#fff7ed", role="background")
 canvas.setChartData(chart, [32, 66, 54, 88])
 canvas.highlightElement(target, "#f59e0b", duration=1200)
 canvas.animateElement(target, "pulse", duration=500)
+
+canvas.renameElement(target, "person-detector")
+canvas.updateElement("person-detector", x=280, y=40, rotation=5, opacity=0.9)
 ```
+
+## Ảnh, GIF và kéo-thả
+
+```python
+photo_id = canvas.addMedia("assets/photo.png", 100, 120)
+gif_id = canvas.addMedia("assets/loading.gif", 420, 120)
+```
+
+Có thể kéo file `.png`, `.jpg`, `.jpeg`, `.bmp`, `.webp` hoặc `.gif` từ Explorer
+thả trực tiếp lên canvas. GIF dùng `QMovie`, tiếp tục chuyển frame trong scene và
+được dừng/giải phóng khi item bị xóa.
+
+## ID và quản lý item
+
+Mỗi item có ID duy nhất. Có thể truyền `element_id=` khi tạo hoặc đổi sau đó:
+
+```python
+node = canvas.addNode("Input", element_id="camera-input")
+canvas.selectElement("camera-input")
+canvas.renameElement("camera-input", "usb-camera-01")
+canvas.duplicateSelected()
+canvas.bringSelectedToFront()
+```
+
+Không thể dùng ID rỗng hoặc trùng. Connector giữ tham chiếu đúng khi ID endpoint
+được đổi. Signal `itemIdChanged(old_id, new_id)` cho phép business logic cập nhật
+mapping riêng.
 
 Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`,
 `elementClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và
@@ -63,6 +103,32 @@ payload = canvas.toJson()
 other_canvas.loadDocument(payload)
 ```
 
+Editor có ba tầng lưu:
+
+1. **Autosave draft**: sau thay đổi, document được debounce và giữ trong bộ nhớ;
+   history undo/redo cũng được tạo tại đây.
+2. **Save session checkpoint**: lưu mốc khôi phục trong vòng đời process hiện tại;
+   đóng app sẽ mất checkpoint này.
+3. **Save persistent now**: ghi JSON vào `QStandardPaths.AppDataLocation` và copy
+   ảnh/GIF vào thư mục assets do MonkezCanva quản lý. Dữ liệu còn nguyên sau khi
+   app chính khởi động lại.
+
+```python
+canvas.setPersistenceKey("main-dashboard")
+canvas.setAutoSaveDelay(500)
+canvas.setAutoSaveEnabled(True)
+
+canvas.saveSession()
+canvas.restoreSession()
+
+canvas.savePersistent()
+canvas.loadPersistent()
+```
+
+Khi `persistenceKey` khác rỗng và `autoSaveEnabled=True`, mỗi autosave debounce sẽ
+đồng thời cập nhật bản lưu bền. Nếu không đặt key, autosave chỉ giữ draft/history
+trong RAM và nút lưu bền dùng `objectName` hoặc key mặc định.
+
 Định dạng JSON hiện tại có `format: "monkez-canva"`, `version: 1`, danh sách
 `elements` và `connectors`. Mỗi element có `metadata` để ứng dụng gắn business ID
 hoặc cấu hình riêng. Tài liệu không chứa và không thực thi Python code.
@@ -70,18 +136,20 @@ hoặc cấu hình riêng. Tài liệu không chứa và không thực thi Pytho
 ## Thuộc tính Qt Designer
 
 `gridVisible`, `snapToGrid`, `gridSize`, `backgroundColor`, `gridColor`,
-`editorShortcutEnabled` và `editMode` xuất hiện trong Property Editor. Không nên
+`editorShortcutEnabled`, `editMode`, `persistenceKey`, `autoSaveEnabled` và
+`autoSaveDelay` xuất hiện trong Property Editor. Không nên
 lưu `editMode=True` trong form phát hành; hãy dùng chord runtime khi cần sửa.
 
 ## Phạm vi phiên bản đầu
 
-Phiên bản hiện tại tập trung vào scene editor, chart nhẹ và flow diagram. Chưa có:
+Phiên bản hiện tại đã có inspector, layer/ID manager, ảnh/GIF, autosave, session
+checkpoint, lưu bền, history và viewport tools. Các hướng nâng cấp tiếp theo:
 
 - registry để ứng dụng tự đăng ký element/plugin mới;
 - nhúng QWidget bất kỳ vào scene;
-- undo/redo theo command stack, copy/paste hoặc multi-user collaboration;
+- clipboard copy/paste đa item hoặc multi-user collaboration;
 - data binding declarative, routing connector tránh vật cản và auto layout;
-- property inspector đầy đủ cho text, kích thước, chart axis và port schema.
+- chart axis/series editor và typed port schema chuyên sâu.
 
 Các phần này nên được phát triển thành lớp extension riêng thay vì làm class lõi
 phình to. Xem kiến trúc và roadmap trong `agents/MONKEZ_CANVA_ARCHITECTURE.md`.

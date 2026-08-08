@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QLabel,
     QScrollArea,
+    QTabWidget,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -211,6 +213,92 @@ class WidgetTests(unittest.TestCase):
         self.assertGreater(zoom, 0.5)
         window.close()
         window.deleteLater()
+
+    def test_canva_media_ids_inspector_fields_and_layers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_path = root / "photo.png"
+            pixmap = QPixmap(80, 50)
+            pixmap.fill(QColor("#ef4444"))
+            self.assertTrue(pixmap.save(str(image_path)))
+            gif_path = root / "spinner.gif"
+            gif_path.write_bytes(bytes.fromhex(
+                "47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b"
+            ))
+
+            canvas = MonkezCanva()
+            image_id = canvas.addMedia(image_path, 10, 20, element_id="hero")
+            animation_id = canvas.addMedia(gif_path, 320, 20, element_id="spinner")
+            canvas.updateElement(
+                image_id, x=42, y=24, width=320, height=210,
+                rotation=15, opacity=0.7, z=4, text="Hero image",
+            )
+            renamed = canvas.renameElement(image_id, "hero-image")
+
+            self.assertEqual("hero-image", renamed)
+            self.assertIsNone(canvas.element("hero"))
+            image = canvas.element(renamed)
+            self.assertEqual("image", image.kind)
+            self.assertFalse(image._pixmap.isNull())
+            self.assertEqual(320, image._rect.width())
+            self.assertEqual(15, image.rotation())
+            self.assertAlmostEqual(0.7, image.opacity())
+            self.assertEqual("animated_image", canvas.element(animation_id).kind)
+            self.assertEqual(str(gif_path.resolve()), canvas.element(animation_id).source)
+
+            canvas.setEditMode(True)
+            toolbox = canvas._toolbox
+            self.assertIsNotNone(toolbox)
+            self.assertEqual(5, toolbox.findChild(QTabWidget).count())
+            toolbox.refreshLayers()
+            self.assertEqual(2, toolbox._layers.count())
+            canvas.setEditMode(False)
+            canvas.clear()
+            self.app.processEvents()
+            canvas.deleteLater()
+
+    def test_canva_session_persistent_autosave_and_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            persistent_path = root / "workspace.json"
+            image_path = root / "source.png"
+            pixmap = QPixmap(32, 24)
+            pixmap.fill(QColor("#22c55e"))
+            self.assertTrue(pixmap.save(str(image_path)))
+
+            canvas = MonkezCanva()
+            canvas.persistentPath = lambda: persistent_path
+            canvas.setPersistenceKey("test-workspace")
+            canvas.setAutoSaveDelay(100)
+            image_id = canvas.addMedia(image_path, element_id="saved-image")
+            canvas.saveSession()
+            canvas.setElementText(image_id, "Changed")
+            self.assertTrue(canvas.restoreSession())
+            self.assertEqual("source.png", canvas.element(image_id).text)
+
+            saved_path = canvas.savePersistent()
+            self.assertEqual(persistent_path, saved_path)
+            payload = json.loads(persistent_path.read_text(encoding="utf-8"))
+            copied_media = Path(payload["elements"][0]["source"])
+            self.assertTrue(copied_media.is_file())
+            self.assertNotEqual(image_path, copied_media)
+
+            restored = MonkezCanva()
+            restored.persistentPath = lambda: persistent_path
+            self.assertTrue(restored.loadPersistent())
+            self.assertEqual(["saved-image"], restored.elements())
+            self.assertFalse(restored.element("saved-image")._pixmap.isNull())
+
+            text_id = canvas.addText("First", 0, 0, element_id="history-text")
+            QTest.qWait(120)
+            canvas.setElementText(text_id, "Second")
+            QTest.qWait(120)
+            self.assertTrue(canvas.undo())
+            self.assertEqual("First", canvas.element(text_id).text)
+            self.assertTrue(canvas.redo())
+            self.assertEqual("Second", canvas.element(text_id).text)
+            restored.deleteLater()
+            canvas.deleteLater()
 
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
         button = MonkezButton()
