@@ -188,6 +188,7 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(connector._timer.isActive())
         self.assertEqual(QColor("#06b6d4"), connector.flow_color)
         self.assertTrue(canvas.element(line_id).arrow_start)
+        self.assertEqual("line", canvas.element(polyline_id).kind)
         self.assertEqual(3, len(canvas.element(polyline_id).points))
 
         canvas.reconnectConnector(connector_id, source, spare)
@@ -199,6 +200,13 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(toolbox._geometry_group.isHidden())
         self.assertEqual(source, toolbox._source_combo.currentData())
         self.assertEqual(spare, toolbox._target_combo.currentData())
+        self.assertEqual("out", toolbox._source_port_combo.currentData())
+        self.assertEqual("in", toolbox._target_port_combo.currentData())
+
+        canvas.selectElement(source)
+        toolbox._sync_inspector(source)
+        self.assertFalse(toolbox._ports_group.isHidden())
+        self.assertEqual(2, toolbox._ports_list.count())
 
         restored = MonkezCanva()
         restored.loadDocument(canvas.toDocument())
@@ -216,6 +224,93 @@ class WidgetTests(unittest.TestCase):
         canvas.setEditMode(False)
         canvas.clear()
         canvas.deleteLater()
+
+    def test_canva_node_ports_drag_connection_and_click_signals(self) -> None:
+        window = QDialog()
+        layout = QVBoxLayout(window)
+        canvas = MonkezCanva()
+        layout.addWidget(canvas)
+        source = canvas.addNode(
+            "Source", -260, 0, element_id="source-with-ports",
+            ports=[
+                {"id": "control", "mode": "input", "side": "left", "label": "Control"},
+                {"id": "voltage", "mode": "output", "side": "right", "label": "Voltage"},
+                {"id": "service", "mode": "free", "side": "bottom", "label": "Service"},
+            ],
+        )
+        target = canvas.addNode(
+            "Target", 180, 0, element_id="target-with-ports",
+            ports=[
+                {"id": "supply", "mode": "input", "side": "left", "label": "Supply"},
+                {"id": "status", "mode": "output", "side": "right", "label": "Status"},
+            ],
+        )
+        window.resize(900, 500)
+        window.show()
+        canvas.setEditMode(True)
+        self.app.processEvents()
+
+        self.assertEqual(3, len(canvas.nodePorts(source)))
+        view = canvas.view()
+        start = view.mapFromScene(canvas.element(source).portScenePosition("voltage"))
+        end = view.mapFromScene(canvas.element(target).portScenePosition("supply"))
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(view.viewport(), end, delay=20)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        self.app.processEvents()
+
+        self.assertEqual(1, len(canvas.connectors()))
+        connector = canvas.connector(canvas.connectors()[0])
+        self.assertEqual("voltage", connector.source_port)
+        self.assertEqual("supply", connector.target_port)
+        self.assertEqual(source, connector.source.element_id)
+        self.assertEqual(target, connector.target.element_id)
+
+        element_clicks = []
+        connector_clicks = []
+        object_clicks = []
+        canvas.elementClicked.connect(element_clicks.append)
+        canvas.connectorClicked.connect(connector_clicks.append)
+        canvas.objectClicked.connect(object_clicks.append)
+        midpoint = view.mapFromScene(connector._path.pointAtPercent(0.5))
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=midpoint)
+        self.app.processEvents()
+        self.assertEqual([], element_clicks)
+        self.assertEqual([connector.connector_id], connector_clicks)
+        self.assertEqual([connector.connector_id], object_clicks)
+        canvas.highlightObject(connector.connector_id)
+        self.assertTrue(connector._highlight.isValid())
+
+        reversed_id = canvas.connectPorts(source, "control", target, "status")
+        reversed_connector = canvas.connector(reversed_id)
+        self.assertEqual(target, reversed_connector.source.element_id)
+        self.assertEqual("status", reversed_connector.source_port)
+        self.assertEqual(source, reversed_connector.target.element_id)
+        self.assertEqual("control", reversed_connector.target_port)
+        with self.assertRaises(ValueError):
+            canvas.connectPorts(source, "control", target, "supply")
+
+        legacy_arrow = canvas.addElement("arrow", element_id="legacy-arrow")
+        legacy_polyline = canvas.addElement(
+            "polyline", element_id="legacy-polyline", points=[[0, 0], [40, 30], [100, 0]],
+        )
+        self.assertEqual("line", canvas.element(legacy_arrow).kind)
+        self.assertTrue(canvas.element(legacy_arrow).arrow_end)
+        self.assertEqual("line", canvas.element(legacy_polyline).kind)
+
+        restored = MonkezCanva()
+        restored.loadDocument(canvas.toDocument())
+        restored_connector = restored.connector(connector.connector_id)
+        self.assertEqual("voltage", restored_connector.source_port)
+        self.assertEqual("supply", restored_connector.target_port)
+        self.assertEqual(3, len(restored.nodePorts(source)))
+
+        restored.clear()
+        restored.deleteLater()
+        canvas.setEditMode(False)
+        canvas.clear()
+        window.close()
+        window.deleteLater()
 
     def test_canva_edit_mode_controls_item_interaction(self) -> None:
         canvas = MonkezCanva()

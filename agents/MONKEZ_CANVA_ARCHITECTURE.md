@@ -24,7 +24,8 @@ can ignore the signal or route it into their own logger.
 - `MonkezCanva`: public API, document persistence, properties and signals.
 - `_CanvasView`: native zoom, click routing and blank-area right-button panning.
 - `_CanvasScene`: background/grid painting.
-- `_CanvasElement`: shapes, node, charts, media, line and polyline rendering plus resize.
+- `_CanvasElement`: shapes, node, charts, media and unified single/multi-segment
+  line rendering plus resize. Arrowheads are line options, not a separate kind.
 - `_CanvasConnector`: selectable/code-addressable `QGraphicsObject` with stable ID,
   endpoint tracking, straight/bezier/orthogonal/polyline routes, stroke styles,
   one/two-way arrows and timer-driven signal-flow animation.
@@ -38,6 +39,17 @@ can ignore the signal or route it into their own logger.
 
 Elements and connectors use stable string IDs. Application code must retain IDs
 rather than private graphics items.
+
+Node ports are embedded JSON-safe records (`id`, `mode`, `side`, `label`, optional
+normalized `position`). Input/output/free modes have distinct markers. `_CanvasView`
+performs port hit-testing before normal scene selection, paints a transient cubic
+preview, validates direction through `connectPorts()`, then creates a normal
+selectable connector carrying `sourcePort` and `targetPort`. Old `arrow` and
+`polyline` element documents normalize to `line` during load.
+
+Click signals deliberately separate domains: `elementClicked`, `connectorClicked`
+and union signal `objectClicked`. Generic visual feedback must call
+`highlightObject`; this prevents a connector ID reaching element-only APIs.
 
 The Inspector is schema-by-kind rather than one generic form: connector endpoint
 and signal controls are hidden for ordinary elements; media, chart, geometry,
@@ -75,7 +87,7 @@ are fit, fill and non-aspect-preserving scale.
 
 1. Clipboard, keyboard nudging and mixed-value multi-selection property editing.
 2. Public element registry using schema + renderer/editor factories.
-3. Typed ports, connector validation, obstacle-avoiding routing and auto layout.
+3. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
 4. Declarative data bindings and throttled live chart updates.
 5. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
 6. Large-scene profiling, level-of-detail rendering and culling tests.
@@ -84,8 +96,8 @@ are fit, fill and non-aspect-preserving scale.
 ## Verification focus
 
 - Lazy import remains intact and runtime does not import Designer packages.
-- JSON round trips preserve IDs, chart values, line/polyline points and advanced
-  connector routes, arrows, styles, animation and endpoints.
+- JSON round trips preserve IDs, chart values, unified line points, node port
+  schemas and advanced connector routes, arrows, styles, animation and endpoint ports.
 - View mode keeps items immovable; edit mode enables selection/movement.
 - Designer discovers exactly one plugin class from the module.
 - Gallery docs and preview cover the public widget surface.

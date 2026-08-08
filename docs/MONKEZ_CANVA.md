@@ -52,7 +52,9 @@ kéo để di chuyển viewport mà không làm mất selection hiện tại.
 khi viewport có kích thước thật. Zoom tự động được giới hạn trong khoảng dễ thao
 tác, tránh graph bị thu thành một chấm nhỏ trên màn hình lớn.
 
-View mode khóa thao tác sửa nhưng vẫn phát signal `elementClicked`. Phím tắt có
+View mode khóa thao tác sửa nhưng vẫn phát signal click. `elementClicked` chỉ dành
+cho element, `connectorClicked` chỉ dành cho connector và `objectClicked` nhận cả
+hai loại, tránh dùng nhầm ID connector với API chỉ dành cho element. Phím tắt có
 context theo window. Có thể tắt bằng `editorShortcutEnabled = False`.
 
 ## API cơ bản
@@ -110,21 +112,24 @@ Không thể dùng ID rỗng hoặc trùng. Connector giữ tham chiếu đúng 
 được đổi. Signal `itemIdChanged(old_id, new_id)` cho phép business logic cập nhật
 mapping riêng.
 
-Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`,
-`elementClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và
+Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`, `connectorAdded(str)`,
+`connectorRemoved(str)`, `elementClicked(str)`, `connectorClicked(str)`,
+`objectClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và
 `documentChanged()`. Signal `selectionSetChanged(list)` cung cấp toàn bộ ID đang
 được chọn; `selectedElementIds()` trả về cùng tập ID theo thứ tự document.
 
 ## Connector, line và mô phỏng dòng tín hiệu
 
 Connector là một object độc lập có ID, selection, layer Z, opacity, metadata và
-vòng đời signal riêng. Chọn đúng hai element rồi bấm **Connect 2 selected items**
-để tạo nhanh; sau đó chọn chính đường nối để Inspector hiện các thuộc tính chuyên
-biệt. Có thể đổi source/target mà vẫn giữ nguyên ID của connector.
+vòng đời signal riêng. Có hai cách tạo: kéo chuột trực tiếp từ marker port của node
+sang marker port khác, hoặc chọn đúng hai element rồi bấm **Connect 2 selected
+items**. Sau đó chọn chính đường nối để Inspector hiện các thuộc tính chuyên biệt.
+Có thể đổi source/target và source/target port mà vẫn giữ nguyên ID connector.
 
 ```python
 edge = canvas.connectElements(
     "pump", "tank", connector_id="water-main",
+    sourcePort="water-out", targetPort="water-in",
     route="orthogonal",       # bezier | orthogonal | straight | polyline
     lineStyle="dashdot",      # solid | dash | dot | dashdot
     lineWidth=4,
@@ -137,12 +142,13 @@ edge = canvas.connectElements(
 )
 canvas.updateConnector(edge, route="bezier", arrowStart=True)
 canvas.animateConnector(edge, True, speed=2.5, color="#38bdf8")
-canvas.reconnectConnector(edge, "pump-backup", "tank")
+canvas.reconnectConnector(edge, "pump-backup", "tank", "out", "water-in")
 
 line = canvas.addLine(40, 300, element_id="separator", arrowEnd=True)
-polyline = canvas.addPolyline(
-    [[0, 80], [100, 10], [220, 90]], 320, 260,
-    element_id="manual-pipe", lineWidth=5, arrowEnd=True,
+multi_segment_line = canvas.addLine(
+    320, 260, element_id="manual-pipe",
+    points=[[0, 80], [100, 10], [220, 90]],
+    lineWidth=5, arrowStart=False, arrowEnd=True,
 )
 ```
 
@@ -150,11 +156,46 @@ Animation dùng một lớp dash chuyển động phủ trên stroke chính, ph�
 dòng điện, nước hoặc luồng dữ liệu. `canvasObject(id)` truy cập thống nhất element
 hoặc connector; `connector(id)`, `connectors()` và `selectedObjectIds()` dành cho
 logic cần phân biệt rõ hai loại. Toàn bộ route, waypoint, style, hai đầu mũi tên,
-animation và metadata đều được serialize/autosave.
+animation, endpoint port và metadata đều được serialize/autosave.
+
+Arrow không còn là element riêng: bật `arrowStart` hoặc `arrowEnd` trên Line.
+Polyline cũng chính là Line có từ ba `points` trở lên. `addPolyline()` và document
+cũ có type `arrow`/`polyline` vẫn được đọc như alias tương thích, nhưng dữ liệu mới
+luôn được chuẩn hóa thành một loại `line`.
+
+## Node có nhiều port
+
+Mỗi node có thể có số lượng port tùy ý. Port có ID ổn định và một trong ba mode:
+
+- `input`: marker tam giác màu cam, chỉ nhận kết nối;
+- `output`: marker tròn/mũi tên màu xanh, chỉ phát kết nối;
+- `free`: marker hình thoi xanh lá, có thể dùng ở một trong hai đầu.
+
+```python
+pump = canvas.addNode(
+    "Pump", 0, 0, element_id="pump",
+    ports=[
+        {"id": "power", "mode": "input", "side": "left", "label": "Power"},
+        {"id": "water-out", "mode": "output", "side": "right", "label": "Water"},
+        {"id": "service", "mode": "free", "side": "bottom", "label": "Service"},
+    ],
+)
+canvas.addNodePort(pump, "alarm", "output", "top", "Alarm")
+canvas.removeNodePort(pump, "service")
+ports = canvas.nodePorts(pump)
+
+edge = canvas.connectPorts("pump", "water-out", "tank", "water-in")
+```
+
+Trong Inspector của node, danh sách port có form Add/Update/Remove cho ID, label,
+mode và side. Connector Inspector có selector source/target port tương ứng. Khi
+kéo nối ngược từ input sang output, editor tự đảo chiều; cặp input-input hoặc
+output-output bị từ chối và ghi lý do vào `diagnosticMessage`.
 
 Inspector tự thay đổi theo object: media có source picker; chart có series data;
-shape có content/geometry/appearance; line/polyline có stroke, arrow và points;
-connector có endpoint, route, flow animation, waypoint, opacity và layer Z.
+shape có content/geometry/appearance; line có stroke, arrow và points; node có
+port editor; connector có endpoint/port, route, flow animation, waypoint, opacity
+và layer Z.
 
 ## Lưu và đọc tài liệu
 
@@ -244,7 +285,7 @@ checkpoint, lưu bền, history và viewport tools. Các hướng nâng cấp ti
 - nhúng QWidget bất kỳ vào scene;
 - clipboard copy/paste đa item hoặc multi-user collaboration;
 - data binding declarative, routing connector tránh vật cản và auto layout;
-- chart axis/series editor và typed port schema chuyên sâu.
+- chart axis/series editor và data-type validation giữa các port.
 
 Các phần này nên được phát triển thành lớp extension riêng thay vì làm class lõi
 phình to. Xem kiến trúc và roadmap trong `agents/MONKEZ_CANVA_ARCHITECTURE.md`.

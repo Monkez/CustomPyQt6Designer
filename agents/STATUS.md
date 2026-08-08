@@ -143,16 +143,21 @@ Updated: 2026-08-08
   grids, scene colors and fit/fill/scale background images. Persistent workspaces
   now live portably inside `.monkez_canva` in the project with relative managed
   assets and automatic legacy AppData migration. The element palette now includes
-  diamond, triangle, arrow, line and polyline. Connectors are selectable objects
+  diamond, triangle and a unified line whose points and arrowhead options cover
+  straight lines, polylines and arrows. Connectors are selectable objects
   with stable IDs, editable endpoints, straight/bezier/orthogonal/polyline routes,
   stroke styles, one/two-way arrowheads and animated signal-flow overlays. The
   Inspector exposes only the content, media, chart, geometry, stroke, connector
-  and appearance controls relevant to the selected object type.
+  and appearance controls relevant to the selected object type. Nodes support
+  configurable input/output/free ports with distinct markers, direct port-to-port
+  drag connection, directional validation and persisted connector endpoint IDs.
+  Element/connector/object click signals are separated so connector selection no
+  longer crashes element-only handlers.
   See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification
 
-- The automated suite contains 120 passing tests and covers all 36 public
+- The automated suite contains 121 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

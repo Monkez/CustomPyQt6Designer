@@ -50,6 +50,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QGraphicsItem,
     QGraphicsObject,
+    QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
     QGridLayout,
@@ -80,13 +81,50 @@ _ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
     "animated_image": (280, 180),
     "diamond": (120, 100),
     "triangle": (120, 100),
-    "arrow": (180, 70),
     "line": (220, 40),
-    "polyline": (240, 120),
 }
 
 _GRID_STYLES = ("lines", "dots", "cross")
 _BACKGROUND_IMAGE_MODES = ("fit", "fill", "scale")
+
+
+def _normalize_node_ports(raw_ports: Any) -> list[dict[str, Any]]:
+    """Return a stable, JSON-safe port schema for a node."""
+    if raw_ports is None:
+        raw_ports = (
+            {"id": "in", "mode": "input", "side": "left", "label": "Input"},
+            {"id": "out", "mode": "output", "side": "right", "label": "Output"},
+        )
+    if not isinstance(raw_ports, (list, tuple)):
+        raise TypeError("Node ports must be a list of dictionaries")
+    ports: list[dict[str, Any]] = []
+    used: set[str] = set()
+    for index, raw in enumerate(raw_ports):
+        if not isinstance(raw, dict):
+            raise TypeError("Each node port must be a dictionary")
+        port_id = str(raw.get("id", f"port-{index + 1}")).strip()
+        if not port_id or port_id in used:
+            raise ValueError(f"Node port ID must be unique and non-empty: {port_id!r}")
+        used.add(port_id)
+        mode = str(raw.get("mode", "free")).lower().strip()
+        mode = {"in": "input", "out": "output", "io": "free", "bidirectional": "free"}.get(mode, mode)
+        if mode not in ("input", "output", "free"):
+            raise ValueError(f"Unsupported node port mode: {mode}")
+        default_side = "left" if mode == "input" else "right" if mode == "output" else "bottom"
+        side = str(raw.get("side", default_side)).lower().strip()
+        if side not in ("left", "right", "top", "bottom"):
+            raise ValueError(f"Unsupported node port side: {side}")
+        position = raw.get("position")
+        port = {
+            "id": port_id,
+            "mode": mode,
+            "side": side,
+            "label": str(raw.get("label", port_id)),
+        }
+        if position is not None:
+            port["position"] = max(0.0, min(1.0, float(position)))
+        ports.append(port)
+    return ports
 
 
 def _color(value: Any, fallback: str = "#2563eb") -> QColor:
@@ -419,6 +457,7 @@ class _CanvasElement(QGraphicsObject):
         self.arrow_end = bool(options.get("arrowEnd", False))
         raw_points = options.get("points", [])
         self.points = [QPointF(float(point[0]), float(point[1])) for point in raw_points]
+        self.ports = _normalize_node_ports(options.get("ports")) if kind == "node" else []
         self._pixmap = QPixmap()
         self._movie: QMovie | None = None
         self._highlight = QColor()
@@ -464,7 +503,45 @@ class _CanvasElement(QGraphicsObject):
         self.changed.emit(self.element_id)
 
     def boundingRect(self) -> QRectF:
-        return self._rect.adjusted(-5, -5, 5, 5)
+        margin = 11 if self.kind == "node" else 5
+        return self._rect.adjusted(-margin, -margin, margin, margin)
+
+    def port(self, port_id: str) -> dict[str, Any] | None:
+        return next((port for port in self.ports if port["id"] == str(port_id)), None)
+
+    def portLocalPosition(self, port_id: str | None, endpoint: str = "source") -> QPointF:
+        port = self.port(port_id) if port_id else None
+        if port is None:
+            return QPointF(self._rect.right(), self._rect.center().y()) if endpoint == "source" else QPointF(
+                self._rect.left(), self._rect.center().y()
+            )
+        side = port["side"]
+        siblings = [candidate for candidate in self.ports if candidate["side"] == side]
+        index = siblings.index(port)
+        ratio = float(port.get("position", (index + 1) / (len(siblings) + 1)))
+        if side == "left":
+            body_top = self._rect.top() + min(38.0, self._rect.height() * 0.4)
+            body_height = max(12.0, self._rect.bottom() - body_top - 6.0)
+            return QPointF(self._rect.left(), body_top + body_height * ratio)
+        if side == "right":
+            body_top = self._rect.top() + min(38.0, self._rect.height() * 0.4)
+            body_height = max(12.0, self._rect.bottom() - body_top - 6.0)
+            return QPointF(self._rect.right(), body_top + body_height * ratio)
+        if side == "top":
+            return QPointF(self._rect.left() + self._rect.width() * ratio, self._rect.top())
+        return QPointF(self._rect.left() + self._rect.width() * ratio, self._rect.bottom())
+
+    def portScenePosition(self, port_id: str | None, endpoint: str = "source") -> QPointF:
+        return self.mapToScene(self.portLocalPosition(port_id, endpoint))
+
+    def portAt(self, scene_position: QPointF, radius: float = 11.0) -> dict[str, Any] | None:
+        if self.kind != "node":
+            return None
+        local = self.mapFromScene(scene_position)
+        for port in self.ports:
+            if (local - self.portLocalPosition(port["id"])).manhattanLength() <= radius:
+                return port
+        return None
 
     def setEditable(self, enabled: bool) -> None:
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, enabled)
@@ -482,7 +559,7 @@ class _CanvasElement(QGraphicsObject):
 
         if self.kind in ("image", "animated_image"):
             self._paint_media(painter, rect)
-        elif self.kind in ("line", "polyline"):
+        elif self.kind == "line":
             self._paint_line(painter, rect)
         elif self.kind == "diamond":
             path = QPainterPath(rect.topLeft() + QPointF(rect.width() / 2, 0))
@@ -499,18 +576,6 @@ class _CanvasElement(QGraphicsObject):
             path.closeSubpath()
             painter.drawPath(path)
             self._paint_centered_text(painter, rect.adjusted(12, 24, -12, -6))
-        elif self.kind == "arrow":
-            mid = rect.center().y()
-            path = QPainterPath(QPointF(rect.left(), mid - rect.height() * 0.22))
-            path.lineTo(rect.left() + rect.width() * 0.62, mid - rect.height() * 0.22)
-            path.lineTo(rect.left() + rect.width() * 0.62, rect.top())
-            path.lineTo(rect.right(), mid)
-            path.lineTo(rect.left() + rect.width() * 0.62, rect.bottom())
-            path.lineTo(rect.left() + rect.width() * 0.62, mid + rect.height() * 0.22)
-            path.lineTo(rect.left(), mid + rect.height() * 0.22)
-            path.closeSubpath()
-            painter.drawPath(path)
-            self._paint_centered_text(painter, rect.adjusted(8, 4, -34, -4))
         elif self.kind == "ellipse":
             painter.drawEllipse(rect)
             self._paint_centered_text(painter, rect.adjusted(10, 6, -10, -6))
@@ -526,10 +591,7 @@ class _CanvasElement(QGraphicsObject):
             painter.fillRect(QRectF(header.left(), header.bottom() - 10, header.width(), 10), self.color)
             painter.setPen(QColor("#ffffff"))
             painter.drawText(header.adjusted(12, 0, -12, 0), Qt.AlignmentFlag.AlignVCenter, self.text)
-            painter.setBrush(self.color)
-            painter.setPen(QPen(self.background, 2))
-            painter.drawEllipse(QPointF(rect.left(), rect.center().y() + 14), 6, 6)
-            painter.drawEllipse(QPointF(rect.right(), rect.center().y() + 14), 6, 6)
+            self._paint_ports(painter)
         else:
             radius = 10 if self.kind in ("button", "rectangle") else 4
             painter.drawRoundedRect(rect, radius, radius)
@@ -549,6 +611,54 @@ class _CanvasElement(QGraphicsObject):
     def _paint_centered_text(self, painter: QPainter, rect: QRectF) -> None:
         painter.setPen(self.text_color)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.text)
+
+    def _paint_ports(self, painter: QPainter) -> None:
+        colors = {"input": QColor("#f59e0b"), "output": QColor("#0ea5e9"), "free": QColor("#22c55e")}
+        painter.setFont(QFont(painter.font().family(), 7))
+        for port in self.ports:
+            point = self.portLocalPosition(port["id"])
+            mode = port["mode"]
+            color = colors[mode]
+            painter.setPen(QPen(QColor("#ffffff"), 1.8))
+            painter.setBrush(color)
+            if mode == "input":
+                path = QPainterPath(QPointF(point.x() - 6, point.y() - 6))
+                path.lineTo(QPointF(point.x() + 6, point.y()))
+                path.lineTo(QPointF(point.x() - 6, point.y() + 6))
+                path.closeSubpath()
+                painter.drawPath(path)
+            elif mode == "output":
+                painter.drawEllipse(point, 6, 6)
+                painter.setPen(QPen(QColor("#ffffff"), 1.3))
+                painter.drawLine(point + QPointF(-2, 0), point + QPointF(3, 0))
+                painter.drawLine(point + QPointF(1, -2), point + QPointF(3, 0))
+                painter.drawLine(point + QPointF(1, 2), point + QPointF(3, 0))
+            else:
+                path = QPainterPath(QPointF(point.x(), point.y() - 7))
+                path.lineTo(QPointF(point.x() + 7, point.y()))
+                path.lineTo(QPointF(point.x(), point.y() + 7))
+                path.lineTo(QPointF(point.x() - 7, point.y()))
+                path.closeSubpath()
+                painter.drawPath(path)
+
+            label = port.get("label", "")
+            if not label:
+                continue
+            painter.setPen(self.text_color)
+            side = port["side"]
+            if side == "left":
+                label_rect = QRectF(point.x() + 9, point.y() - 8, 72, 16)
+                alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            elif side == "right":
+                label_rect = QRectF(point.x() - 81, point.y() - 8, 72, 16)
+                alignment = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            elif side == "top":
+                label_rect = QRectF(point.x() - 36, point.y() + 7, 72, 16)
+                alignment = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+            else:
+                label_rect = QRectF(point.x() - 36, point.y() - 23, 72, 16)
+                alignment = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
+            painter.drawText(label_rect, alignment, label)
 
     def _paint_media(self, painter: QPainter, rect: QRectF) -> None:
         pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
@@ -573,20 +683,11 @@ class _CanvasElement(QGraphicsObject):
     def _paint_line(self, painter: QPainter, rect: QRectF) -> None:
         points = self.points
         if not points:
-            points = (
-                [QPointF(rect.left(), rect.center().y()), QPointF(rect.right(), rect.center().y())]
-                if self.kind == "line"
-                else [
-                    QPointF(rect.left(), rect.bottom()),
-                    QPointF(rect.left() + rect.width() * 0.35, rect.top()),
-                    QPointF(rect.left() + rect.width() * 0.65, rect.bottom()),
-                    QPointF(rect.right(), rect.top()),
-                ]
-            )
+            points = [QPointF(rect.left(), rect.center().y()), QPointF(rect.right(), rect.center().y())]
         path = QPainterPath(points[0])
         for point in points[1:]:
             path.lineTo(point)
-        pen = QPen(self.color, self.line_width)
+        pen = QPen(self._highlight if self._highlight.isValid() else self.color, self.line_width)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         styles = {
@@ -713,6 +814,7 @@ class _CanvasElement(QGraphicsObject):
             "arrowStart": self.arrow_start,
             "arrowEnd": self.arrow_end,
             "points": [[point.x(), point.y()] for point in self.points],
+            "ports": [dict(port) for port in self.ports],
             "opacity": self.opacity(),
             "rotation": self.rotation(),
             "z": self.zValue(),
@@ -740,6 +842,8 @@ class _CanvasConnector(QGraphicsObject):
         self.kind = "connector"
         self.source = source
         self.target = target
+        self.source_port = str(options.get("sourcePort", ""))
+        self.target_port = str(options.get("targetPort", ""))
         self.color = _color(options.get("color", "#64748b"), "#64748b")
         self.flow_color = _color(options.get("flowColor", "#38bdf8"), "#38bdf8")
         self.route = str(options.get("route", "bezier")).lower()
@@ -751,6 +855,7 @@ class _CanvasConnector(QGraphicsObject):
         self.flow_speed = max(0.1, float(options.get("flowSpeed", 1.0)))
         self.waypoints = [QPointF(float(point[0]), float(point[1])) for point in options.get("waypoints", [])]
         self.metadata = dict(options.get("metadata", {}))
+        self._highlight = QColor()
         self._path = QPainterPath()
         self._flow_phase = 0.0
         self._timer = QTimer(canvas)
@@ -780,8 +885,8 @@ class _CanvasConnector(QGraphicsObject):
 
     def updatePath(self, *_args) -> None:
         self.prepareGeometryChange()
-        start = self.source.mapToScene(self.source._rect.center())
-        end = self.target.mapToScene(self.target._rect.center())
+        start = self.source.portScenePosition(self.source_port, "source")
+        end = self.target.portScenePosition(self.target_port, "target")
         path = QPainterPath(start)
         if self.route == "straight":
             path.lineTo(end)
@@ -810,7 +915,7 @@ class _CanvasConnector(QGraphicsObject):
         if self.isSelected():
             painter.setPen(QPen(QColor(37, 99, 235, 80), self.line_width + 7, Qt.PenStyle.SolidLine))
             painter.drawPath(self._path)
-        pen = QPen(self.color, self.line_width)
+        pen = QPen(self._highlight if self._highlight.isValid() else self.color, self.line_width)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         if self.line_style == "dash":
@@ -854,7 +959,11 @@ class _CanvasConnector(QGraphicsObject):
         arrow.lineTo(right)
         arrow.closeSubpath()
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self.flow_color if self.animated else self.color)
+        painter.setBrush(
+            self._highlight
+            if self._highlight.isValid()
+            else self.flow_color if self.animated else self.color
+        )
         painter.drawPath(arrow)
 
     def _advance_flow(self) -> None:
@@ -877,6 +986,8 @@ class _CanvasConnector(QGraphicsObject):
             "type": "connector",
             "source": self.source.element_id,
             "target": self.target.element_id,
+            "sourcePort": self.source_port,
+            "targetPort": self.target_port,
             "color": self.color.name(QColor.NameFormat.HexArgb),
             "flowColor": self.flow_color.name(QColor.NameFormat.HexArgb),
             "route": self.route,
@@ -1069,8 +1180,8 @@ class _CanvasEditorToolbox(QDialog):
                 ("Button", "button"), ("Diamond", "diamond"), ("Triangle", "triangle"),
             ),
             "Diagram & data": (
-                ("Node", "node"), ("Arrow", "arrow"), ("Line", "line"),
-                ("Polyline", "polyline"), ("Bar chart", "bar_chart"), ("Line chart", "line_chart"),
+                ("Node", "node"), ("Line / arrow", "line"),
+                ("Bar chart", "bar_chart"), ("Line chart", "line_chart"),
             ),
             "Media": (("Image", "image"), ("Animated GIF", "animated_image")),
         }
@@ -1147,6 +1258,40 @@ class _CanvasEditorToolbox(QDialog):
         content_form.addRow(self._data_label, self._data_edit)
         layout.addWidget(self._content_group)
 
+        self._ports_group = QGroupBox("Node ports")
+        ports_layout = QVBoxLayout(self._ports_group)
+        self._ports_list = QListWidget()
+        self._ports_list.setMaximumHeight(112)
+        self._ports_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._ports_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self._ports_list.itemSelectionChanged.connect(self._load_selected_port)
+        ports_layout.addWidget(self._ports_list)
+        port_form = QGridLayout()
+        self._port_id_edit = QLineEdit()
+        self._port_id_edit.setPlaceholderText("port-id")
+        self._port_label_edit = QLineEdit()
+        self._port_label_edit.setPlaceholderText("Visible label")
+        self._port_mode_combo = QComboBox()
+        self._port_mode_combo.addItems(("Input", "Output", "Free"))
+        self._port_side_combo = QComboBox()
+        self._port_side_combo.addItems(("Left", "Right", "Top", "Bottom"))
+        port_form.addWidget(self._port_id_edit, 0, 0)
+        port_form.addWidget(self._port_label_edit, 0, 1)
+        port_form.addWidget(self._port_mode_combo, 1, 0)
+        port_form.addWidget(self._port_side_combo, 1, 1)
+        ports_layout.addLayout(port_form)
+        port_actions = QHBoxLayout()
+        add_port = QPushButton("Add / update")
+        add_port.setIcon(_canvas_icon("check"))
+        add_port.clicked.connect(self._upsert_port)
+        remove_port = QPushButton("Remove")
+        remove_port.setIcon(_canvas_icon("delete"))
+        remove_port.clicked.connect(self._remove_port_from_editor)
+        port_actions.addWidget(add_port)
+        port_actions.addWidget(remove_port)
+        ports_layout.addLayout(port_actions)
+        layout.addWidget(self._ports_group)
+
         self._geometry_group = QGroupBox("Geometry")
         geometry_form = QFormLayout(self._geometry_group)
         self._number_fields: dict[str, QDoubleSpinBox] = {}
@@ -1188,9 +1333,17 @@ class _CanvasEditorToolbox(QDialog):
         self._route_combo.addItems(("Bezier", "Orthogonal", "Straight", "Polyline"))
         self._source_combo = QComboBox()
         self._target_combo = QComboBox()
+        self._source_port_combo = QComboBox()
+        self._target_port_combo = QComboBox()
         for combo in (self._source_combo, self._target_combo):
             combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             combo.setMinimumContentsLength(12)
+        self._source_combo.currentIndexChanged.connect(
+            lambda _index: self._refresh_endpoint_port_controls()
+        )
+        self._target_combo.currentIndexChanged.connect(
+            lambda _index: self._refresh_endpoint_port_controls()
+        )
         self._line_style_combo = QComboBox()
         self._line_style_combo.addItems(("Solid", "Dash", "Dot", "DashDot"))
         self._line_width_field = QDoubleSpinBox()
@@ -1217,13 +1370,17 @@ class _CanvasEditorToolbox(QDialog):
         self._route_label = QLabel("Route")
         self._source_label = QLabel("Source")
         self._target_label = QLabel("Target")
+        self._source_port_label = QLabel("Source port")
+        self._target_port_label = QLabel("Target port")
         self._animation_label = QLabel("Animation")
         self._flow_speed_label = QLabel("Flow speed")
         self._connector_opacity_label = QLabel("Opacity")
         self._connector_z_label = QLabel("Layer Z")
         self._points_label = QLabel("Waypoints")
         stroke_form.addRow(self._source_label, self._source_combo)
+        stroke_form.addRow(self._source_port_label, self._source_port_combo)
         stroke_form.addRow(self._target_label, self._target_combo)
+        stroke_form.addRow(self._target_port_label, self._target_port_combo)
         stroke_form.addRow(self._route_label, self._route_combo)
         stroke_form.addRow("Stroke", self._line_style_combo)
         stroke_form.addRow("Width", self._line_width_field)
@@ -1500,7 +1657,13 @@ class _CanvasEditorToolbox(QDialog):
             source_id = self._source_combo.currentData()
             target_id = self._target_combo.currentData()
             if source_id and target_id:
-                self.canvas.reconnectConnector(element_id, str(source_id), str(target_id))
+                self.canvas.reconnectConnector(
+                    element_id,
+                    str(source_id),
+                    str(target_id),
+                    str(self._source_port_combo.currentData() or ""),
+                    str(self._target_port_combo.currentData() or ""),
+                )
             self.canvas.updateConnector(
                 element_id,
                 route=self._route_combo.currentText().lower(),
@@ -1517,19 +1680,20 @@ class _CanvasEditorToolbox(QDialog):
         else:
             values = {key: field.value() for key, field in self._number_fields.items()}
             values["text"] = self._text_edit.text()
+            if item.kind == "node":
+                self.canvas.setNodePorts(element_id, self._ports_from_editor())
             if item.kind in ("image", "animated_image"):
                 values["source"] = self._source_edit.text()
             if item.kind in ("bar_chart", "line_chart"):
                 values["data"] = self._parse_values(self._data_edit.text())
-            if item.kind in ("line", "polyline"):
+            if item.kind == "line":
                 values.update(
                     lineStyle=self._line_style_combo.currentText().lower(),
                     lineWidth=self._line_width_field.value(),
                     arrowStart=self._arrow_start_check.isChecked(),
                     arrowEnd=self._arrow_end_check.isChecked(),
                 )
-                if item.kind == "polyline":
-                    values["points"] = points
+                values["points"] = points
             self.canvas.updateElement(element_id, **values)
         self.refreshLayers()
 
@@ -1537,7 +1701,10 @@ class _CanvasEditorToolbox(QDialog):
         item = self.canvas.canvasObject(element_id)
         widgets = [
             self._id_edit, self._text_edit, self._data_edit, self._source_edit,
-            self._source_combo, self._target_combo, self._route_combo,
+            self._ports_list, self._port_id_edit, self._port_label_edit,
+            self._port_mode_combo, self._port_side_combo,
+            self._source_combo, self._target_combo,
+            self._source_port_combo, self._target_port_combo, self._route_combo,
             self._line_style_combo, self._line_width_field,
             self._arrow_start_check, self._arrow_end_check, self._animated_check,
             self._flow_speed_field, self._connector_opacity_field,
@@ -1551,6 +1718,7 @@ class _CanvasEditorToolbox(QDialog):
             self._data_edit.clear()
             self._source_edit.clear()
             self._content_group.hide()
+            self._ports_group.hide()
             self._geometry_group.hide()
             self._media_group.hide()
             self._stroke_group.hide()
@@ -1561,11 +1729,12 @@ class _CanvasEditorToolbox(QDialog):
             connector = isinstance(item, _CanvasConnector)
             media = not connector and item.kind in ("image", "animated_image")
             chart = not connector and item.kind in ("bar_chart", "line_chart")
-            line = not connector and item.kind in ("line", "polyline")
+            line = not connector and item.kind == "line"
             content = not connector and item.kind not in (
-                "image", "animated_image", "line", "polyline",
+                "image", "animated_image", "line",
             )
             self._content_group.setVisible(content)
+            self._ports_group.setVisible(not connector and item.kind == "node")
             self._geometry_group.setVisible(not connector)
             self._media_group.setVisible(media)
             self._stroke_group.setVisible(connector or line)
@@ -1574,12 +1743,14 @@ class _CanvasEditorToolbox(QDialog):
             self._color_buttons["text"].setVisible(content)
             self._color_buttons["flow"].setVisible(connector)
             self._route_combo.setEnabled(connector)
-            for widget in (self._source_label, self._source_combo, self._target_label, self._target_combo,
+            for widget in (self._source_label, self._source_combo, self._source_port_label,
+                           self._source_port_combo, self._target_label, self._target_combo,
+                           self._target_port_label, self._target_port_combo,
                            self._route_label, self._route_combo, self._animation_label, self._animated_check,
                            self._flow_speed_label, self._flow_speed_field, self._connector_opacity_label,
                            self._connector_opacity_field, self._connector_z_label, self._connector_z_field):
                 widget.setVisible(connector)
-            show_points = connector or (line and item.kind == "polyline")
+            show_points = connector or line
             self._points_label.setVisible(show_points)
             self._points_edit.setVisible(show_points)
             if connector:
@@ -1592,6 +1763,7 @@ class _CanvasEditorToolbox(QDialog):
                     self._target_combo.addItem(label, candidate_id)
                 self._source_combo.setCurrentIndex(self._source_combo.findData(item.source.element_id))
                 self._target_combo.setCurrentIndex(self._target_combo.findData(item.target.element_id))
+                self._refresh_endpoint_port_controls(item.source_port, item.target_port)
                 routes = ("bezier", "orthogonal", "straight", "polyline")
                 styles = ("solid", "dash", "dot", "dashdot")
                 self._route_combo.setCurrentIndex(routes.index(item.route) if item.route in routes else 0)
@@ -1610,6 +1782,7 @@ class _CanvasEditorToolbox(QDialog):
                 self._data_label.setVisible(chart)
                 self._data_edit.setVisible(chart)
                 self._source_edit.setText(item.source)
+                self._set_ports_editor(item.ports if item.kind == "node" else [])
                 values = {
                     "x": item.pos().x(), "y": item.pos().y(),
                     "width": item._rect.width(), "height": item._rect.height(),
@@ -1635,6 +1808,88 @@ class _CanvasEditorToolbox(QDialog):
         if not isinstance(values, list) or any(not isinstance(point, list | tuple) or len(point) != 2 for point in values):
             raise ValueError("Points must use [[x, y], ...] format")
         return [[float(point[0]), float(point[1])] for point in values]
+
+    def _set_ports_editor(self, ports: list[dict[str, Any]]) -> None:
+        blocker = QSignalBlocker(self._ports_list)
+        self._ports_list.clear()
+        for port in ports:
+            item = QListWidgetItem(
+                f"{port['id']}  ·  {port['mode']}  ·  {port['side']}  ·  {port.get('label', '')}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, dict(port))
+            self._ports_list.addItem(item)
+        del blocker
+
+    def _ports_from_editor(self) -> list[dict[str, Any]]:
+        return [
+            dict(self._ports_list.item(index).data(Qt.ItemDataRole.UserRole))
+            for index in range(self._ports_list.count())
+        ]
+
+    def _load_selected_port(self) -> None:
+        selected = self._ports_list.selectedItems()
+        if not selected:
+            return
+        port = dict(selected[0].data(Qt.ItemDataRole.UserRole))
+        self._port_id_edit.setText(port["id"])
+        self._port_label_edit.setText(port.get("label", ""))
+        self._port_mode_combo.setCurrentText(port["mode"].title())
+        self._port_side_combo.setCurrentText(port["side"].title())
+
+    def _upsert_port(self) -> None:
+        port_id = self._port_id_edit.text().strip()
+        if not port_id:
+            return
+        normalized = _normalize_node_ports([{
+            "id": port_id,
+            "label": self._port_label_edit.text().strip() or port_id,
+            "mode": self._port_mode_combo.currentText().lower(),
+            "side": self._port_side_combo.currentText().lower(),
+        }])[0]
+        ports = self._ports_from_editor()
+        for index, port in enumerate(ports):
+            if port["id"] == port_id:
+                ports[index] = normalized
+                break
+        else:
+            ports.append(normalized)
+        self._set_ports_editor(ports)
+
+    def _remove_port_from_editor(self) -> None:
+        selected = self._ports_list.selectedItems()
+        if selected:
+            self._ports_list.takeItem(self._ports_list.row(selected[0]))
+
+    def _refresh_endpoint_port_controls(
+        self,
+        preferred_source: str | None = None,
+        preferred_target: str | None = None,
+    ) -> None:
+        source_id = self._source_combo.currentData()
+        target_id = self._target_combo.currentData()
+        self._populate_port_combo(self._source_port_combo, source_id, preferred_source, True)
+        self._populate_port_combo(self._target_port_combo, target_id, preferred_target, False)
+
+    def _populate_port_combo(
+        self,
+        combo: QComboBox,
+        element_id: Any,
+        preferred: str | None,
+        source: bool,
+    ) -> None:
+        current = str(preferred if preferred is not None else combo.currentData() or "")
+        blocker = QSignalBlocker(combo)
+        combo.clear()
+        combo.addItem("Auto edge", "")
+        item = self.canvas.element(str(element_id)) if element_id else None
+        if item is not None:
+            allowed = ("output", "free") if source else ("input", "free")
+            for port in item.ports:
+                if port["mode"] in allowed:
+                    combo.addItem(f"{port['label']}  ·  {port['mode']}", port["id"])
+        index = combo.findData(current)
+        combo.setCurrentIndex(max(0, index))
+        del blocker
 
     @staticmethod
     def _parse_values(text: str) -> list[float]:
@@ -1773,6 +2028,15 @@ class _CanvasView(QGraphicsView):
         self.setAcceptDrops(True)
         self._right_pan_active = False
         self._right_pan_origin = None
+        self._connection_origin: tuple[_CanvasElement, dict[str, Any]] | None = None
+        self._connection_preview = QGraphicsPathItem()
+        preview_pen = QPen(QColor("#2563eb"), 2.5, Qt.PenStyle.DashLine)
+        preview_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        self._connection_preview.setPen(preview_pen)
+        self._connection_preview.setZValue(100000)
+        self._connection_preview.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self._connection_preview.hide()
+        scene.addItem(self._connection_preview)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -1793,6 +2057,21 @@ class _CanvasView(QGraphicsView):
 
     def mousePressEvent(self, event) -> None:
         point = event.position().toPoint()
+        if event.button() == Qt.MouseButton.LeftButton and self.canvas.editMode:
+            endpoint = self._port_at(point)
+            if endpoint is not None:
+                self._connection_origin = endpoint
+                start = endpoint[0].portScenePosition(endpoint[1]["id"])
+                preview = QPainterPath(start)
+                preview.lineTo(start)
+                self._connection_preview.setPath(preview)
+                self._connection_preview.show()
+                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+                self.canvas.diagnosticMessage.emit(
+                    f"Connector drag started: {endpoint[0].element_id}.{endpoint[1]['id']}"
+                )
+                event.accept()
+                return
         if event.button() == Qt.MouseButton.RightButton and self.itemAt(point) is None:
             self._right_pan_active = True
             self._right_pan_origin = point
@@ -1802,6 +2081,21 @@ class _CanvasView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
+        if self._connection_origin is not None:
+            source, port = self._connection_origin
+            start = source.portScenePosition(port["id"])
+            end = self.mapToScene(event.position().toPoint())
+            delta = max(40.0, abs(end.x() - start.x()) * 0.45)
+            direction = 1 if end.x() >= start.x() else -1
+            preview = QPainterPath(start)
+            preview.cubicTo(
+                start + QPointF(delta * direction, 0),
+                end - QPointF(delta * direction, 0),
+                end,
+            )
+            self._connection_preview.setPath(preview)
+            event.accept()
+            return
         if self._right_pan_active and self._right_pan_origin is not None:
             point = event.position().toPoint()
             delta = point - self._right_pan_origin
@@ -1813,6 +2107,27 @@ class _CanvasView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
+        if self._connection_origin is not None and event.button() == Qt.MouseButton.LeftButton:
+            source, source_port = self._connection_origin
+            self._connection_origin = None
+            self._connection_preview.hide()
+            target = self._port_at(event.position().toPoint())
+            self.viewport().unsetCursor()
+            if target is not None and (target[0] is not source or target[1]["id"] != source_port["id"]):
+                try:
+                    connector_id = self.canvas.connectPorts(
+                        source.element_id,
+                        source_port["id"],
+                        target[0].element_id,
+                        target[1]["id"],
+                    )
+                    self.scene().clearSelection()
+                    self.canvas.connector(connector_id).setSelected(True)
+                    self.canvas.diagnosticMessage.emit(f"Connector created from ports: {connector_id}")
+                except (KeyError, ValueError) as error:
+                    self.canvas.diagnosticMessage.emit(f"Connector rejected: {error}")
+            event.accept()
+            return
         if self._right_pan_active and event.button() == Qt.MouseButton.RightButton:
             self._right_pan_active = False
             self._right_pan_origin = None
@@ -1821,8 +2136,19 @@ class _CanvasView(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
         item = self.itemAt(event.position().toPoint())
-        if isinstance(item, (_CanvasElement, _CanvasConnector)):
+        if isinstance(item, _CanvasElement):
             self.canvas.elementClicked.emit(item.element_id)
+            self.canvas.objectClicked.emit(item.element_id)
+        elif isinstance(item, _CanvasConnector):
+            self.canvas.connectorClicked.emit(item.connector_id)
+            self.canvas.objectClicked.emit(item.connector_id)
+
+    def _port_at(self, view_position) -> tuple[_CanvasElement, dict[str, Any]] | None:
+        item = self.itemAt(view_position)
+        if not isinstance(item, _CanvasElement) or item.kind != "node":
+            return None
+        port = item.portAt(self.mapToScene(view_position))
+        return (item, port) if port is not None else None
 
     def dragEnterEvent(self, event) -> None:
         if self._media_urls(event.mimeData()):
@@ -1870,6 +2196,8 @@ class MonkezCanva(QWidget):
     connectorAdded = pyqtSignal(str)
     connectorRemoved = pyqtSignal(str)
     elementClicked = pyqtSignal(str)
+    connectorClicked = pyqtSignal(str)
+    objectClicked = pyqtSignal(str)
     selectionChanged = pyqtSignal(str)
     selectionSetChanged = pyqtSignal(list)
     documentChanged = pyqtSignal()
@@ -1999,6 +2327,11 @@ class MonkezCanva(QWidget):
         **options,
     ) -> str:
         kind = str(kind).lower().strip()
+        if kind == "arrow":
+            options.setdefault("arrowEnd", True)
+            kind = "line"
+        elif kind == "polyline":
+            kind = "line"
         if kind not in _ELEMENT_DEFAULTS:
             raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
         default_width, default_height = _ELEMENT_DEFAULTS[kind]
@@ -2025,12 +2358,60 @@ class MonkezCanva(QWidget):
     def addNode(self, text: str, x: float = 0, y: float = 0, **options) -> str:
         return self.addElement("node", x, y, text=text, **options)
 
+    def nodePorts(self, element_id: str) -> list[dict[str, Any]]:
+        item = self._required_element(element_id)
+        if item.kind != "node":
+            raise TypeError(f"Element {element_id!r} is not a node")
+        return [dict(port) for port in item.ports]
+
+    def setNodePorts(self, element_id: str, ports) -> "MonkezCanva":
+        item = self._required_element(element_id)
+        if item.kind != "node":
+            raise TypeError(f"Element {element_id!r} is not a node")
+        item.ports = _normalize_node_ports(ports)
+        valid_ids = {port["id"] for port in item.ports}
+        for connector in self._connectors.values():
+            if connector.source is item and connector.source_port not in valid_ids:
+                connector.source_port = ""
+            if connector.target is item and connector.target_port not in valid_ids:
+                connector.target_port = ""
+            connector.updatePath()
+        item.update()
+        self.documentChanged.emit()
+        return self
+
+    def addNodePort(
+        self,
+        element_id: str,
+        port_id: str,
+        mode: str = "free",
+        side: str | None = None,
+        label: str = "",
+        position: float | None = None,
+    ) -> "MonkezCanva":
+        ports = self.nodePorts(element_id)
+        port: dict[str, Any] = {"id": port_id, "mode": mode, "label": label or port_id}
+        if side is not None:
+            port["side"] = side
+        if position is not None:
+            port["position"] = position
+        ports.append(port)
+        return self.setNodePorts(element_id, ports)
+
+    def removeNodePort(self, element_id: str, port_id: str) -> bool:
+        ports = self.nodePorts(element_id)
+        filtered = [port for port in ports if port["id"] != str(port_id)]
+        if len(filtered) == len(ports):
+            return False
+        self.setNodePorts(element_id, filtered)
+        return True
+
     def addLine(self, x: float = 0, y: float = 0, **options) -> str:
         return self.addElement("line", x, y, **options)
 
     def addPolyline(self, points, x: float = 0, y: float = 0, **options) -> str:
         options["points"] = [[float(point[0]), float(point[1])] for point in points]
-        return self.addElement("polyline", x, y, **options)
+        return self.addElement("line", x, y, **options)
 
     def addChart(self, values, chart_type: str = "bar", x: float = 0, y: float = 0, **options) -> str:
         kind = "line_chart" if str(chart_type).lower() == "line" else "bar_chart"
@@ -2197,6 +2578,8 @@ class MonkezCanva(QWidget):
             item.arrow_end = bool(values["arrowEnd"])
         if "points" in values:
             item.points = [QPointF(float(point[0]), float(point[1])) for point in values["points"]]
+        if "ports" in values:
+            self.setNodePorts(element_id, values["ports"])
         item.update()
         item.changed.emit(item.element_id)
         self.documentChanged.emit()
@@ -2249,6 +2632,15 @@ class MonkezCanva(QWidget):
         target = self._elements.get(str(target_id))
         if source is None or target is None:
             raise KeyError("Both connector endpoints must exist")
+        source_port = str(options.get("sourcePort", ""))
+        target_port = str(options.get("targetPort", ""))
+        if source.kind == "node" and not source_port:
+            source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
+        if target.kind == "node" and not target_port:
+            target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
+        self._validate_connection_ports(source, source_port, target, target_port)
+        options["sourcePort"] = source_port
+        options["targetPort"] = target_port
         connector_id = str(connector_id or uuid.uuid4().hex[:10])
         if connector_id in self._connectors or connector_id in self._elements:
             raise ValueError(f"Duplicate MonkezCanva object id: {connector_id}")
@@ -2260,6 +2652,48 @@ class MonkezCanva(QWidget):
         self.connectorAdded.emit(connector_id)
         self.documentChanged.emit()
         return connector_id
+
+    @staticmethod
+    def _validate_connection_ports(
+        source: _CanvasElement,
+        source_port: str,
+        target: _CanvasElement,
+        target_port: str,
+    ) -> None:
+        source_config = source.port(source_port) if source_port else None
+        target_config = target.port(target_port) if target_port else None
+        if source_port and source_config is None:
+            raise KeyError(f"Unknown source port {source_port!r} on {source.element_id!r}")
+        if target_port and target_config is None:
+            raise KeyError(f"Unknown target port {target_port!r} on {target.element_id!r}")
+        if source_config and source_config["mode"] == "input":
+            raise ValueError("A connector cannot start from an input port")
+        if target_config and target_config["mode"] == "output":
+            raise ValueError("A connector cannot end at an output port")
+
+    def connectPorts(
+        self,
+        first_element_id: str,
+        first_port_id: str,
+        second_element_id: str,
+        second_port_id: str,
+        **options,
+    ) -> str:
+        """Connect two ports, automatically orienting output -> input where possible."""
+        first = self._required_element(first_element_id)
+        second = self._required_element(second_element_id)
+        first_port = first.port(first_port_id)
+        second_port = second.port(second_port_id)
+        if first_port is None or second_port is None:
+            raise KeyError("Both node ports must exist")
+        if first_port["mode"] == "input" or second_port["mode"] == "output":
+            if second_port["mode"] not in ("output", "free") or first_port["mode"] not in ("input", "free"):
+                raise ValueError("Ports are incompatible; connect output/free to input/free")
+            first, second = second, first
+            first_port, second_port = second_port, first_port
+        options["sourcePort"] = first_port["id"]
+        options["targetPort"] = second_port["id"]
+        return self.connectElements(first.element_id, second.element_id, **options)
 
     def connectSelected(self, **options) -> str:
         """Connect exactly two selected elements and select the new connector."""
@@ -2278,12 +2712,28 @@ class MonkezCanva(QWidget):
         connector_id: str,
         source_id: str,
         target_id: str,
+        source_port: str | None = None,
+        target_port: str | None = None,
     ) -> "MonkezCanva":
         """Change connector endpoints while preserving its ID and visual settings."""
         connector = self._required_connector(connector_id)
         source = self._required_element(source_id)
         target = self._required_element(target_id)
-        if connector.source is source and connector.target is target:
+        source_port = connector.source_port if source_port is None else str(source_port)
+        target_port = connector.target_port if target_port is None else str(target_port)
+        if source is not connector.source and source_port and source.port(source_port) is None:
+            source_port = ""
+        if target is not connector.target and target_port and target.port(target_port) is None:
+            target_port = ""
+        if source.kind == "node" and not source_port:
+            source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
+        if target.kind == "node" and not target_port:
+            target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
+        self._validate_connection_ports(source, source_port, target, target_port)
+        if (
+            connector.source is source and connector.target is target
+            and connector.source_port == source_port and connector.target_port == target_port
+        ):
             return self
         for endpoint in (connector.source, connector.target):
             try:
@@ -2292,6 +2742,8 @@ class MonkezCanva(QWidget):
                 pass
         connector.source = source
         connector.target = target
+        connector.source_port = source_port
+        connector.target_port = target_port
         source.changed.connect(connector.updatePath)
         target.changed.connect(connector.updatePath)
         connector.updatePath()
@@ -2306,6 +2758,15 @@ class MonkezCanva(QWidget):
 
     def updateConnector(self, connector_id: str, **values) -> "MonkezCanva":
         connector = self._required_connector(connector_id)
+        if any(key in values for key in ("source", "target", "sourcePort", "targetPort")):
+            self.reconnectConnector(
+                connector_id,
+                str(values.get("source", connector.source.element_id)),
+                str(values.get("target", connector.target.element_id)),
+                str(values.get("sourcePort", connector.source_port)),
+                str(values.get("targetPort", connector.target_port)),
+            )
+            connector = self._required_connector(connector_id)
         if "route" in values:
             route = str(values["route"]).lower()
             if route not in ("bezier", "orthogonal", "straight", "polyline"):
@@ -2416,6 +2877,15 @@ class MonkezCanva(QWidget):
 
     def highlightElement(self, element_id: str, color: Any = "#f59e0b", duration: int = 900) -> "MonkezCanva":
         item = self._required_element(element_id)
+        item._highlight = _color(color, "#f59e0b")
+        item.update()
+        QTimer.singleShot(max(0, int(duration)), lambda target=item: self._clear_highlight(target))
+        return self
+
+    def highlightObject(self, object_id: str, color: Any = "#f59e0b", duration: int = 900) -> "MonkezCanva":
+        item = self.canvasObject(object_id)
+        if item is None:
+            raise KeyError(f"Unknown MonkezCanva object: {object_id}")
         item._highlight = _color(color, "#f59e0b")
         item.update()
         QTimer.singleShot(max(0, int(duration)), lambda target=item: self._clear_highlight(target))
@@ -3021,7 +3491,7 @@ class MonkezCanva(QWidget):
             raise KeyError(f"Unknown MonkezCanva connector: {connector_id}")
         return connector
 
-    def _clear_highlight(self, item: _CanvasElement) -> None:
+    def _clear_highlight(self, item: _CanvasElement | _CanvasConnector) -> None:
         if item.element_id in self._elements:
             item._highlight = QColor()
             item.update()

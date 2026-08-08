@@ -167,10 +167,12 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         ),
         (
             "addElement(type, x, y)", "addNode(text, x, y)", "addChart(values, type)",
-            "addLine(x, y)", "addPolyline(points, x, y)",
+            "addLine(x, y, points=..., arrowEnd=...)",
+            "setNodePorts(id, ports)", "addNodePort(id, port_id, mode, side)",
             "addMedia(path)", "renameElement(id, new_id)", "updateElement(id, **values)",
             "selectElements(ids)", "selectedObjectIds()", "alignSelected(edge)",
-            "connectElements(source, target, **style)", "connectSelected()",
+            "connectElements(source, target, **style)", "connectPorts(node, port, node, port)",
+            "connectSelected()",
             "updateConnector(id, **values)", "animateConnector(id, enabled)",
             "reconnectConnector(id, source, target)", "setElementColor(id, color)",
             "saveSession()", "savePersistent()", "undo()", "redo()",
@@ -1860,11 +1862,21 @@ def _table_preview() -> QWidget:
 
 def _canva_preview() -> QWidget:
     widget = MonkezCanva()
-    source = widget.addNode("Camera", -180, -45, color="#2563eb")
-    target = widget.addNode("Detection", 70, -45, color="#7c3aed")
+    source = widget.addNode(
+        "Camera", -180, -45, color="#2563eb",
+        ports=[{"id": "video", "mode": "output", "side": "right", "label": "Video"}],
+    )
+    target = widget.addNode(
+        "Detection", 70, -45, color="#7c3aed",
+        ports=[
+            {"id": "frames", "mode": "input", "side": "left", "label": "Frames"},
+            {"id": "result", "mode": "output", "side": "right", "label": "Result"},
+        ],
+    )
     chart = widget.addChart([28, 64, 48, 82, 70], "line", 330, -75, text="Confidence")
     widget.connectElements(
-        source, target, route="orthogonal", arrowEnd=True,
+        source, target, sourcePort="video", targetPort="frames",
+        route="orthogonal", arrowEnd=True,
         animated=True, flowColor="#38bdf8",
     )
     widget.connectElements(target, chart, route="bezier", arrowStart=True, arrowEnd=True)
