@@ -87,14 +87,18 @@ three elements.
 
 `MonkezCanva` owns or attaches one `CanvasDocument` through `setDocumentModel()`.
 Multiple canvas instances may subscribe to the same model. A direct model change
-rerenders every attached view once per revision; a graphics interaction reconciles
-the rendered state back into immutable records and emits record-level add/update/
-remove events through `documentOperation`.
+is dispatched incrementally to every attached view. Add/update/remove/rename
+operations preserve unrelated graphics objects, while property and ID changes
+preserve the affected object's identity, selection and viewport. Public element
+and connector add/update/remove/rename APIs commit to the model first. A direct
+graphics interaction still reconciles rendered state back into immutable records
+and emits record-level events through `documentOperation`.
 
 This is the first extraction boundary, not the final command architecture. The
-current graphics adapter still reconciles a JSON view after legacy mutations.
-Phase 1.3 must replace that adapter path with minimal `QUndoCommand` operations so
-graphics items only consume model changes and never originate canonical snapshots.
+current compatibility adapter still reconciles gestures and several compound
+legacy mutations. Phase 1.3 must replace that remaining adapter path with minimal
+`QUndoCommand` operations so graphics items only consume model changes and never
+originate canonical snapshots.
 
 ## Persistence and trust boundary
 
@@ -120,8 +124,8 @@ are fit, fill and non-aspect-preserving scale.
 
 ## Roadmap
 
-1. Complete model-driven graphics mutations and command-based Undo.
-2. Public element registry using schema + renderer/editor factories.
+1. Public element registry using schema + renderer/editor factories.
+2. Complete model-driven gesture mutations and command-based Undo.
 3. Clipboard, keyboard nudging and true mixed-value property editing.
 4. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
 5. Declarative data bindings and throttled live chart updates.

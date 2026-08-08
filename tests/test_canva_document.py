@@ -109,18 +109,24 @@ class CanvasDocumentTests(unittest.TestCase):
 
     def test_rename_and_remove_are_atomic_and_update_connectors(self) -> None:
         document = CanvasDocument.from_dict(document_payload())
+        document.add_group({"id": "pipeline", "members": ["source", "target"]})
         events = []
         document.subscribe(events.append)
 
         renamed = document.rename_element("source", "producer")
 
         self.assertEqual("producer", document.connector("edge").source)
-        self.assertEqual({1}, {event.revision for event in renamed})
+        self.assertEqual(("producer", "target"), document.group("pipeline").members)
+        self.assertEqual({2}, {event.revision for event in renamed})
         self.assertEqual(1, len({event.operation_id for event in renamed}))
         removed = document.remove_element("target")
         self.assertIsNone(document.connector("edge"))
-        self.assertEqual(["connector.removed", "element.removed"], [event.action for event in removed])
-        self.assertEqual(2, document.revision)
+        self.assertEqual(("producer",), document.group("pipeline").members)
+        self.assertEqual(
+            ["connector.removed", "group.updated", "element.removed"],
+            [event.action for event in removed],
+        )
+        self.assertEqual(3, document.revision)
 
     def test_groups_resources_and_duplicate_input_records_round_trip(self) -> None:
         document = CanvasDocument.from_dict(document_payload())
@@ -135,6 +141,25 @@ class CanvasDocumentTests(unittest.TestCase):
         duplicated["elements"].append(dict(duplicated["elements"][0]))
         with self.assertRaisesRegex(ValueError, "duplicate element IDs"):
             CanvasDocument.from_dict(duplicated)
+
+    def test_connector_group_and_resource_lifecycle_operations(self) -> None:
+        document = CanvasDocument.from_dict(document_payload())
+        document.add_group({"id": "pipeline", "members": ["source", "target"]})
+        document.add_resource({"id": "icon", "kind": "image", "uri": "old.png"})
+
+        connector_event = document.rename_connector("edge", "signal")
+        group_event = document.update_group("pipeline", {"label": "Main pipeline"})
+        resource_event = document.update_resource("icon", {"uri": "assets/icon.png"})
+
+        self.assertEqual("connector.renamed", connector_event.action)
+        self.assertIsNone(document.connector("edge"))
+        self.assertEqual("source", document.connector("signal").source)
+        self.assertEqual("Main pipeline", document.group("pipeline").properties["label"])
+        self.assertEqual("assets/icon.png", document.resource("icon").uri)
+        self.assertEqual("group.updated", group_event.action)
+        self.assertEqual("resource.updated", resource_event.action)
+        self.assertEqual("group.removed", document.remove_group("pipeline").action)
+        self.assertEqual("resource.removed", document.remove_resource("icon").action)
 
 
 if __name__ == "__main__":

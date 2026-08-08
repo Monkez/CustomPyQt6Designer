@@ -306,6 +306,12 @@ class CanvasDocument:
     def connector(self, connector_id: str) -> ConnectorModel | None:
         return self._connectors.get(str(connector_id))
 
+    def group(self, group_id: str) -> GroupModel | None:
+        return self._groups.get(str(group_id))
+
+    def resource(self, resource_id: str) -> ResourceModel | None:
+        return self._resources.get(str(resource_id))
+
     def subscribe(self, listener: DocumentListener) -> str:
         token = uuid4().hex
         try:
@@ -389,15 +395,32 @@ class CanvasDocument:
         key = str(element_id)
         previous = self._required_element(key).to_dict()
         attached = [item for item in self._connectors.values() if key in (item.source, item.target)]
+        changed_groups: list[tuple[GroupModel, GroupModel]] = []
         self._elements.pop(key)
         for connector in attached:
             self._connectors.pop(connector.id)
+        for group_id, group in tuple(self._groups.items()):
+            if key not in group.members:
+                continue
+            data = group.to_dict()
+            data["members"] = [member for member in group.members if member != key]
+            updated = GroupModel.from_dict(data)
+            self._groups[group_id] = updated
+            changed_groups.append((group, updated))
         self._revision += 1
         operation_id = uuid4().hex
         events = [
             OperationEvent("connector.removed", "connector", item.id, self._revision, previous=item.to_dict(), operation_id=operation_id, origin=origin)
             for item in attached
         ]
+        events.extend(
+            OperationEvent(
+                "group.updated", "group", current.id, self._revision,
+                changed_fields(old.to_dict(), current.to_dict()), old.to_dict(), current.to_dict(),
+                operation_id, origin=origin,
+            )
+            for old, current in changed_groups
+        )
         events.append(OperationEvent("element.removed", "element", key, self._revision, previous=previous, operation_id=operation_id, origin=origin))
         committed = tuple(events)
         self._emit(committed)
@@ -434,6 +457,27 @@ class CanvasDocument:
             raise KeyError(f"Unknown MonkezCanva connector: {key}")
         return self._commit("connector.removed", "connector", key, previous=model.to_dict(), origin=origin)
 
+    def rename_connector(self, connector_id: str, new_id: str, *, origin: Any = None) -> OperationEvent | None:
+        old_id = str(connector_id)
+        requested = _required_id(new_id, "connector")
+        model = self._connectors.get(old_id)
+        if model is None:
+            raise KeyError(f"Unknown MonkezCanva connector: {old_id}")
+        if requested == old_id:
+            return None
+        self._ensure_available_id(requested)
+        data = model.to_dict()
+        data["id"] = requested
+        renamed = ConnectorModel.from_dict(data)
+        ordered: dict[str, ConnectorModel] = {}
+        for key, entry in self._connectors.items():
+            ordered[requested if key == old_id else key] = renamed if key == old_id else entry
+        self._connectors = ordered
+        return self._commit(
+            "connector.renamed", "connector", requested, {"id": requested},
+            model.to_dict(), renamed.to_dict(), origin,
+        )
+
     def rename_element(self, element_id: str, new_id: str, *, origin: Any = None) -> tuple[OperationEvent, ...]:
         old_id = str(element_id)
         requested = _required_id(new_id, "element")
@@ -461,11 +505,14 @@ class CanvasDocument:
             updated = ConnectorModel.from_dict(data)
             self._connectors[key] = updated
             changed_connectors.append((connector, updated))
+        changed_groups: list[tuple[GroupModel, GroupModel]] = []
         for key, group in tuple(self._groups.items()):
             if old_id in group.members:
                 data = group.to_dict()
                 data["members"] = [requested if member == old_id else member for member in group.members]
-                self._groups[key] = GroupModel.from_dict(data)
+                updated = GroupModel.from_dict(data)
+                self._groups[key] = updated
+                changed_groups.append((group, updated))
         self._revision += 1
         operation_id = uuid4().hex
         events = [
@@ -482,6 +529,14 @@ class CanvasDocument:
             )
             for previous, current in changed_connectors
         )
+        events.extend(
+            OperationEvent(
+                "group.updated", "group", current.id, self._revision,
+                changed_fields(previous.to_dict(), current.to_dict()), previous.to_dict(), current.to_dict(),
+                operation_id, origin=origin,
+            )
+            for previous, current in changed_groups
+        )
         committed = tuple(events)
         self._emit(committed)
         return committed
@@ -495,12 +550,86 @@ class CanvasDocument:
         self._groups[model.id] = model
         return self._commit("group.added", "group", model.id, current=model.to_dict(), origin=origin)
 
+    def update_group(self, group_id: str, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        key = str(group_id)
+        previous_model = self._groups.get(key)
+        if previous_model is None:
+            raise KeyError(f"Unknown MonkezCanva group: {key}")
+        previous = previous_model.to_dict()
+        current = dict(previous)
+        current.update(_json_copy(dict(changes)))
+        current["id"] = key
+        model = GroupModel.from_dict(current)
+        missing = [member for member in model.members if member not in self._elements and member not in self._groups]
+        if missing:
+            raise ValueError(f"Group {model.id!r} contains missing members: {missing}")
+        self._groups[key] = model
+        return self._commit(
+            "group.updated", "group", key, changed_fields(previous, model.to_dict()),
+            previous, model.to_dict(), origin,
+        )
+
+    def remove_group(self, group_id: str, *, origin: Any = None) -> OperationEvent:
+        key = str(group_id)
+        model = self._groups.pop(key, None)
+        if model is None:
+            raise KeyError(f"Unknown MonkezCanva group: {key}")
+        changed_parents: list[tuple[GroupModel, GroupModel]] = []
+        for parent_id, parent in tuple(self._groups.items()):
+            if key not in parent.members:
+                continue
+            data = parent.to_dict()
+            data["members"] = [member for member in parent.members if member != key]
+            updated = GroupModel.from_dict(data)
+            self._groups[parent_id] = updated
+            changed_parents.append((parent, updated))
+        self._revision += 1
+        operation_id = uuid4().hex
+        events = [
+            OperationEvent(
+                "group.updated", "group", current.id, self._revision,
+                changed_fields(previous.to_dict(), current.to_dict()), previous.to_dict(), current.to_dict(),
+                operation_id, origin=origin,
+            )
+            for previous, current in changed_parents
+        ]
+        removed = OperationEvent(
+            "group.removed", "group", key, self._revision, previous=model.to_dict(),
+            operation_id=operation_id, origin=origin,
+        )
+        events.append(removed)
+        self._emit(events)
+        return removed
+
     def add_resource(self, resource: ResourceModel | Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
         model = resource if isinstance(resource, ResourceModel) else ResourceModel.from_dict(resource)
         if model.id in self._resources:
             raise ValueError(f"Duplicate MonkezCanva resource id: {model.id}")
         self._resources[model.id] = model
         return self._commit("resource.added", "resource", model.id, current=model.to_dict(), origin=origin)
+
+    def update_resource(self, resource_id: str, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        key = str(resource_id)
+        previous_model = self._resources.get(key)
+        if previous_model is None:
+            raise KeyError(f"Unknown MonkezCanva resource: {key}")
+        previous = previous_model.to_dict()
+        current = dict(previous)
+        current.update(_json_copy(dict(changes)))
+        current["id"] = key
+        model = ResourceModel.from_dict(current)
+        self._resources[key] = model
+        return self._commit(
+            "resource.updated", "resource", key, changed_fields(previous, model.to_dict()),
+            previous, model.to_dict(), origin,
+        )
+
+    def remove_resource(self, resource_id: str, *, origin: Any = None) -> OperationEvent:
+        key = str(resource_id)
+        model = self._resources.pop(key, None)
+        if model is None:
+            raise KeyError(f"Unknown MonkezCanva resource: {key}")
+        return self._commit("resource.removed", "resource", key, previous=model.to_dict(), origin=origin)
 
     def update_scene(self, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
         previous = self._scene.to_dict()

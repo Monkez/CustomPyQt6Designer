@@ -113,15 +113,18 @@ Delivered under `MC-CORE-MODEL-001`:
 - global ID, endpoint, port and finite-JSON validation;
 - atomic revisions, granular operation events, rename and cascade removal;
 - `MonkezCanva.setDocumentModel()` and synchronized multi-view rendering;
-- independent model tests plus full-suite regression coverage (128 passing).
+- independent model tests plus full-suite regression coverage (130 passing);
+- incremental operation rendering for scene, element and connector records;
+- stable graphics identity, selection and viewport across external revisions;
+- model-first public add/update/remove/rename/connect operations;
+- complete connector/group/resource update, rename and removal lifecycle APIs.
 
-Remaining before Phase 1.1 is complete:
+Phase 1.1 is complete. Follow-up work moves to the registry and command layers:
 
-- route each legacy graphics mutation through model operations rather than JSON
-  reconciliation;
-- render incrementally per operation instead of rebuilding external views;
-- preserve active selection/viewport across an external model revision;
-- add model-backed group/resource rendering after the registry boundary exists.
+- generate element defaults and validation from registry metadata rather than
+  duplicated renderer-side normalization;
+- route remaining direct gestures/compound editor actions through commands;
+- add group/resource graphics after their renderer registrations exist.
 
 ## Backlog tracking
 

@@ -35,10 +35,12 @@ Acceptance:
 - model changes emit granular change records;
 - loading version-1 projects produces the same visible graph.
 
-Progress (2026-08-09): the Qt-free records, validation, revisioned operation
-events, version-1 normalization and shared multi-view bridge are implemented.
-Legacy graphics mutations currently reconcile into the model; incremental
-model-first rendering remains required before this item is complete.
+Completed (2026-08-09): Qt-free records, validation, revisioned operation events,
+version-1 normalization, shared multi-view attachment and incremental operation
+rendering are implemented. Public element/connector add, update, remove, rename
+and connect APIs are model-first. External updates retain graphics identity,
+selection and viewport. The compatibility reconcile path remains only for direct
+graphics gestures and compound actions until command-based history lands.
 
 ### 1.2 Public element registry
 

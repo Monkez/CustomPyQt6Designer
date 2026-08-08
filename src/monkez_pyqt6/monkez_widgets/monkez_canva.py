@@ -2939,12 +2939,29 @@ class MonkezCanva(QWidget):
             kind = "line"
         if kind == "splitter" and not options.get("ports"):
             options["ports"] = _splitter_ports()
+        elif kind == "node" and "ports" not in options:
+            options["ports"] = _normalize_node_ports(None)
         if kind not in _ELEMENT_DEFAULTS:
             raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
         default_width, default_height = _ELEMENT_DEFAULTS[kind]
         element_id = str(element_id or uuid.uuid4().hex[:10])
         if element_id in self._elements or element_id in self._connectors:
             raise ValueError(f"Duplicate MonkezCanva object id: {element_id}")
+        if not self._restoring:
+            resolved_width = width or default_width
+            resolved_height = height or default_height
+            center = self._view.mapToScene(self._view.viewport().rect().center())
+            record = self._element_model_record(
+                element_id,
+                kind,
+                center.x() - resolved_width / 2 if x is None else float(x),
+                center.y() - resolved_height / 2 if y is None else float(y),
+                resolved_width,
+                resolved_height,
+                options,
+            )
+            self._document_model.add_element(record)
+            return element_id
         item = _CanvasElement(element_id, kind, width or default_width, height or default_height, options)
         center = self._view.mapToScene(self._view.viewport().rect().center())
         item.setPos(center.x() - item._rect.width() / 2 if x is None else x, center.y() - item._rect.height() / 2 if y is None else y)
@@ -3181,6 +3198,9 @@ class MonkezCanva(QWidget):
         return self.distributeSelected("vertical")
 
     def renameElement(self, element_id: str, new_id: str) -> str:
+        if not self._restoring:
+            events = self._document_model.rename_element(element_id, new_id)
+            return events[0].target_id if events else str(element_id)
         item = self._required_element(element_id)
         requested = str(new_id).strip()
         if not requested:
@@ -3199,6 +3219,32 @@ class MonkezCanva(QWidget):
         return requested
 
     def updateElement(self, element_id: str, **values) -> "MonkezCanva":
+        if not self._restoring:
+            model = self._document_model.element(element_id)
+            if model is None:
+                raise KeyError(f"Unknown MonkezCanva element: {element_id}")
+            current = model.to_dict()
+            current.update(self._model_values(values))
+            kind = str(current["type"])
+            source = str(current.get("source", ""))
+            if "source" in values and kind in ("image", "animated_image") and source:
+                kind = "animated_image" if Path(source).suffix.lower() == ".gif" else "image"
+            if str(current.get("animationEffect", "flow")).lower() not in _LINE_EFFECTS:
+                raise ValueError(
+                    f"Unsupported line animation effect: {current['animationEffect']}"
+                )
+            default_width, default_height = _ELEMENT_DEFAULTS[kind]
+            normalized = self._element_model_record(
+                str(element_id),
+                kind,
+                float(current.get("x", 0.0)),
+                float(current.get("y", 0.0)),
+                float(current.get("width", default_width)),
+                float(current.get("height", default_height)),
+                current,
+            )
+            self._document_model.update_element(element_id, normalized)
+            return self
         item = self._required_element(element_id)
         if "x" in values or "y" in values:
             item.setPos(float(values.get("x", item.pos().x())), float(values.get("y", item.pos().y())))
@@ -3325,6 +3371,13 @@ class MonkezCanva(QWidget):
         if connector_id in self._connectors or connector_id in self._elements:
             raise ValueError(f"Duplicate MonkezCanva object id: {connector_id}")
         options.setdefault("color", color)
+        if not self._restoring:
+            self._document_model.add_connector(
+                self._connector_model_record(
+                    connector_id, source.element_id, target.element_id, options
+                )
+            )
+            return connector_id
         connector = _CanvasConnector(self, connector_id, source, target, options)
         connector.changed.connect(self._connector_changed)
         connector.packetArrived.connect(self._on_packet_arrived)
@@ -3438,6 +3491,37 @@ class MonkezCanva(QWidget):
         return list(self._connectors)
 
     def updateConnector(self, connector_id: str, **values) -> "MonkezCanva":
+        if not self._restoring:
+            model = self._document_model.connector(connector_id)
+            if model is None:
+                raise KeyError(f"Unknown MonkezCanva connector: {connector_id}")
+            current = model.to_dict()
+            current.update(self._model_values(values))
+            route = str(current.get("route", "bezier")).lower()
+            if route not in ("bezier", "orthogonal", "straight", "polyline"):
+                raise ValueError(f"Unsupported connector route: {route}")
+            style = str(current.get("lineStyle", "solid")).lower()
+            if style not in ("solid", "dash", "dot", "dashdot"):
+                raise ValueError(f"Unsupported connector line style: {style}")
+            effect = str(current.get("animationEffect", "flow")).lower()
+            if effect not in _LINE_EFFECTS:
+                raise ValueError(f"Unsupported connector animation effect: {effect}")
+            source = self._required_element(str(current["source"]))
+            target = self._required_element(str(current["target"]))
+            self._validate_connection_ports(
+                source,
+                str(current.get("sourcePort", "")),
+                target,
+                str(current.get("targetPort", "")),
+            )
+            normalized = self._connector_model_record(
+                str(connector_id),
+                source.element_id,
+                target.element_id,
+                current,
+            )
+            self._document_model.update_connector(connector_id, normalized)
+            return self
         connector = self._required_connector(connector_id)
         if any(key in values for key in ("source", "target", "sourcePort", "targetPort")):
             self.reconnectConnector(
@@ -3590,6 +3674,9 @@ class MonkezCanva(QWidget):
             self.messageArrived.emit(object_id, message_id)
 
     def renameConnector(self, connector_id: str, new_id: str) -> str:
+        if not self._restoring:
+            event = self._document_model.rename_connector(connector_id, new_id)
+            return event.target_id if event is not None else str(connector_id)
         connector = self._required_connector(connector_id)
         requested = str(new_id).strip()
         if not requested:
@@ -3607,6 +3694,11 @@ class MonkezCanva(QWidget):
         return requested
 
     def removeConnector(self, connector_id: str) -> bool:
+        if not self._restoring:
+            if self._document_model.connector(connector_id) is None:
+                return False
+            self._document_model.remove_connector(connector_id)
+            return True
         connector = self._connectors.pop(str(connector_id), None)
         if connector is None:
             return False
@@ -3690,6 +3782,11 @@ class MonkezCanva(QWidget):
                 self.removeConnector(item.connector_id)
 
     def removeElement(self, element_id: str) -> bool:
+        if not self._restoring:
+            if self._document_model.element(element_id) is None:
+                return False
+            self._document_model.remove_element(element_id)
+            return True
         item = self._elements.pop(str(element_id), None)
         if item is None:
             return False
@@ -3734,6 +3831,121 @@ class MonkezCanva(QWidget):
         self._render_document(document.to_dict())
         return self
 
+    @staticmethod
+    def _model_values(values: dict[str, Any]) -> dict[str, Any]:
+        """Convert common Qt/path values before they enter the JSON document core."""
+
+        def convert(value: Any) -> Any:
+            if isinstance(value, QColor):
+                return value.name(QColor.NameFormat.HexArgb)
+            if isinstance(value, Path):
+                return str(value)
+            if isinstance(value, dict):
+                return {str(key): convert(item) for key, item in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [convert(item) for item in value]
+            return value
+
+        result = {str(key): convert(value) for key, value in values.items()}
+        for key, fallback in (
+            ("color", "#2563eb"),
+            ("background", "#ffffff"),
+            ("textColor", "#0f172a"),
+            ("flowColor", "#38bdf8"),
+        ):
+            if key in result:
+                result[key] = _color(result[key], fallback).name(QColor.NameFormat.HexArgb)
+        return result
+
+    @classmethod
+    def _element_model_record(
+        cls,
+        element_id: str,
+        kind: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        values = cls._model_values(options)
+        direction = str(values.get("flowDirection", "forward")).lower()
+        return {
+            "id": element_id,
+            "type": kind,
+            "x": float(x),
+            "y": float(y),
+            "width": max(24.0, float(width)),
+            "height": max(24.0, float(height)),
+            "text": str(values.get("text", kind.replace("_", " ").title())),
+            "color": _color(values.get("color", "#2563eb")).name(QColor.NameFormat.HexArgb),
+            "background": _color(values.get("background", "#ffffff"), "#ffffff").name(QColor.NameFormat.HexArgb),
+            "textColor": _color(values.get("textColor", "#0f172a"), "#0f172a").name(QColor.NameFormat.HexArgb),
+            "data": list(values.get("data", [32, 68, 46, 82, 58])),
+            "metadata": dict(values.get("metadata", {})),
+            "source": str(values.get("source", "")),
+            "lineWidth": max(0.5, float(values.get("lineWidth", 2.2))),
+            "lineStyle": str(values.get("lineStyle", "solid")).lower(),
+            "arrowStart": bool(values.get("arrowStart", False)),
+            "arrowEnd": bool(values.get("arrowEnd", False)),
+            "animated": bool(values.get("animated", False)),
+            "animationEffect": str(values.get("animationEffect", "flow")).lower(),
+            "flowColor": _color(values.get("flowColor", "#38bdf8"), "#38bdf8").name(QColor.NameFormat.HexArgb),
+            "flowSpeed": max(0.1, float(values.get("flowSpeed", 1.0))),
+            "flowDirection": "reverse" if direction == "reverse" else "forward",
+            "flowSpacing": max(1.0, float(values.get("flowSpacing", 5.0))),
+            "effectIntensity": max(0.2, min(4.0, float(values.get("effectIntensity", 1.0)))),
+            "packetLoop": bool(values.get("packetLoop", False)),
+            "packetDuration": max(0.1, float(values.get("packetDuration", 1.5))),
+            "packetInterval": max(0.05, float(values.get("packetInterval", 0.7))),
+            "packetIcon": str(values.get("packetIcon", "")),
+            "points": [[float(point[0]), float(point[1])] for point in values.get("points", [])],
+            "ports": _normalize_node_ports(values.get("ports")) if kind in _PORT_KINDS else [],
+            "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
+            "rotation": float(values.get("rotation", 0.0)),
+            "z": float(values.get("z", 0.0)),
+        }
+
+    @classmethod
+    def _connector_model_record(
+        cls,
+        connector_id: str,
+        source_id: str,
+        target_id: str,
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        values = cls._model_values(options)
+        direction = str(values.get("flowDirection", "forward")).lower()
+        return {
+            "id": connector_id,
+            "type": "connector",
+            "source": source_id,
+            "target": target_id,
+            "sourcePort": str(values.get("sourcePort", "")),
+            "targetPort": str(values.get("targetPort", "")),
+            "color": _color(values.get("color", "#64748b"), "#64748b").name(QColor.NameFormat.HexArgb),
+            "flowColor": _color(values.get("flowColor", "#38bdf8"), "#38bdf8").name(QColor.NameFormat.HexArgb),
+            "route": str(values.get("route", "bezier")).lower(),
+            "lineStyle": str(values.get("lineStyle", "solid")).lower(),
+            "lineWidth": max(0.5, float(values.get("lineWidth", 2.2))),
+            "arrowStart": bool(values.get("arrowStart", False)),
+            "arrowEnd": bool(values.get("arrowEnd", True)),
+            "animated": bool(values.get("animated", False)),
+            "animationEffect": str(values.get("animationEffect", "flow")).lower(),
+            "flowSpeed": max(0.1, float(values.get("flowSpeed", 1.0))),
+            "flowDirection": "reverse" if direction == "reverse" else "forward",
+            "flowSpacing": max(1.0, float(values.get("flowSpacing", 5.0))),
+            "effectIntensity": max(0.2, min(4.0, float(values.get("effectIntensity", 1.0)))),
+            "packetLoop": bool(values.get("packetLoop", False)),
+            "packetDuration": max(0.1, float(values.get("packetDuration", 1.5))),
+            "packetInterval": max(0.05, float(values.get("packetInterval", 0.7))),
+            "packetIcon": str(values.get("packetIcon", "")),
+            "waypoints": [[float(point[0]), float(point[1])] for point in values.get("waypoints", [])],
+            "metadata": dict(values.get("metadata", {})),
+            "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
+            "z": float(values.get("z", -1.0)),
+        }
+
     def _graphics_document(self) -> dict[str, Any]:
         return {
             "format": "monkez-canva",
@@ -3764,13 +3976,139 @@ class MonkezCanva(QWidget):
 
     def _on_document_operation(self, event: OperationEvent) -> None:
         self.documentOperation.emit(event.to_dict())
-        if event.origin is self or event.revision <= self._last_rendered_document_revision:
+        if event.origin is self:
+            self._last_rendered_document_revision = max(
+                self._last_rendered_document_revision, event.revision
+            )
             return
-        self._last_rendered_document_revision = event.revision
-        self._render_document(self._document_model.to_dict())
+        previous_restoring = self._restoring
+        self._restoring = True
+        try:
+            self._apply_document_operation(event)
+            self._last_rendered_document_revision = max(
+                self._last_rendered_document_revision, event.revision
+            )
+        finally:
+            self._restoring = previous_restoring
+        if not previous_restoring:
+            self._document_render_notification = True
+            try:
+                self.documentChanged.emit()
+            finally:
+                self._document_render_notification = False
+
+    def _apply_document_operation(self, event: OperationEvent) -> None:
+        """Apply one model operation without rebuilding unrelated graphics items."""
+
+        action = event.action
+        current = dict(event.current or {})
+        previous = dict(event.previous or {})
+        if action == "scene.updated":
+            self._apply_scene_record(current)
+        elif action == "element.added":
+            self._add_element_record(current)
+        elif action == "element.updated":
+            existing = self._elements.get(event.target_id)
+            if existing is not None and existing.kind == current.get("type", existing.kind):
+                self._apply_element_record(event.target_id, current)
+            else:
+                was_selected = bool(existing and existing.isSelected())
+                if existing is not None:
+                    self.removeElement(event.target_id)
+                self._add_element_record(current)
+                if was_selected and self._edit_mode:
+                    self._elements[event.target_id].setSelected(True)
+        elif action == "element.renamed":
+            old_id = str(previous.get("id", ""))
+            if old_id in self._elements:
+                self.renameElement(old_id, str(current.get("id", event.target_id)))
+        elif action == "element.removed":
+            self.removeElement(event.target_id)
+        elif action == "connector.added":
+            self._add_connector_record(current)
+        elif action == "connector.updated":
+            existing = self._connectors.get(event.target_id)
+            if existing is None:
+                self._add_connector_record(current)
+            else:
+                self._apply_connector_record(event.target_id, current)
+        elif action == "connector.renamed":
+            old_id = str(previous.get("id", ""))
+            if old_id in self._connectors:
+                self.renameConnector(old_id, str(current.get("id", event.target_id)))
+        elif action == "connector.removed":
+            self.removeConnector(event.target_id)
+
+    def _apply_scene_record(self, scene: dict[str, Any]) -> None:
+        width = max(100.0, float(scene.get("width", self._scene.sceneRect().width())))
+        height = max(100.0, float(scene.get("height", self._scene.sceneRect().height())))
+        self._scene.setSceneRect(-width / 2, -height / 2, width, height)
+        self._grid_visible = bool(scene.get("gridVisible", self._grid_visible))
+        self._snap_to_grid = bool(scene.get("snapToGrid", self._snap_to_grid))
+        self._grid_size = max(4, int(scene.get("gridSize", self._grid_size)))
+        self._grid_style = max(
+            0, min(len(_GRID_STYLES) - 1, int(scene.get("gridStyle", self._grid_style)))
+        )
+        self._grid_color = _color(scene.get("gridColor", self._grid_color), "#e2e8f0")
+        self._background_color = _color(
+            scene.get("backgroundColor", self._background_color), "#f8fafc"
+        )
+        self._background_image = str(scene.get("backgroundImage", self._background_image))
+        self._background_image_mode = max(
+            0,
+            min(
+                len(_BACKGROUND_IMAGE_MODES) - 1,
+                int(scene.get("backgroundImageMode", self._background_image_mode)),
+            ),
+        )
+        self._background_pixmap = (
+            QPixmap(self._background_image) if self._background_image else QPixmap()
+        )
+        self._scene.invalidate(
+            self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer
+        )
+
+    def _add_element_record(self, entry: dict[str, Any]) -> str:
+        values = dict(entry)
+        kind = values.pop("type")
+        element_id = values.pop("id")
+        x = values.pop("x", 0)
+        y = values.pop("y", 0)
+        width = values.pop("width", None)
+        height = values.pop("height", None)
+        return self.addElement(kind, x, y, width, height, element_id, **values)
+
+    def _apply_element_record(self, element_id: str, entry: dict[str, Any]) -> None:
+        values = dict(entry)
+        values.pop("id", None)
+        values.pop("type", None)
+        if self._required_element(element_id).kind not in _PORT_KINDS:
+            values.pop("ports", None)
+        self.updateElement(element_id, **values)
+        item = self._required_element(element_id)
+        item.color = _color(values.get("color", item.color), "#2563eb")
+        item.background = _color(values.get("background", item.background), "#ffffff")
+        item.text_color = _color(values.get("textColor", item.text_color), "#0f172a")
+        item.update()
+
+    def _add_connector_record(self, entry: dict[str, Any]) -> str:
+        values = dict(entry)
+        source_id = values.pop("source")
+        target_id = values.pop("target")
+        connector_id = values.pop("id")
+        values.pop("type", None)
+        color = values.pop("color", "#64748b")
+        return self.connectElements(source_id, target_id, color, connector_id, **values)
+
+    def _apply_connector_record(self, connector_id: str, entry: dict[str, Any]) -> None:
+        values = dict(entry)
+        values.pop("id", None)
+        values.pop("type", None)
+        self.updateConnector(connector_id, **values)
 
     def toDocument(self) -> dict[str, Any]:
-        self._sync_document_from_graphics()
+        # Graphics-originated edits reconcile synchronously through
+        # documentChanged, so serialization can read canonical state directly.
         return self._document_model.to_dict()
 
     def toJson(self, indent: int | None = 2) -> str:

@@ -163,8 +163,11 @@ Updated: 2026-08-09
   scene/element/connector/port/group/resource records, finite-JSON and graph
   validation, revisioned granular events, legacy line normalization, atomic
   rename/removal and synchronized multi-view attachment through
-  `MonkezCanva.setDocumentModel()`. Graphics-to-model reconciliation is an
-  explicit transition layer; model-first commands/incremental rendering remain.
+  `MonkezCanva.setDocumentModel()`. External operations now render incrementally;
+  item identity, selection and viewport survive updates and renames. Public
+  element/connector add, update, remove, rename and connect APIs commit model-first.
+  Graphics-to-model reconciliation remains only as a transition layer for direct
+  gestures and compound legacy actions.
 - The Control Pane now follows the approved Floating Cards reference: warm white
   surface, coral accent, teal saved footer, selection-count badge, rounded cards,
   two-column geometry and a contextual eight-action multi-select arrange card.
@@ -188,7 +191,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 128 passing tests and covers all 36 public
+- The automated suite contains 130 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

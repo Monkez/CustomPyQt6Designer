@@ -280,6 +280,12 @@ document.update_element("source", {"text": "Updated in every view"})
 document.subscribe(lambda event: print(event.action, event.revision))
 ```
 
+Các API `addElement`, `updateElement`, `removeElement`, `renameElement`,
+`connectElements`, `updateConnector`, `removeConnector` và `renameConnector` ghi
+vào model trước. Mỗi view chỉ render operation liên quan thay vì dựng lại toàn bộ
+scene; selection, zoom, viewport và identity của item được giữ nguyên khi model
+được cập nhật từ code hoặc từ một view khác.
+
 `canvas.documentModel()`/`canvas.canvasDocument()` trả về model đang gắn. Signal
 `documentOperation(dict)` cung cấp bản JSON-safe của event cho code Qt. Loader vẫn
 đọc version 1 và tự normalize `arrow`/`polyline` cũ thành unified `line`.

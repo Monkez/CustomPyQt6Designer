@@ -12,7 +12,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QPoint, QRectF, QSize, QSizeF, Qt
+from PyQt6.QtCore import QPoint, QPointF, QRectF, QSize, QSizeF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
@@ -191,6 +191,55 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(document.to_dict(), second.toDocument())
         first.deleteLater()
         second.deleteLater()
+
+    def test_canva_document_operations_preserve_item_identity_selection_and_viewport(self) -> None:
+        document = CanvasDocument.from_dict(
+            {
+                "format": "monkez-canva",
+                "version": 1,
+                "scene": {"width": 1600, "height": 1000},
+                "elements": [
+                    {"id": "source", "type": "node", "text": "Source", "x": 0, "y": 0},
+                    {"id": "target", "type": "node", "text": "Target", "x": 320, "y": 0},
+                ],
+                "connectors": [
+                    {"id": "edge", "source": "source", "target": "target", "route": "bezier"}
+                ],
+            }
+        )
+        canvas = MonkezCanva()
+        canvas.resize(900, 600)
+        canvas.setDocumentModel(document)
+        canvas.setEditMode(True)
+        canvas.selectElements(["source", "edge"])
+        source_item = canvas.element("source")
+        connector_item = canvas.connector("edge")
+        canvas.view().scale(1.35, 1.35)
+        canvas.view().centerOn(QPointF(140, 90))
+        transform = canvas.view().transform()
+
+        document.update_element(
+            "source", {"text": "Updated", "x": 45, "color": "#ef4444"}
+        )
+
+        self.assertIs(source_item, canvas.element("source"))
+        self.assertTrue(source_item.isSelected())
+        self.assertEqual("Updated", source_item.text)
+        self.assertEqual(QColor("#ef4444"), source_item.color)
+        self.assertEqual(transform, canvas.view().transform())
+
+        document.rename_element("source", "producer")
+        self.assertIs(source_item, canvas.element("producer"))
+        self.assertTrue(source_item.isSelected())
+        self.assertIs(connector_item, canvas.connector("edge"))
+        self.assertEqual("producer", connector_item.source.element_id)
+
+        document.update_connector("edge", {"route": "orthogonal", "color": "#0ea5e9"})
+        self.assertIs(connector_item, canvas.connector("edge"))
+        self.assertEqual("orthogonal", connector_item.route)
+        self.assertEqual(QColor("#0ea5e9"), connector_item.color)
+        self.assertEqual(transform, canvas.view().transform())
+        canvas.deleteLater()
 
     def test_canva_advanced_connectors_lines_and_object_specific_inspector(self) -> None:
         canvas = MonkezCanva()
