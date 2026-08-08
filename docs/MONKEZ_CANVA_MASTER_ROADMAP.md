@@ -162,14 +162,14 @@ enabled by the application.
 
 ## Control Pane concept evaluation
 
-Five visual concepts are stored under
+Five simplified visual concepts are stored under
 `docs/assets/monkez-canva-control-pane-concepts/`:
 
-1. `01-precision-light.png` — the default Inspector visual foundation;
-2. `02-midnight-graph-studio.png` — dark graph/runtime theme exploration;
-3. `03-modular-dock.png` — multi-selection and detachable tools;
-4. `04-industrial-control.png` — domain-specific live equipment Inspector;
-5. `05-command-center.png` — outline, typed edge and debugger workspace.
+1. `01-light-essential.png` — simple general-purpose floating Inspector;
+2. `02-dark-compact.png` — compact dark node/port treatment;
+3. `03-floating-cards.png` — focused multi-selection actions and properties;
+4. `04-slim-dock.png` — very narrow line/connector Inspector;
+5. `05-progressive-inspector.png` — object-specific progressive disclosure.
 
 They were evaluated using:
 
@@ -183,16 +183,16 @@ They were evaluated using:
 
 ### Selected direction
 
-Implement a responsive hybrid instead of copying one concept literally:
+Implement a simple responsive hybrid instead of copying one concept literally:
 
-- Option 1 supplies the default shell, contextual accordion hierarchy and light
-  visual language.
-- Option 3 supplies mixed-value multi-selection and the quick Align, Distribute,
-  Group and Lock action strip.
-- Option 2 supplies the dark theme and typed-port/routing presentation.
-- Option 4 becomes an Industrial registry pack/preset rather than the default.
-- Option 5's Outline and Debugger become detachable or expanded tools after the
-  document model and runtime event stream are stable.
+- Option 1 supplies the common shell and light visual language.
+- Option 5 supplies progressive disclosure: only the primary action and 4–8
+  common properties are open for the selected object type.
+- Option 3's quick action card appears only for multi-selection.
+- Option 4 supplies narrow line/connector rows and an optional live preview.
+- Option 2 supplies the dark theme and compact typed-port summary.
+- Outline, Runtime and Debugger stay in separate detachable tools rather than
+  increasing the everyday Inspector's density.
 
 Detailed images, strengths and trade-offs are recorded in the concept
 [`README.md`](assets/monkez-canva-control-pane-concepts/README.md).

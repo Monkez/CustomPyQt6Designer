@@ -1,89 +1,83 @@
-# MonkezCanva Control Pane concepts
+# MonkezCanva Control Pane concepts — simplified set
 
-Generated: 2026-08-08
+Regenerated: 2026-08-09
 
-These ImageGen concepts explore information architecture and interaction density.
-They are product-design references, not pixel-exact implementation contracts.
-The production UI must remain native PyQt6, high-DPI aware and usable at narrower
-pane widths.
+This second concept set deliberately reduces information density. Each pane
+focuses on one editing context, keeps advanced properties collapsed and avoids
+placing runtime consoles or debugger tables inside the everyday Inspector.
+These are design references rather than pixel-exact implementation contracts.
 
-## Option 1 — Precision Light
+## Option 1 — Light Essential
 
-![Precision Light](01-precision-light.png)
+![Light Essential](01-light-essential.png)
 
-A clean, approachable Inspector organized into contextual accordion sections.
-It shows a connector selected with Identity, Endpoints, Stroke, Animation and
-Packet controls. This is the strongest default visual foundation because the
-hierarchy is clear and maps directly to reusable native form controls.
+The general-purpose floating pane. A short icon tab row leads to a contextual
+Inspector with only Connection, Style and Motion open. It is the clearest base
+for the default Control Pane and maps cleanly to native PyQt6 widgets.
 
-Strengths: discoverability, readable field grouping, low implementation risk.
-Trade-off: a long selected-object schema requires search, pinned sections and
-careful disclosure to avoid excessive scrolling.
+Best for: the everyday editing experience and first-time users.
 
-## Option 2 — Midnight Graph Studio
+## Option 2 — Dark Compact
 
-![Midnight Graph Studio](02-midnight-graph-studio.png)
+![Dark Compact](02-dark-compact.png)
 
-An IDE-like dark workspace focused on typed ports, routing rules, connector
-animation and packet runtime behavior.
+A narrow dark Inspector with a small navigation rail, selected-node summary,
+port counts, appearance and runtime status. Typed input/output markers remain
+visible without showing a full port table.
 
-Strengths: excellent graph-editor identity, runtime state visibility and dense
-expert workflows. Trade-off: the permanent navigation rail consumes width and
-the low-light palette needs strict contrast/accessibility testing.
+Best for: dark theme and graph-heavy applications.
 
-## Option 3 — Modular Dock
+## Option 3 — Floating Cards
 
-![Modular Dock](03-modular-dock.png)
+![Floating Cards](03-floating-cards.png)
 
-A light detachable panel centered on multi-selection. It combines contextual
-Align, Distribute, Group and Lock commands with mixed-value property sections
-and a detachable Runtime Console.
+A focused multi-selection pane. Quick alignment/distribution actions sit above
+three compact cards for position, size, color and opacity. Object-specific and
+advanced fields stay collapsed.
 
-Strengths: best multi-object editing model and strong dock/module semantics.
-Trade-off: the wide property grid is less suitable for a narrow floating pane
-unless fields reflow responsively.
+Best for: arranging several canvas objects quickly.
 
-## Option 4 — Industrial Control
+## Option 4 — Slim Dock
 
-![Industrial Control](04-industrial-control.png)
+![Slim Dock](04-slim-dock.png)
 
-A dark SCADA/HMI-oriented Inspector for live equipment, bindings, ports, alarms
-and simulation controls.
+A very narrow object-specific Inspector for lines. It shows only path, stroke,
+arrow, effect, speed and a tiny live preview. Navigation and unrelated controls
+are intentionally absent.
 
-Strengths: validates that the registry-driven Inspector can support domain
-components and live values. Trade-off: too specialized and visually heavy to
-be the universal default.
+Best for: narrow screens, docked layouts and direct connector editing.
 
-## Option 5 — Command Center
+## Option 5 — Progressive Inspector
 
-![Command Center](05-command-center.png)
+![Progressive Inspector](05-progressive-inspector.png)
 
-A keyboard-first advanced workspace combining command search, document outline,
-typed edge inspection and a packet debugger timeline.
+A selected-image Inspector built around progressive disclosure. The main media
+action and scale mode are immediately visible; Position, Border, Shadow and
+Advanced remain collapsed until requested.
 
-Strengths: strongest architecture for large documents, trace/debug workflows
-and expert navigation. Trade-off: too much information for a compact default
-pane; it should become an optional expanded workspace.
+Best for: object-specific schemas with many optional properties.
 
 ## Recommended product direction
 
-Build a responsive hybrid:
+Use Option 1 as the common shell, then apply the following contextual variants:
 
-1. Use Option 1 as the default Inspector shell and visual language.
-2. Adopt Option 3's contextual multi-selection actions and mixed-value model.
-3. Provide Option 2 as the dark theme and borrow its typed-port presentation.
-4. Package Option 4 as an Industrial component/Inspector preset.
-5. Introduce Option 5's outline and debugger as detachable or expanded tools
-   after the core document model and runtime event stream are stable.
+1. Adopt Option 5's progressive disclosure rule for every object type: expose
+   the primary action and 4–8 common fields, collapse everything else.
+2. Show Option 3's quick action card only for multi-selection.
+3. Use Option 4's narrow label/control rows and live preview for line and
+   connector objects.
+4. Offer Option 2 as the dark visual theme, not as a separate feature set.
+5. Move Outline, Runtime and Debugger into separate detachable tools so the
+   Inspector remains small.
 
-The compact state should show selection identity, search and the most frequently
-used contextual sections. The expanded state may expose Outline, Runtime and
-Debugger without making the everyday Inspector permanently large.
+Recommended default width is 360–400 logical pixels. Sections should reflow at
+smaller widths, remember their expanded state per object type and expose search
+only when a schema contains enough properties to justify it.
 
 ## Generation brief
 
 Mode: built-in ImageGen, five independent generations. Shared constraints were
-a polished native desktop/PyQt control pane, readable labels, icon-led actions,
-no browser chrome and no watermark. Each prompt then emphasized one distinct
-workflow: connector inspection, dark graph routing, multi-selection editing,
-industrial live control or command/debug operations.
+a native PyQt6-style floating/docked desktop pane, readable English labels,
+icon-led actions, no browser chrome, no watermark, no debugger/runtime table and
+no more than roughly 8–12 visible controls. The five prompts focused on a basic
+connector, compact dark node, multi-selection, slim line and image Inspector.

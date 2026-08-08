@@ -1,6 +1,6 @@
 # Current engineering status
 
-Updated: 2026-08-08
+Updated: 2026-08-09
 
 ## Current version
 
@@ -163,10 +163,11 @@ Updated: 2026-08-08
   goal. `docs/MONKEZ_CANVA_MASTER_ROADMAP.md` records five delivery phases and
   quality gates; `agents/MONKEZ_CANVA_IMPLEMENTATION_PLAN.md` records module
   boundaries, sequencing, compatibility constraints and the first extraction
-  milestone. Five Control Pane concepts have been generated, stored in project
-  docs and evaluated. The selected direction combines Option 1's contextual
-  Inspector, Option 3's multi-selection controls and Option 2's dark treatment;
-  Options 4 and 5 become specialized Industrial and Debugger workspaces.
+  milestone. The original dense Control Pane studies were replaced by five
+  simpler concepts on 2026-08-09. The selected direction combines Option 1's
+  common shell, Option 5's progressive disclosure, Option 3's contextual
+  multi-selection actions, Option 4's narrow line controls and Option 2's dark
+  theme. Runtime, Outline and Debugger remain separate detachable tools.
 
 - MonkezCanva now renders output triangles outward, offers flow/pulse/glow/
   particles/packet effects on connectors and standalone lines, and persists
