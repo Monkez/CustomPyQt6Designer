@@ -2,6 +2,11 @@
 
 Updated: 2026-08-08
 
+The complete approved expansion sequence and module extraction contract now live
+in `MONKEZ_CANVA_IMPLEMENTATION_PLAN.md`; the user-facing milestone roadmap is
+`../docs/MONKEZ_CANVA_MASTER_ROADMAP.md`. Future feature work must follow that
+dependency order rather than extending the current monolith opportunistically.
+
 ## Product decision
 
 `MonkezCanva` is a runtime-first `QWidget` backed by `QGraphicsView` and

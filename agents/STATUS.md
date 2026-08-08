@@ -159,6 +159,15 @@ Updated: 2026-08-08
 
 ## Latest verification
 
+- The complete MonkezCanva expansion has been accepted as an active long-term
+  goal. `docs/MONKEZ_CANVA_MASTER_ROADMAP.md` records five delivery phases and
+  quality gates; `agents/MONKEZ_CANVA_IMPLEMENTATION_PLAN.md` records module
+  boundaries, sequencing, compatibility constraints and the first extraction
+  milestone. Five Control Pane concepts have been generated, stored in project
+  docs and evaluated. The selected direction combines Option 1's contextual
+  Inspector, Option 3's multi-selection controls and Option 2's dark treatment;
+  Options 4 and 5 become specialized Industrial and Debugger workspaces.
+
 - MonkezCanva now renders output triangles outward, offers flow/pulse/glow/
   particles/packet effects on connectors and standalone lines, and persists
   direction, spacing, intensity and packet timing/icon/loop settings. The compact

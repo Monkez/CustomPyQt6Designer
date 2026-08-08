@@ -1,0 +1,198 @@
+# MonkezCanva master roadmap
+
+Updated: 2026-08-08
+
+## Product target
+
+MonkezCanva will evolve from a runtime canvas widget into a reusable native
+PyQt6 visual workspace for diagrams, dashboards, workflow editing, simulation
+and live application interaction. It must remain usable from Qt Designer,
+portable with a copied project, code-addressable by stable IDs and independent
+of WebEngine.
+
+## Delivery principles
+
+- Strengthen the extension architecture before adding large component packs.
+- Keep every saved document JSON-only, validated and migratable.
+- Preserve old `arrow`, `polyline` and version-1 document compatibility.
+- Keep edit mode optional; runtime applications must stay lightweight.
+- Make every visible editor mutation undoable and autosave-safe.
+- Benchmark large scenes and packet animation before claiming scalability.
+- Ship each phase with docs, demo coverage, automated tests and visual QA.
+
+## Phase 1 — Core platform
+
+### 1.1 Independent document model
+
+Introduce `CanvasDocument`, `SceneModel`, `ElementModel`, `ConnectorModel`,
+`PortModel`, `GroupModel` and resource records. Graphics items observe models;
+they are no longer the source of truth.
+
+Acceptance:
+
+- document operations can be unit-tested without constructing a visible window;
+- one document may be rendered by more than one view;
+- model changes emit granular change records;
+- loading version-1 projects produces the same visible graph.
+
+### 1.2 Public element registry
+
+Each element type registers its model defaults, JSON schema, renderer, Inspector
+factory, category, icon, migrations and optional runtime handler. The Add pane
+and Inspector must be generated from registry metadata.
+
+Acceptance:
+
+- a third-party element can be registered without editing `monkez_canva.py`;
+- an unknown element loads as a safe missing-component placeholder;
+- duplicate type IDs and invalid schemas fail with actionable diagnostics.
+
+### 1.3 Command-based history
+
+Replace whole-document history snapshots with `QUndoStack` commands for add,
+delete, move, resize, property change, port change, grouping and connection.
+Continuous drags and typing are compressed; multi-object actions use macros.
+
+### 1.4 Schema, migrations and recovery
+
+Add JSON Schema, versioned migrations, atomic writes, recovery backup, asset
+checksums and read-only handling for documents newer than the runtime.
+
+### 1.5 Shared animation scheduler
+
+Move line, packet and runtime animation to one canvas-level clock. Update only
+visible dirty regions and pause nonessential effects when the view is hidden.
+
+## Phase 2 — Professional editor UX
+
+- searchable palette with categories, favorites and recent items;
+- command palette and context-aware menus;
+- copy, cut, paste and duplicate with internal connector preservation;
+- keyboard nudge, distribute, equal-size and smart alignment guides;
+- configurable snap targets: grid, center, edge, port and nearby object;
+- mixed-value multi-selection Inspector;
+- minimap, document outline, viewport bookmarks and zoom-to-selection;
+- lock, hide and isolate item/group;
+- editable connector waypoints, rounded orthogonal corners and reroute points;
+- edge labels, self-loops, parallel edges, crossing bridges and buses;
+- group/frame, swimlane, collapsible group and reusable subflow;
+- automatic layout adapter with layered, tree, force and radial strategies.
+
+## Phase 3 — Typed graph and workflow runtime
+
+### Typed ports
+
+Ports gain data type, unit, optional/required, default value, connection count,
+accepted conversions, tooltip and runtime value. Compatible targets highlight
+during connection; invalid targets explain the reason.
+
+### Runtime components
+
+- routing: Junction, Reroute, Merge, Splitter, Switch, Router, Multiplexer,
+  Demultiplexer and Bus;
+- timing: Timer, Delay, Queue, Buffer, Throttle, Debounce, Retry and RateLimiter;
+- logic: Gate, Compare, Filter, Transform, Map, Counter and StateMachine;
+- boundaries: Source, Sink, InputInterface, OutputInterface and ErrorHandler.
+
+### Packet runtime v2
+
+Add `MessageTicket`, non-blocking and async APIs, payload metadata, priority, TTL,
+timeouts, cancellation, trace, failures, replay, bandwidth/latency metrics and
+branch policies. Provide pause, resume, step, breakpoint and packet Inspector.
+
+### Data binding
+
+Bind element properties to Qt signals/properties, callables, model indexes and
+optional adapter sources such as MQTT, WebSocket, OPC-UA or Modbus. Support
+transform, format, debounce, throttle, stale state, error fallback and batched
+painting.
+
+## Phase 4 — Component packs
+
+### Dashboard
+
+KPI card, sparkline, gauge, progress ring, pie/donut, scatter, area, histogram,
+heatmap, timeline, event log, data table, status light and alarm banner.
+
+### Industrial
+
+Tank, pump, valve, motor, fan, pipe, sensor, PLC, circuit breaker, battery,
+transformer and conveyor.
+
+### Software and flowchart
+
+Database, server, cloud, API, queue, topic, cache, file, service, container,
+process, decision, document, terminator, annotation and sticky note.
+
+Packs are registry packages; they must not enlarge the default palette until
+enabled by the application.
+
+## Phase 5 — Export and ecosystem
+
+- PNG, transparent PNG, SVG and PDF export for scene or selection;
+- print preview and page configuration;
+- DOT import/export and a constrained Mermaid exporter;
+- reusable templates and import-as-subflow;
+- public component SDK and example plugin;
+- document diff and diagnostics report;
+- collaboration only after operation IDs and conflict semantics are stable.
+
+## Cross-phase quality gates
+
+- compatibility and migration tests for every document version;
+- performance scenarios at 100, 1,000 and 10,000 nodes;
+- packet scenarios at 10, 100 and 1,000 concurrent messages;
+- keyboard-only editor paths and high-DPI visual checks;
+- no timers, movies or resources left active after object deletion;
+- project-local assets remain loadable after moving the repository;
+- release notes and `canva_demo.bat` updated at every user-visible milestone.
+
+## Recommended execution order
+
+1. Document model and operation events.
+2. Registry and missing-component placeholder.
+3. Command history and migrations.
+4. Shared scheduler and performance baseline.
+5. Clipboard, search palette, minimap and smart guides.
+6. Groups/subflows and typed ports.
+7. Connector editing and auto-layout.
+8. Workflow components and runtime execution.
+9. Packet debugging and data binding.
+10. Component packs, export and plugin SDK.
+
+## Control Pane concept evaluation
+
+Five visual concepts are stored under
+`docs/assets/monkez-canva-control-pane-concepts/`:
+
+1. `01-precision-light.png` — the default Inspector visual foundation;
+2. `02-midnight-graph-studio.png` — dark graph/runtime theme exploration;
+3. `03-modular-dock.png` — multi-selection and detachable tools;
+4. `04-industrial-control.png` — domain-specific live equipment Inspector;
+5. `05-command-center.png` — outline, typed edge and debugger workspace.
+
+They were evaluated using:
+
+- information density without visual crowding;
+- discoverability for first-time users;
+- speed for expert keyboard/mouse users;
+- feasibility with native PyQt6 widgets and QSS;
+- light/dark and high-DPI adaptability;
+- handling of long IDs, translated labels and narrow screens;
+- clear separation of editing, runtime and debugging controls.
+
+### Selected direction
+
+Implement a responsive hybrid instead of copying one concept literally:
+
+- Option 1 supplies the default shell, contextual accordion hierarchy and light
+  visual language.
+- Option 3 supplies mixed-value multi-selection and the quick Align, Distribute,
+  Group and Lock action strip.
+- Option 2 supplies the dark theme and typed-port/routing presentation.
+- Option 4 becomes an Industrial registry pack/preset rather than the default.
+- Option 5's Outline and Debugger become detachable or expanded tools after the
+  document model and runtime event stream are stable.
+
+Detailed images, strengths and trade-offs are recorded in the concept
+[`README.md`](assets/monkez-canva-control-pane-concepts/README.md).
