@@ -4,6 +4,7 @@ import logging
 import sys
 from pathlib import Path
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
 from monkez_pyqt6.monkez_widgets import MonkezCanva
@@ -48,11 +49,10 @@ def main() -> int:
     canvas.connectElements(camera, detector)
     canvas.connectElements(detector, decision)
     canvas.connectElements(decision, chart)
-    canvas.fitContent()
-
     canvas.elementClicked.connect(lambda element_id: canvas.highlightElement(element_id))
     window.resize(1180, 680)
     window.show()
+    QTimer.singleShot(0, canvas.fitContent)
     logger.info("Demo window shown: %sx%s", window.width(), window.height())
     logger.info("Shortcut option 1: press Ctrl+D, release Ctrl, then press E")
     logger.info("Shortcut option 2: hold Ctrl, press D, then press E")

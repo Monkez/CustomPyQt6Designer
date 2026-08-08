@@ -19,7 +19,12 @@ Trong edit mode:
 - chọn, kéo, kéo góc phải dưới để đổi kích thước và nhấn `Delete` để xóa;
 - bật snap-to-grid để căn element;
 - giữ `Ctrl` và lăn chuột để zoom;
+- bấm `Fit view` để đưa toàn bộ nội dung về tỷ lệ dễ đọc;
 - đổi màu element đang chọn từ cửa sổ nổi.
+
+`fitContent()` có thể được gọi trước `show()`; canvas sẽ hoãn việc tính tỷ lệ đến
+khi viewport có kích thước thật. Zoom tự động được giới hạn trong khoảng dễ thao
+tác, tránh graph bị thu thành một chấm nhỏ trên màn hình lớn.
 
 View mode khóa thao tác sửa nhưng vẫn phát signal `elementClicked`. Phím tắt có
 context theo window. Có thể tắt bằng `editorShortcutEnabled = False`.

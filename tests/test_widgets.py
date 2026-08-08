@@ -190,6 +190,28 @@ class WidgetTests(unittest.TestCase):
         window.close()
         window.deleteLater()
 
+    def test_canva_fit_waits_for_real_viewport_and_keeps_content_readable(self) -> None:
+        window = QDialog()
+        layout = QVBoxLayout(window)
+        canvas = MonkezCanva()
+        layout.addWidget(canvas)
+        canvas.addNode("Input", -360, -50)
+        canvas.addNode("Output", 450, -50)
+
+        canvas.fitContent()
+        self.assertTrue(canvas._fit_pending)
+        window.resize(1180, 680)
+        window.show()
+        self.app.processEvents()
+        self.app.processEvents()
+
+        zoom = canvas.view().transform().m11()
+        self.assertFalse(canvas._fit_pending)
+        self.assertGreaterEqual(zoom, 0.2)
+        self.assertGreater(zoom, 0.5)
+        window.close()
+        window.deleteLater()
+
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
         button = MonkezButton()
         button.setText("X")

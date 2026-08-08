@@ -327,10 +327,13 @@ class _CanvasToolbox(QDialog):
         root.addWidget(scroll, 1)
 
         actions = QHBoxLayout()
+        fit_button = QPushButton("Fit view")
+        fit_button.clicked.connect(canvas.fitContent)
         color_button = QPushButton("Color")
         color_button.clicked.connect(self._choose_color)
         delete_button = QPushButton("Delete")
         delete_button.clicked.connect(canvas.deleteSelected)
+        actions.addWidget(fit_button)
         actions.addWidget(color_button)
         actions.addWidget(delete_button)
         root.addLayout(actions)
@@ -361,8 +364,10 @@ class _CanvasView(QGraphicsView):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
             current = self.transform().m11()
-            if 0.2 <= current * factor <= 4.0:
-                self.scale(factor, factor)
+            target = min(4.0, max(0.2, current * factor))
+            if current > 0 and not math.isclose(target, current):
+                applied = target / current
+                self.scale(applied, applied)
             event.accept()
             return
         super().wheelEvent(event)
@@ -399,6 +404,7 @@ class MonkezCanva(QWidget):
         self._grid_size = 20
         self._edit_mode = False
         self._shortcut_enabled = True
+        self._fit_pending = False
         self._animations: dict[str, QPropertyAnimation] = {}
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
@@ -630,8 +636,39 @@ class MonkezCanva(QWidget):
 
     def fitContent(self) -> None:
         bounds = self._scene.itemsBoundingRect()
-        if not bounds.isEmpty():
-            self._view.fitInView(bounds.adjusted(-30, -30, 30, 30), Qt.AspectRatioMode.KeepAspectRatio)
+        if bounds.isEmpty():
+            return
+        viewport = self._view.viewport()
+        if not self.isVisible() or viewport.width() < 160 or viewport.height() < 120:
+            self._fit_pending = True
+            self.diagnosticMessage.emit(
+                f"Fit deferred until canvas is visible; viewport={viewport.width()}x{viewport.height()}"
+            )
+            return
+        self._apply_fit_content(bounds)
+
+    def _apply_fit_content(self, bounds: QRectF | None = None) -> None:
+        bounds = bounds or self._scene.itemsBoundingRect()
+        if bounds.isEmpty():
+            return
+        padded = bounds.adjusted(-50, -50, 50, 50)
+        self._view.resetTransform()
+        self._view.fitInView(padded, Qt.AspectRatioMode.KeepAspectRatio)
+        scale = self._view.transform().m11()
+        target = min(2.0, max(0.2, scale))
+        if scale > 0 and not math.isclose(scale, target):
+            correction = target / scale
+            self._view.scale(correction, correction)
+        self._view.centerOn(bounds.center())
+        self._fit_pending = False
+        self.diagnosticMessage.emit(
+            f"Content fitted; items={bounds.width():.0f}x{bounds.height():.0f}; zoom={target:.2f}x"
+        )
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._fit_pending:
+            QTimer.singleShot(0, self._apply_fit_content)
 
     def toggleEditMode(self) -> None:
         self.setEditMode(not self._edit_mode)

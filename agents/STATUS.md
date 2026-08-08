@@ -129,11 +129,13 @@ Updated: 2026-08-08
   Ctrl and held-Ctrl forms of the `Ctrl+D, E` chord, an owned floating palette,
   visible diagnostic logging, shapes, bar/line charts, flow
   nodes/connectors, grid snapping, JSON persistence and APIs for colors, text,
-  chart data, highlight and animation. See `MONKEZ_CANVA_ARCHITECTURE.md`.
+  chart data, highlight and animation. Deferred viewport fitting and bounded
+  zoom prevent pre-show `fitContent()` calls from shrinking a graph to a dot.
+  See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification
 
-- The automated suite contains 115 passing tests and covers all 36 public
+- The automated suite contains 116 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.
