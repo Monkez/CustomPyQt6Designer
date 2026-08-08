@@ -35,6 +35,11 @@ Acceptance:
 - model changes emit granular change records;
 - loading version-1 projects produces the same visible graph.
 
+Progress (2026-08-09): the Qt-free records, validation, revisioned operation
+events, version-1 normalization and shared multi-view bridge are implemented.
+Legacy graphics mutations currently reconcile into the model; incremental
+model-first rendering remains required before this item is complete.
+
 ### 1.2 Public element registry
 
 Each element type registers its model defaults, JSON schema, renderer, Inspector

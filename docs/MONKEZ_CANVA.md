@@ -6,7 +6,7 @@
 ## Chạy demo
 
 Chạy `canva_demo.bat`. Có thể nhấn `Ctrl+D`, thả `Ctrl` rồi nhấn `E`, hoặc giữ
-`Ctrl` và lần lượt nhấn `D`, `E`. Cửa sổ `MonkezCanva Elements` sẽ xuất hiện.
+`Ctrl` và lần lượt nhấn `D`, `E`. Cửa sổ `MonkezCanva` sẽ xuất hiện.
 Lặp lại phím tắt để đóng edit mode.
 
 Cửa sổ CMD hiển thị log trực tiếp và đồng thời ghi vào `canva_demo.log` tại thư
@@ -24,7 +24,7 @@ Trong edit mode:
 
 Editor có năm tab:
 
-- **Elements**: thêm shape, chart, node, ảnh và GIF; duplicate/xóa item.
+- **Add**: thêm shape, chart, node, ảnh và GIF; duplicate/xóa item.
 - **Inspector**: sửa ID, text, source, vị trí, kích thước, rotation, opacity,
   z-order và các vai trò màu; thay đổi tự áp dụng, không cần nút Apply.
 - **Layers**: quản lý toàn bộ item theo ID ổn định và chọn nhanh trên canvas.
@@ -40,10 +40,20 @@ ngang, tâm dọc hoặc đúng tâm hai chiều. Các nút căn chỉ bật khi
 chọn.
 
 Control pane là cửa sổ tool không viền, kích thước gọn, có shadow, header kéo được,
-tab tự co đều và nút đóng Edit Mode riêng. Pane dùng chung visual language cho card,
-input, layer row, trạng thái lưu và action chính/nguy hiểm. Badge chữ `EDIT` đã được
-bỏ; mọi action trong pane và floatbar dùng icon vector DPI-safe kèm tooltip, còn các
-action cần diễn giải vẫn giữ cả icon lẫn text.
+tab tự co đều và nút đóng Edit Mode riêng. Giao diện dùng nền trắng ấm, accent coral,
+card bo tròn, field hai cột và trạng thái lưu màu teal theo concept `Floating Cards`.
+Header hiển thị badge số object đang chọn; khi multi-select, card `Quick arrange`
+hiện tám action căn trái/tâm/phải/trên/giữa/dưới và phân bố ngang/dọc. Footer `Saved`
+cố định nên không bị cuộn cùng Inspector. Badge chữ `EDIT` đã được bỏ; mọi action
+trong pane và floatbar dùng icon vector DPI-safe kèm tooltip.
+
+Có thể phân bố đều từ ba element trở lên:
+
+```python
+canvas.selectElements(["node-a", "node-b", "node-c"])
+canvas.distributeSelected("horizontal")
+canvas.distributeSelected("vertical")
+```
 
 Có ba cách chọn nhiều item: giữ `Ctrl` khi bấm, kéo rubber-band qua nhiều item,
 hoặc chọn nhiều dòng trong tab Layers. Giữ chuột phải trên vùng canvas trống rồi
@@ -250,6 +260,29 @@ canvas.loadDocument("workflow.monkez-canva.json")
 payload = canvas.toJson()
 other_canvas.loadDocument(payload)
 ```
+
+### Document model dùng chung
+
+`CanvasDocument` là model thuần Python, không cần tạo `QApplication` hay `QWidget`.
+Record scene, element, connector, port, group và resource là dữ liệu JSON bất biến;
+mọi thay đổi tăng `revision` và phát `OperationEvent` chi tiết. Cùng một document có
+thể điều khiển nhiều canvas view:
+
+```python
+from monkez_pyqt6.monkez_canva import CanvasDocument
+
+document = CanvasDocument.empty({"width": 2400, "height": 1600})
+left_canvas.setDocumentModel(document)
+right_canvas.setDocumentModel(document)
+
+document.add_element({"id": "source", "type": "node", "text": "Source"})
+document.update_element("source", {"text": "Updated in every view"})
+document.subscribe(lambda event: print(event.action, event.revision))
+```
+
+`canvas.documentModel()`/`canvas.canvasDocument()` trả về model đang gắn. Signal
+`documentOperation(dict)` cung cấp bản JSON-safe của event cho code Qt. Loader vẫn
+đọc version 1 và tự normalize `arrow`/`polyline` cũ thành unified `line`.
 
 Editor có ba tầng lưu:
 

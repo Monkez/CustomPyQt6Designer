@@ -64,11 +64,14 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+from monkez_pyqt6.monkez_canva import CanvasDocument, OperationEvent
 
 
 _ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
@@ -316,6 +319,18 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
                 else:
                     height = end - start
                     painter.drawLine(QPointF(x, anchor - height / 2), QPointF(x, anchor + height / 2))
+    elif name.startswith("distribute_"):
+        direction = name.removeprefix("distribute_")
+        if direction == "horizontal":
+            painter.drawLine(QPointF(3, 3), QPointF(3, 17))
+            painter.drawLine(QPointF(17, 3), QPointF(17, 17))
+            for x in (6, 10, 14):
+                painter.drawRoundedRect(QRectF(x - 1, 7, 2, 6), 0.5, 0.5)
+        else:
+            painter.drawLine(QPointF(3, 3), QPointF(17, 3))
+            painter.drawLine(QPointF(3, 17), QPointF(17, 17))
+            for y in (6, 10, 14):
+                painter.drawRoundedRect(QRectF(7, y - 1, 6, 2), 0.5, 0.5)
     elif name in ("rectangle", "button"):
         painter.drawRoundedRect(QRectF(3, 5, 14, 10), 2.5 if name == "button" else 1, 2.5 if name == "button" else 1)
     elif name == "ellipse":
@@ -1310,25 +1325,22 @@ class _CanvasPaneHeader(QFrame):
         self._drag_offset = None
         self.setObjectName("canvasPaneHeader")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setContentsMargins(2, 3, 2, 8)
+        layout.setSpacing(11)
         brand = QLabel()
         brand.setObjectName("canvasPaneBrand")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand.setFixedSize(36, 36)
-        brand.setPixmap(_canvas_icon("node", "#ffffff").pixmap(19, 19))
+        brand.setFixedSize(38, 38)
+        brand.setPixmap(_canvas_icon("node", "#ffffff").pixmap(20, 20))
         layout.addWidget(brand)
-        title_box = QVBoxLayout()
-        title_box.setContentsMargins(0, 0, 0, 0)
-        title_box.setSpacing(0)
         title = QLabel("MonkezCanva")
         title.setObjectName("canvasPaneTitle")
-        subtitle = QLabel("Visual workspace editor")
-        subtitle.setObjectName("canvasPaneSubtitle")
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-        layout.addLayout(title_box)
+        layout.addWidget(title)
         layout.addStretch(1)
+        self._selection_badge = QLabel()
+        self._selection_badge.setObjectName("canvasSelectionBadge")
+        self._selection_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._selection_badge)
         close = QToolButton()
         close.setObjectName("canvasPaneClose")
         close.setIcon(_canvas_icon("close"))
@@ -1336,6 +1348,17 @@ class _CanvasPaneHeader(QFrame):
         close.setToolTip("Close edit mode (Ctrl+D, E)")
         close.clicked.connect(lambda _checked=False: canvas.setEditMode(False))
         layout.addWidget(close)
+        canvas.selectionSetChanged.connect(self.setSelectionCount)
+        self.setSelectionCount(canvas.selectedObjectIds())
+
+    def setSelectionCount(self, object_ids: list[str]) -> None:
+        count = len(object_ids)
+        self._selection_badge.setText(
+            "No selection" if count == 0 else "1 selected" if count == 1 else f"{count} selected"
+        )
+        self._selection_badge.setProperty("hasSelection", count > 0)
+        self._selection_badge.style().unpolish(self._selection_badge)
+        self._selection_badge.style().polish(self._selection_badge)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1374,22 +1397,23 @@ class _CanvasEditorToolbox(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(408, 590)
-        self.resize(430, 650)
+        self.setMinimumSize(420, 620)
+        self.resize(448, 710)
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
+        root.setContentsMargins(16, 16, 16, 16)
         panel = QFrame()
         panel.setObjectName("canvasEditorPanel")
         shadow = QGraphicsDropShadowEffect(panel)
-        shadow.setBlurRadius(34)
-        shadow.setOffset(0, 10)
-        shadow.setColor(QColor(15, 23, 42, 70))
+        shadow.setBlurRadius(38)
+        shadow.setOffset(0, 12)
+        shadow.setColor(QColor(43, 40, 36, 62))
         panel.setGraphicsEffect(shadow)
         root.addWidget(panel)
         content = QVBoxLayout(panel)
-        content.setContentsMargins(14, 12, 14, 10)
-        content.setSpacing(10)
-        content.addWidget(_CanvasPaneHeader(self, canvas))
+        content.setContentsMargins(18, 14, 18, 13)
+        content.setSpacing(11)
+        self._pane_header = _CanvasPaneHeader(self, canvas)
+        content.addWidget(self._pane_header)
         tabs = QTabWidget()
         tabs.setObjectName("canvasEditorTabs")
         tabs.setDocumentMode(True)
@@ -1402,10 +1426,20 @@ class _CanvasEditorToolbox(QDialog):
         tabs.addTab(self._view_tab(), _canvas_icon("grid"), "View")
         tabs.addTab(self._save_tab(), _canvas_icon("save"), "Save")
         content.addWidget(tabs, 1)
-        hint = QLabel("Ctrl+D, E  close   •   Del  remove   •   Ctrl+wheel  zoom")
-        hint.setObjectName("canvasPaneHint")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        content.addWidget(hint)
+        footer = QFrame()
+        footer.setObjectName("canvasPaneFooter")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(8, 7, 8, 2)
+        footer_layout.addStretch(1)
+        footer_icon = QLabel()
+        footer_icon.setPixmap(_canvas_icon("check", "#0f9f8f").pixmap(19, 19))
+        footer_layout.addWidget(footer_icon)
+        self._footer_status = QLabel("Saved")
+        self._footer_status.setObjectName("canvasFooterStatus")
+        footer_layout.addWidget(self._footer_status)
+        footer_layout.addStretch(1)
+        footer.setToolTip("Ctrl+D, E: close editor  •  Del: remove  •  Ctrl+wheel: zoom")
+        content.addWidget(footer)
         self.setStyleSheet(self._pane_stylesheet())
         canvas.elementAdded.connect(lambda _element_id: self.refreshLayers())
         canvas.elementRemoved.connect(lambda _element_id: self.refreshLayers())
@@ -1422,79 +1456,93 @@ class _CanvasEditorToolbox(QDialog):
     def _pane_stylesheet() -> str:
         return """
         QFrame#canvasEditorPanel {
-            background: #f7f9fc;
-            border: 1px solid #cbd5e1;
-            border-radius: 18px;
+            background: #fbfaf8;
+            border: 1px solid #d9d6d1;
+            border-radius: 20px;
         }
-        QFrame#canvasPaneHeader { border: none; background: transparent; }
-        QLabel#canvasPaneBrand { background: #2563eb; border-radius: 10px; }
-        QLabel#canvasPaneTitle { color: #0f172a; font-size: 16px; font-weight: 700; }
-        QLabel#canvasPaneSubtitle { color: #64748b; font-size: 10px; padding-top: 1px; }
+        QFrame#canvasPaneHeader { border: none; border-bottom: 1px solid #ebe7e2; background: transparent; }
+        QLabel#canvasPaneBrand { background: #ff6b5f; border-radius: 10px; }
+        QLabel#canvasPaneTitle { color: #303941; font-size: 17px; font-weight: 700; }
+        QLabel#canvasSelectionBadge {
+            color: #8b8b87; background: #f4f2ef; border: 1px solid #e6e2dd;
+            border-radius: 11px; padding: 5px 10px; font-size: 10px; font-weight: 600;
+        }
+        QLabel#canvasSelectionBadge[hasSelection="true"] {
+            color: #ef5d50; background: #fff3f0; border-color: #ffd3cc;
+        }
         QToolButton#canvasPaneClose {
-            color: #64748b; background: transparent; border: none;
-            border-radius: 9px; min-width: 28px; min-height: 28px; font-weight: 700;
+            color: #4f5961; background: transparent; border: none;
+            border-radius: 9px; min-width: 30px; min-height: 30px; padding: 3px;
         }
-        QToolButton#canvasPaneClose:hover { color: #b91c1c; background: #fee2e2; }
-        QLabel#canvasPaneHint {
-            color: #64748b; background: #eef2f7; border-radius: 8px;
-            font-size: 9px; padding: 5px 7px;
+        QToolButton#canvasPaneClose:hover { color: #d94e43; background: #fff0ed; }
+        QFrame#canvasPaneFooter { border: none; border-top: 1px solid #ebe7e2; background: transparent; }
+        QLabel#canvasFooterStatus {
+            color: #0f9f8f; background: transparent; font-size: 11px; font-weight: 650;
         }
         QLabel#canvasObjectType {
-            color: #1d4ed8; background: #e8f0ff; border: 1px solid #c7dcff;
-            border-radius: 8px; padding: 5px 9px; font-weight: 700;
+            color: #ef5d50; background: #fff3f0; border: 1px solid #ffd3cc;
+            border-radius: 9px; padding: 6px 10px; font-weight: 700;
         }
         QLabel#autoApplyStatus {
-            color: #15803d; background: #ecfdf3; border: 1px solid #bbf7d0;
-            border-radius: 8px; padding: 5px 8px; font-size: 9px; font-weight: 600;
+            color: #0f9f8f; background: #effbf8; border: 1px solid #c6eee7;
+            border-radius: 9px; padding: 6px 9px; font-size: 9px; font-weight: 600;
         }
         QLabel#canvasSaveStatus {
-            color: #166534; background: #dcfce7; border: 1px solid #bbf7d0;
-            border-radius: 7px; padding: 7px;
+            color: #087f72; background: #effbf8; border: 1px solid #c6eee7;
+            border-radius: 10px; padding: 9px;
         }
-        QTabWidget#canvasEditorTabs::pane { border: none; background: transparent; top: 7px; }
-        QTabBar { background: #e9eef5; border-radius: 10px; padding: 3px; }
+        QTabWidget#canvasEditorTabs::pane { border: none; background: transparent; top: 8px; }
+        QTabBar { background: #f1efec; border-radius: 11px; padding: 3px; }
         QTabBar::tab {
-            color: #64748b; background: transparent; border: none; border-radius: 7px;
-            padding: 7px 7px; margin: 0px 1px; font-weight: 600;
+            color: #777d82; background: transparent; border: none; border-radius: 8px;
+            padding: 8px 7px; margin: 0px 1px; font-weight: 600;
         }
-        QTabBar::tab:selected { color: #1d4ed8; background: #ffffff; }
-        QTabBar::tab:hover:!selected { color: #334155; background: #f8fafc; }
+        QTabBar::tab:selected { color: #ef5d50; background: #fffdfb; }
+        QTabBar::tab:hover:!selected { color: #3f474e; background: #f8f6f3; }
         QGroupBox {
-            color: #334155; background: #ffffff; border: 1px solid #e2e8f0;
-            border-radius: 11px; margin-top: 10px; padding: 11px 8px 8px 8px;
+            color: #303941; background: #fffefd; border: 1px solid #e4e1dc;
+            border-radius: 12px; margin-top: 13px; padding: 15px 11px 11px 11px;
             font-weight: 600;
         }
         QGroupBox::title {
-            color: #64748b; subcontrol-origin: margin; left: 10px; padding: 0 5px;
-            font-size: 9px; font-weight: 700;
+            color: #303941; subcontrol-origin: margin; left: 12px; padding: 0 6px;
+            font-size: 10px; font-weight: 650;
         }
         QPushButton, QToolButton {
-            color: #334155; background: #ffffff; border: 1px solid #d7e0ea;
-            border-radius: 8px; padding: 5px 8px; min-height: 25px;
+            color: #3b444b; background: #fffefd; border: 1px solid #ddd9d3;
+            border-radius: 9px; padding: 6px 9px; min-height: 27px;
         }
         QPushButton:hover, QToolButton:hover {
-            color: #1d4ed8; border-color: #93c5fd; background: #eff6ff;
+            color: #ef5d50; border-color: #ffb7ae; background: #fff4f1;
         }
-        QPushButton:pressed, QToolButton:pressed { background: #dbeafe; }
-        QPushButton:disabled, QToolButton:disabled { color: #a8b3c2; background: #f1f5f9; }
-        QPushButton#primaryAction { color: #ffffff; background: #2563eb; border-color: #2563eb; font-weight: 600; }
-        QPushButton#primaryAction:hover { background: #1d4ed8; border-color: #1d4ed8; }
-        QPushButton#dangerAction { color: #b91c1c; background: #fff7f7; border-color: #fecaca; }
-        QPushButton#dangerAction:hover { background: #fee2e2; border-color: #fca5a5; }
+        QPushButton:pressed, QToolButton:pressed { background: #ffe5df; }
+        QPushButton:disabled, QToolButton:disabled { color: #b9b6b1; background: #f3f1ee; }
+        QPushButton#primaryAction { color: #ffffff; background: #ff6b5f; border-color: #ff6b5f; font-weight: 650; }
+        QPushButton#primaryAction:hover { background: #ef5d50; border-color: #ef5d50; }
+        QPushButton#dangerAction { color: #d94e43; background: #fff6f4; border-color: #ffd3cc; }
+        QPushButton#dangerAction:hover { background: #ffe9e5; border-color: #ffb7ae; }
+        QToolButton#canvasArrangeAction {
+            background: transparent; border: none; border-radius: 8px; min-width: 31px; min-height: 31px;
+        }
+        QToolButton#canvasArrangeAction:hover { background: #fff0ed; }
         QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
-            color: #0f172a; background: #ffffff; border: 1px solid #d7e0ea;
-            border-radius: 8px; padding: 4px 7px; min-height: 22px;
-            selection-background-color: #bfdbfe;
+            color: #303941; background: #fffefd; border: 1px solid #d9d6d1;
+            border-radius: 9px; padding: 5px 8px; min-height: 27px;
+            selection-background-color: #ffd8d2;
         }
-        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #60a5fa; }
+        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #ff8c80; }
         QComboBox::drop-down { border: none; width: 22px; }
-        QCheckBox { color: #334155; spacing: 7px; }
+        QCheckBox { color: #3b444b; spacing: 7px; }
         QListWidget { padding: 4px; }
         QListWidget::item { border-radius: 6px; padding: 7px; margin: 1px; }
-        QListWidget::item:selected { color: #1d4ed8; background: #dbeafe; }
-        QListWidget::item:hover:!selected { background: #f1f5f9; }
+        QListWidget::item:selected { color: #d94e43; background: #ffe9e5; }
+        QListWidget::item:hover:!selected { background: #f5f2ee; }
         QScrollArea { background: transparent; border: none; }
-        QLabel { color: #475569; }
+        QWidget#canvasInspectorBody { background: transparent; }
+        QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
+        QScrollBar::handle:vertical { background: #d8d4cf; border-radius: 4px; min-height: 28px; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        QLabel { color: #50585f; }
         """
 
     def _elements_tab(self) -> QWidget:
@@ -1564,6 +1612,8 @@ class _CanvasEditorToolbox(QDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
+        body.setObjectName("canvasInspectorBody")
+        body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 2, 4, 4)
         layout.setSpacing(7)
@@ -1576,6 +1626,34 @@ class _CanvasEditorToolbox(QDialog):
         form.addRow("Type", self._type_label)
         form.addRow("Object ID", self._id_edit)
         layout.addWidget(general)
+
+        self._multi_select_group = QGroupBox("Quick arrange")
+        arrange_layout = QHBoxLayout(self._multi_select_group)
+        arrange_layout.setContentsMargins(8, 10, 8, 8)
+        arrange_layout.setSpacing(3)
+        arrange_actions = (
+            ("align_left", "Align left", lambda: self.canvas.alignSelected("left")),
+            ("align_hcenter", "Align horizontal centers", lambda: self.canvas.alignSelected("hcenter")),
+            ("align_right", "Align right", lambda: self.canvas.alignSelected("right")),
+            ("align_top", "Align top", lambda: self.canvas.alignSelected("top")),
+            ("align_vcenter", "Align vertical centers", lambda: self.canvas.alignSelected("vcenter")),
+            ("align_bottom", "Align bottom", lambda: self.canvas.alignSelected("bottom")),
+            ("distribute_horizontal", "Distribute horizontally", lambda: self.canvas.distributeSelected("horizontal")),
+            ("distribute_vertical", "Distribute vertically", lambda: self.canvas.distributeSelected("vertical")),
+        )
+        self._arrange_buttons: list[QToolButton] = []
+        for icon_name, tooltip, callback in arrange_actions:
+            button = QToolButton()
+            button.setObjectName("canvasArrangeAction")
+            button.setIcon(_canvas_icon(icon_name))
+            button.setIconSize(QSize(19, 19))
+            button.setFixedSize(30, 32)
+            button.setToolTip(tooltip)
+            button.clicked.connect(lambda _checked=False, action=callback: action())
+            arrange_layout.addWidget(button)
+            self._arrange_buttons.append(button)
+        arrange_layout.addStretch(1)
+        layout.addWidget(self._multi_select_group)
 
         self._content_group = QGroupBox("Content")
         content_form = QFormLayout(self._content_group)
@@ -1621,8 +1699,10 @@ class _CanvasEditorToolbox(QDialog):
         ports_layout.addLayout(port_actions)
         layout.addWidget(self._ports_group)
 
-        self._geometry_group = QGroupBox("Geometry")
-        geometry_form = QFormLayout(self._geometry_group)
+        self._geometry_group = QGroupBox("Position / size")
+        geometry_form = QGridLayout(self._geometry_group)
+        geometry_form.setHorizontalSpacing(10)
+        geometry_form.setVerticalSpacing(5)
         self._number_fields: dict[str, QDoubleSpinBox] = {}
         self._number_labels: dict[str, QLabel] = {}
         fields = (
@@ -1634,15 +1714,20 @@ class _CanvasEditorToolbox(QDialog):
             ("opacity", "Opacity", 0.0, 1.0, 2),
             ("z", "Layer Z", -10000.0, 10000.0, 1),
         )
-        for key, label, minimum, maximum, decimals in fields:
+        for index, (key, label, minimum, maximum, decimals) in enumerate(fields):
             field = QDoubleSpinBox()
             field.setRange(minimum, maximum)
             field.setDecimals(decimals)
             field.setSingleStep(0.1 if key == "opacity" else 1.0)
+            field.setMinimumWidth(0)
+            field.setMaximumWidth(128)
             self._number_fields[key] = field
             label_widget = QLabel(label)
             self._number_labels[key] = label_widget
-            geometry_form.addRow(label_widget, field)
+            column = index % 2
+            row = (index // 2) * 2
+            geometry_form.addWidget(label_widget, row, column)
+            geometry_form.addWidget(field, row + 1, column)
         layout.addWidget(self._geometry_group)
 
         self._media_group = QGroupBox("Media")
@@ -2172,6 +2257,10 @@ class _CanvasEditorToolbox(QDialog):
         self._syncing_inspector = True
         self._inspector_apply_timer.stop()
         item = self.canvas.canvasObject(element_id)
+        selected_count = len(self.canvas.selectedElementIds())
+        self._multi_select_group.setVisible(selected_count >= 2)
+        for index, button in enumerate(self._arrange_buttons):
+            button.setEnabled(selected_count >= (3 if index >= 6 else 2))
         widgets = [
             self._id_edit, self._text_edit, self._data_edit, self._source_edit,
             self._ports_list, self._port_id_edit, self._port_label_edit,
@@ -2436,6 +2525,8 @@ class _CanvasEditorToolbox(QDialog):
 
     def _show_save_status(self, target: str) -> None:
         self._save_status.setText(f"Saved: {target}")
+        self._footer_status.setText("Saved")
+        self._footer_status.setToolTip(str(target))
 
 
 class _CanvasQuickToolbar(QFrame):
@@ -2706,6 +2797,7 @@ class MonkezCanva(QWidget):
     selectionChanged = pyqtSignal(str)
     selectionSetChanged = pyqtSignal(list)
     documentChanged = pyqtSignal()
+    documentOperation = pyqtSignal(dict)
     diagnosticMessage = pyqtSignal(str)
     itemIdChanged = pyqtSignal(str, str)
     autoSaved = pyqtSignal(str)
@@ -2740,13 +2832,19 @@ class MonkezCanva(QWidget):
         self._history: list[dict[str, Any]] = []
         self._history_index = -1
         self._restoring = False
+        self._document_render_notification = False
         self._suppress_next_autosave = False
         self._animations: dict[str, QPropertyAnimation] = {}
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
+        self._document_model: CanvasDocument | None = None
+        self._document_subscription = ""
+        self._last_rendered_document_revision = 0
         self._scene = _CanvasScene(self)
         self._scene.setSceneRect(-2000, -2000, 4000, 4000)
         self._view = _CanvasView(self, self._scene)
+        self._document_model = CanvasDocument.from_dict(self._graphics_document())
+        self._document_subscription = self._document_model.subscribe(self._on_document_operation)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -3040,6 +3138,47 @@ class MonkezCanva(QWidget):
 
     def alignSelectedCenter(self) -> bool:
         return self.alignSelected("center")
+
+    def distributeSelected(self, direction: str = "horizontal") -> bool:
+        """Evenly distribute three or more selected elements by their centers."""
+        direction = str(direction).lower().strip()
+        aliases = {"h": "horizontal", "x": "horizontal", "v": "vertical", "y": "vertical"}
+        direction = aliases.get(direction, direction)
+        if direction not in ("horizontal", "vertical"):
+            raise ValueError(f"Unsupported MonkezCanva distribution: {direction}")
+        items = [self._elements[element_id] for element_id in self.selectedElementIds()]
+        if len(items) < 3:
+            return False
+        coordinate = (
+            (lambda item: item.sceneBoundingRect().center().x())
+            if direction == "horizontal"
+            else (lambda item: item.sceneBoundingRect().center().y())
+        )
+        items.sort(key=coordinate)
+        start = coordinate(items[0])
+        step = (coordinate(items[-1]) - start) / (len(items) - 1)
+        previous_restoring = self._restoring
+        previous_snap = self._snap_to_grid
+        self._restoring = True
+        self._snap_to_grid = False
+        try:
+            for index, item in enumerate(items[1:-1], 1):
+                delta = start + step * index - coordinate(item)
+                offset = QPointF(delta, 0) if direction == "horizontal" else QPointF(0, delta)
+                item.setPos(item.pos() + offset)
+        finally:
+            self._snap_to_grid = previous_snap
+            self._restoring = previous_restoring
+        if not previous_restoring:
+            self.documentChanged.emit()
+        self.diagnosticMessage.emit(f"Distributed {len(items)} items: {direction}")
+        return True
+
+    def distributeSelectedHorizontally(self) -> bool:
+        return self.distributeSelected("horizontal")
+
+    def distributeSelectedVertically(self) -> bool:
+        return self.distributeSelected("vertical")
 
     def renameElement(self, element_id: str, new_id: str) -> str:
         item = self._required_element(element_id)
@@ -3573,7 +3712,29 @@ class MonkezCanva(QWidget):
             self.removeElement(element_id)
         self._message_payloads.clear()
 
-    def toDocument(self) -> dict[str, Any]:
+    def documentModel(self) -> CanvasDocument:
+        """Return the canonical Qt-free document shared by this canvas view."""
+        return self._document_model
+
+    def canvasDocument(self) -> CanvasDocument:
+        """Readable alias for :meth:`documentModel`."""
+        return self.documentModel()
+
+    def setDocumentModel(self, document: CanvasDocument) -> "MonkezCanva":
+        """Attach a canonical document; the same instance may back many views."""
+        if not isinstance(document, CanvasDocument):
+            raise TypeError("MonkezCanva.setDocumentModel expects a CanvasDocument")
+        if document is self._document_model:
+            return self
+        if self._document_model is not None and self._document_subscription:
+            self._document_model.unsubscribe(self._document_subscription)
+        self._document_model = document
+        self._document_subscription = document.subscribe(self._on_document_operation)
+        self._last_rendered_document_revision = document.revision
+        self._render_document(document.to_dict())
+        return self
+
+    def _graphics_document(self) -> dict[str, Any]:
         return {
             "format": "monkez-canva",
             "version": 1,
@@ -3592,6 +3753,25 @@ class MonkezCanva(QWidget):
             "elements": [item.to_dict() for item in self._elements.values()],
             "connectors": [item.to_dict() for item in self._connectors.values()],
         }
+
+    def _sync_document_from_graphics(self) -> tuple[OperationEvent, ...]:
+        if self._restoring or self._document_model is None:
+            return ()
+        events = self._document_model.reconcile(self._graphics_document(), origin=self)
+        if events:
+            self._last_rendered_document_revision = self._document_model.revision
+        return events
+
+    def _on_document_operation(self, event: OperationEvent) -> None:
+        self.documentOperation.emit(event.to_dict())
+        if event.origin is self or event.revision <= self._last_rendered_document_revision:
+            return
+        self._last_rendered_document_revision = event.revision
+        self._render_document(self._document_model.to_dict())
+
+    def toDocument(self) -> dict[str, Any]:
+        self._sync_document_from_graphics()
+        return self._document_model.to_dict()
 
     def toJson(self, indent: int | None = 2) -> str:
         return json.dumps(self.toDocument(), ensure_ascii=False, indent=indent)
@@ -3766,12 +3946,14 @@ class MonkezCanva(QWidget):
     def _queue_autosave(self) -> None:
         if self._restoring:
             return
+        if not self._document_render_notification:
+            self._sync_document_from_graphics()
         if self._suppress_next_autosave:
             self._suppress_next_autosave = False
             return
         # Capture history synchronously so Undo never depends on whether the
         # debounced persistence timer happened to fire before the next edit.
-        document = json.loads(self.toJson(indent=None))
+        document = json.loads(json.dumps(self._document_model.to_dict()))
         self._draft_document = document
         self._push_history(document)
         self._autosave_timer.start(self._auto_save_delay)
@@ -3779,7 +3961,7 @@ class MonkezCanva(QWidget):
     def _flush_autosave(self) -> None:
         if self._restoring:
             return
-        document = json.loads(self.toJson(indent=None))
+        document = json.loads(json.dumps(self._document_model.to_dict()))
         self._draft_document = document
         self.autoSaved.emit("in-memory draft")
         if self._auto_save_enabled and self._persistent_key:
@@ -3823,13 +4005,17 @@ class MonkezCanva(QWidget):
                 data = json.loads(serialized)
             else:
                 data = json.loads(Path(serialized).read_text(encoding="utf-8"))
-        if data.get("format") != "monkez-canva":
-            raise ValueError("Unsupported MonkezCanva document")
-        self._restore_document(data)
-        self.documentChanged.emit()
-        return self
+        model = CanvasDocument.from_dict(data)
+        return self.setDocumentModel(model)
 
     def _restore_document(self, data: dict[str, Any]) -> None:
+        model = CanvasDocument.from_dict(data)
+        events = self._document_model.reconcile(model.to_dict(), origin=self)
+        if events:
+            self._last_rendered_document_revision = self._document_model.revision
+        self._render_document(self._document_model.to_dict())
+
+    def _render_document(self, data: dict[str, Any]) -> None:
         if data.get("format") != "monkez-canva":
             raise ValueError("Unsupported MonkezCanva document")
         previous = self._restoring
@@ -3871,7 +4057,11 @@ class MonkezCanva(QWidget):
         self._restoring = previous
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         if not previous:
-            self.documentChanged.emit()
+            self._document_render_notification = True
+            try:
+                self.documentChanged.emit()
+            finally:
+                self._document_render_notification = False
 
     def fitContent(self) -> None:
         bounds = self._scene.itemsBoundingRect()
@@ -4176,4 +4366,7 @@ class MonkezCanva(QWidget):
             self._flush_autosave()
         if self._toolbox is not None:
             self._toolbox.close()
+        if self._document_model is not None and self._document_subscription:
+            self._document_model.unsubscribe(self._document_subscription)
+            self._document_subscription = ""
         super().closeEvent(event)

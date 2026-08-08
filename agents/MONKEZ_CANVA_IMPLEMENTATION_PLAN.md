@@ -104,6 +104,25 @@ Deliver a no-visible-regression extraction:
 5. keep the current Inspector and persistence behavior working;
 6. prove JSON round-trip equality and existing 122-test compatibility.
 
+### Progress — 2026-08-09
+
+Delivered under `MC-CORE-MODEL-001`:
+
+- Qt-free immutable scene, element, connector, port, group and resource records;
+- version-1 loading with legacy arrow/polyline normalization;
+- global ID, endpoint, port and finite-JSON validation;
+- atomic revisions, granular operation events, rename and cascade removal;
+- `MonkezCanva.setDocumentModel()` and synchronized multi-view rendering;
+- independent model tests plus full-suite regression coverage (128 passing).
+
+Remaining before Phase 1.1 is complete:
+
+- route each legacy graphics mutation through model operations rather than JSON
+  reconciliation;
+- render incrementally per operation instead of rebuilding external views;
+- preserve active selection/viewport across an external model revision;
+- add model-backed group/resource rendering after the registry boundary exists.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

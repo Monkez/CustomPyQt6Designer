@@ -26,6 +26,9 @@ can ignore the signal or route it into their own logger.
 
 ## Current layers
 
+- `monkez_pyqt6.monkez_canva.CanvasDocument`: Qt-free canonical scene state with
+  immutable scene/element/connector/port/group/resource records, JSON validation,
+  revision numbers and granular `OperationEvent` subscriptions.
 - `MonkezCanva`: public API, document persistence, properties and signals.
 - `_CanvasView`: native zoom, click routing and blank-area right-button panning.
 - `_CanvasScene`: background/grid painting.
@@ -77,6 +80,21 @@ event loop keeps painting and timers responsive.
 Selection is an ordered ID set exposed by `selectedElementIds()` and
 `selectionSetChanged(list)`. Alignment is one document mutation even though it
 moves several graphics items, so autosave and Undo receive one coherent state.
+Horizontal/vertical distribution follows the same rule and requires at least
+three elements.
+
+## Canonical document bridge
+
+`MonkezCanva` owns or attaches one `CanvasDocument` through `setDocumentModel()`.
+Multiple canvas instances may subscribe to the same model. A direct model change
+rerenders every attached view once per revision; a graphics interaction reconciles
+the rendered state back into immutable records and emits record-level add/update/
+remove events through `documentOperation`.
+
+This is the first extraction boundary, not the final command architecture. The
+current graphics adapter still reconciles a JSON view after legacy mutations.
+Phase 1.3 must replace that adapter path with minimal `QUndoCommand` operations so
+graphics items only consume model changes and never originate canonical snapshots.
 
 ## Persistence and trust boundary
 
@@ -102,13 +120,14 @@ are fit, fill and non-aspect-preserving scale.
 
 ## Roadmap
 
-1. Clipboard, keyboard nudging and mixed-value multi-selection property editing.
+1. Complete model-driven graphics mutations and command-based Undo.
 2. Public element registry using schema + renderer/editor factories.
-3. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
-4. Declarative data bindings and throttled live chart updates.
-5. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
-6. Large-scene profiling, level-of-detail rendering and culling tests.
-7. Collaboration after operation IDs and conflict semantics are stable.
+3. Clipboard, keyboard nudging and true mixed-value property editing.
+4. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
+5. Declarative data bindings and throttled live chart updates.
+6. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
+7. Large-scene profiling, level-of-detail rendering and culling tests.
+8. Collaboration after operation IDs and conflict semantics are stable.
 
 ## Verification focus
 

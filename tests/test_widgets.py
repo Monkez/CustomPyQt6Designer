@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 from PyQt6 import uic
 
 from monkez_pyqt6 import monkez_widgets
+from monkez_pyqt6.monkez_canva import CanvasDocument
 from monkez_pyqt6.monkez_widgets._painting import aligned_corner_radius, aligned_stroke_rect
 from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
@@ -159,6 +160,37 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual([12, 42, 30], restored.element("chart").data)
         restored.deleteLater()
         canvas.deleteLater()
+
+    def test_canva_document_model_can_drive_multiple_views(self) -> None:
+        document = CanvasDocument.empty(
+            {
+                "width": 1600,
+                "height": 1000,
+                "gridVisible": True,
+                "snapToGrid": True,
+                "gridSize": 20,
+                "gridStyle": 0,
+            }
+        )
+        first = MonkezCanva()
+        second = MonkezCanva()
+        first.setDocumentModel(document)
+        second.setDocumentModel(document)
+        operations = []
+        second.documentOperation.connect(operations.append)
+
+        first.addNode("Shared", element_id="shared")
+
+        self.assertEqual(1, document.revision)
+        self.assertEqual(["shared"], second.elements())
+        self.assertEqual("element.added", operations[-1]["action"])
+        document.update_element("shared", {"text": "Updated outside Qt"})
+        self.assertEqual("Updated outside Qt", first.element("shared").text)
+        self.assertEqual("Updated outside Qt", second.element("shared").text)
+        self.assertEqual(document.to_dict(), first.toDocument())
+        self.assertEqual(document.to_dict(), second.toDocument())
+        first.deleteLater()
+        second.deleteLater()
 
     def test_canva_advanced_connectors_lines_and_object_specific_inspector(self) -> None:
         canvas = MonkezCanva()
@@ -437,6 +469,23 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual([first, second, third], canvas.selectElements([first, second, third]))
         self.assertEqual([first, second, third], canvas.selectedElementIds())
         self.assertTrue(all(button.isEnabled() for button in canvas._quick_toolbar._align_buttons))
+        self.assertEqual("3 selected", canvas._toolbox._pane_header._selection_badge.text())
+        self.assertFalse(canvas._toolbox._multi_select_group.isHidden())
+        self.assertEqual(8, len(canvas._toolbox._arrange_buttons))
+        self.assertTrue(all(not button.icon().isNull() for button in canvas._toolbox._arrange_buttons))
+
+        canvas.element(first).setPos(0, 0)
+        canvas.element(second).setPos(140, 90)
+        canvas.element(third).setPos(520, 210)
+        self.assertTrue(canvas.distributeSelected("horizontal"))
+        horizontal_centers = [
+            canvas.element(element_id).sceneBoundingRect().center().x()
+            for element_id in (first, second, third)
+        ]
+        self.assertAlmostEqual(
+            horizontal_centers[1] - horizontal_centers[0],
+            horizontal_centers[2] - horizontal_centers[1],
+        )
 
         self.assertTrue(canvas.alignSelected("left"))
         left_edges = [canvas.element(element_id).sceneBoundingRect().left() for element_id in (first, second, third)]

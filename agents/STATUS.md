@@ -159,6 +159,18 @@ Updated: 2026-08-09
 
 ## Latest verification
 
+- `MC-CORE-MODEL-001` now provides a Qt-free `CanvasDocument` with immutable
+  scene/element/connector/port/group/resource records, finite-JSON and graph
+  validation, revisioned granular events, legacy line normalization, atomic
+  rename/removal and synchronized multi-view attachment through
+  `MonkezCanva.setDocumentModel()`. Graphics-to-model reconciliation is an
+  explicit transition layer; model-first commands/incremental rendering remain.
+- The Control Pane now follows the approved Floating Cards reference: warm white
+  surface, coral accent, teal saved footer, selection-count badge, rounded cards,
+  two-column geometry and a contextual eight-action multi-select arrange card.
+  Horizontal/vertical distribution is a real document mutation. Windows-platform
+  visual QA at 448x710 confirmed readable typography and no horizontal clipping.
+
 - The complete MonkezCanva expansion has been accepted as an active long-term
   goal. `docs/MONKEZ_CANVA_MASTER_ROADMAP.md` records five delivery phases and
   quality gates; `agents/MONKEZ_CANVA_IMPLEMENTATION_PLAN.md` records module
@@ -176,7 +188,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 122 passing tests and covers all 36 public
+- The automated suite contains 128 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.
