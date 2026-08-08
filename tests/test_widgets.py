@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
 from PyQt6 import uic
 
 from monkez_pyqt6 import monkez_widgets
-from monkez_pyqt6.monkez_canva import CanvasDocument
+from monkez_pyqt6.monkez_canva import CanvasDocument, ElementDefinition
 from monkez_pyqt6.monkez_widgets._painting import aligned_corner_radius, aligned_stroke_rect
 from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
@@ -239,6 +239,31 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual("orthogonal", connector_item.route)
         self.assertEqual(QColor("#0ea5e9"), connector_item.color)
         self.assertEqual(transform, canvas.view().transform())
+        canvas.deleteLater()
+
+    def test_canva_registry_adds_custom_items_and_missing_placeholders(self) -> None:
+        canvas = MonkezCanva()
+        canvas.registerElementDefinition(
+            ElementDefinition("sensor", "Sensor", "Industrial", 150, 86)
+        )
+        sensor_id = canvas.addElement("sensor", 10, 20, element_id="pressure")
+
+        self.assertEqual("pressure", sensor_id)
+        self.assertEqual("sensor", canvas.element(sensor_id).kind)
+        self.assertEqual(150, canvas.element(sensor_id)._rect.width())
+
+        unknown = CanvasDocument.from_dict(
+            {
+                "format": "monkez-canva",
+                "version": 1,
+                "scene": {},
+                "elements": [{"id": "legacy", "type": "vendor-widget", "text": "Legacy"}],
+                "connectors": [],
+            }
+        )
+        canvas.setDocumentModel(unknown)
+        self.assertEqual("vendor-widget", canvas.element("legacy").kind)
+        self.assertEqual("Missing components", canvas.elementRegistry().require("vendor-widget").category)
         canvas.deleteLater()
 
     def test_canva_advanced_connectors_lines_and_object_specific_inspector(self) -> None:

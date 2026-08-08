@@ -54,6 +54,11 @@ Acceptance:
 - an unknown element loads as a safe missing-component placeholder;
 - duplicate type IDs and invalid schemas fail with actionable diagnostics.
 
+Progress (2026-08-09): public ordered/cloneable definitions, built-in metadata,
+metadata-driven Add pane/default sizes, custom registration and safe missing-type
+placeholders are implemented. Renderer/Inspector factories, schema migrations and
+plugin ownership metadata remain.
+
 ### 1.3 Command-based history
 
 Replace whole-document history snapshots with `QUndoStack` commands for add,

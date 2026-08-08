@@ -126,6 +126,15 @@ Phase 1.1 is complete. Follow-up work moves to the registry and command layers:
 - route remaining direct gestures/compound editor actions through commands;
 - add group/resource graphics after their renderer registrations exist.
 
+### Registry progress — 2026-08-09
+
+Phase 1.2 foundation now provides public `ElementDefinition` and
+`ElementRegistry` APIs, isolated per canvas through a cloneable built-in catalog.
+The Elements pane, add defaults and custom component categories read registry
+metadata. Unknown project component types render as explicit safe placeholders.
+Renderer, Inspector factory, schema/migration hooks and plugin ownership metadata
+remain for the next registry increment.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

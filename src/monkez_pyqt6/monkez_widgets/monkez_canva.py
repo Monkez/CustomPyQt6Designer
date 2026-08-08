@@ -71,24 +71,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from monkez_pyqt6.monkez_canva import CanvasDocument, OperationEvent
+from monkez_pyqt6.monkez_canva import (
+    CanvasDocument,
+    ElementDefinition,
+    ElementRegistry,
+    OperationEvent,
+    create_default_element_registry,
+)
 
-
-_ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
-    "rectangle": (140, 80),
-    "ellipse": (120, 80),
-    "text": (160, 48),
-    "button": (120, 42),
-    "node": (180, 96),
-    "splitter": (72, 72),
-    "bar_chart": (260, 160),
-    "line_chart": (260, 160),
-    "image": (280, 180),
-    "animated_image": (280, 180),
-    "diamond": (120, 100),
-    "triangle": (120, 100),
-    "line": (220, 40),
-}
 
 _GRID_STYLES = ("lines", "dots", "cross")
 _BACKGROUND_IMAGE_MODES = ("fit", "fill", "scale")
@@ -1550,30 +1540,22 @@ class _CanvasEditorToolbox(QDialog):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(7)
-        groups = {
-            "Shapes": (
-                ("Text", "text"), ("Rectangle", "rectangle"), ("Ellipse", "ellipse"),
-                ("Button", "button"), ("Diamond", "diamond"), ("Triangle", "triangle"),
-            ),
-            "Diagram & data": (
-                ("Node", "node"), ("Splitter", "splitter"), ("Line / arrow", "line"),
-                ("Bar chart", "bar_chart"), ("Line chart", "line_chart"),
-            ),
-            "Media": (("Image", "image"), ("Animated GIF", "animated_image")),
-        }
-        for group_name, entries in groups.items():
+        registry = self.canvas.elementRegistry()
+        for group_name in registry.categories():
             group = QGroupBox(group_name)
             grid = QGridLayout(group)
             grid.setHorizontalSpacing(6)
             grid.setVerticalSpacing(6)
-            for index, (label, kind) in enumerate(entries):
+            for index, definition in enumerate(registry.in_category(group_name)):
+                label = definition.label
+                kind = definition.type_id
                 button = QToolButton()
                 button.setText(label)
-                button.setIcon(_canvas_icon("gif" if kind == "animated_image" else kind))
+                button.setIcon(_canvas_icon(definition.icon))
                 button.setIconSize(QSize(17, 17))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
                 button.setMinimumSize(100, 34)
-                if kind in ("image", "animated_image"):
+                if definition.media_picker:
                     button.clicked.connect(lambda _checked=False, value=kind: self._choose_media(value))
                 else:
                     button.clicked.connect(lambda _checked=False, value=kind: self.canvas.addElement(value))
@@ -2817,6 +2799,7 @@ class MonkezCanva(QWidget):
         self._background_image = ""
         self._background_image_mode = 0
         self._message_payloads: dict[str, dict[str, Any]] = {}
+        self._element_registry = create_default_element_registry()
         self._background_pixmap = QPixmap()
         self._project_directory = ""
         self._edit_mode = False
@@ -2891,6 +2874,28 @@ class MonkezCanva(QWidget):
     def view(self) -> QGraphicsView:
         return self._view
 
+    def elementRegistry(self) -> ElementRegistry:
+        """Return this canvas' component registry."""
+        return self._element_registry
+
+    def registerElementDefinition(
+        self,
+        definition: ElementDefinition,
+        *,
+        replace_existing: bool = False,
+    ) -> "MonkezCanva":
+        """Register component metadata used by add APIs and the Elements pane."""
+        self._element_registry.register(definition, replace_existing=replace_existing)
+        if self._toolbox is not None:
+            was_visible = self._toolbox.isVisible()
+            self._toolbox.close()
+            self._toolbox.deleteLater()
+            self._toolbox = None
+            if was_visible:
+                self._ensure_toolbox()
+                self._toolbox.show()
+        return self
+
     def element(self, element_id: str) -> _CanvasElement | None:
         return self._elements.get(str(element_id))
 
@@ -2941,9 +2946,12 @@ class MonkezCanva(QWidget):
             options["ports"] = _splitter_ports()
         elif kind == "node" and "ports" not in options:
             options["ports"] = _normalize_node_ports(None)
-        if kind not in _ELEMENT_DEFAULTS:
+        definition = self._element_registry.definition(kind)
+        if definition is None:
             raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
-        default_width, default_height = _ELEMENT_DEFAULTS[kind]
+        default_width, default_height = definition.default_size
+        for key, value in definition.defaults.items():
+            options.setdefault(key, value)
         element_id = str(element_id or uuid.uuid4().hex[:10])
         if element_id in self._elements or element_id in self._connectors:
             raise ValueError(f"Duplicate MonkezCanva object id: {element_id}")
@@ -3233,7 +3241,8 @@ class MonkezCanva(QWidget):
                 raise ValueError(
                     f"Unsupported line animation effect: {current['animationEffect']}"
                 )
-            default_width, default_height = _ELEMENT_DEFAULTS[kind]
+            definition = self._element_registry.require(kind)
+            default_width, default_height = definition.default_size
             normalized = self._element_model_record(
                 str(element_id),
                 kind,
@@ -4072,6 +4081,25 @@ class MonkezCanva(QWidget):
         values = dict(entry)
         kind = values.pop("type")
         element_id = values.pop("id")
+        if self._element_registry.definition(kind) is None:
+            self._element_registry.register(
+                ElementDefinition(
+                    kind,
+                    f"Missing: {kind}",
+                    "Missing components",
+                    float(values.get("width", 160)),
+                    float(values.get("height", 80)),
+                    icon="rectangle",
+                    defaults={
+                        "text": values.get("text", f"Missing component\n{kind}"),
+                        "color": "#dc2626",
+                        "background": "#fef2f2",
+                    },
+                )
+            )
+            self.diagnosticMessage.emit(
+                f"Missing component type {kind!r}; rendered a safe placeholder"
+            )
         x = values.pop("x", 0)
         y = values.pop("y", 0)
         width = values.pop("width", None)
@@ -4376,22 +4404,9 @@ class MonkezCanva(QWidget):
         self._background_pixmap = QPixmap(self._background_image) if self._background_image else QPixmap()
         self.clear()
         for entry in data.get("elements", []):
-            values = dict(entry)
-            kind = values.pop("type")
-            element_id = values.pop("id")
-            x = values.pop("x", 0)
-            y = values.pop("y", 0)
-            width = values.pop("width", None)
-            height = values.pop("height", None)
-            self.addElement(kind, x, y, width, height, element_id, **values)
+            self._add_element_record(dict(entry))
         for entry in data.get("connectors", []):
-            values = dict(entry)
-            source_id = values.pop("source")
-            target_id = values.pop("target")
-            connector_id = values.pop("id", None)
-            values.pop("type", None)
-            color = values.pop("color", "#64748b")
-            self.connectElements(source_id, target_id, color, connector_id, **values)
+            self._add_connector_record(dict(entry))
         self._restoring = previous
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         if not previous:

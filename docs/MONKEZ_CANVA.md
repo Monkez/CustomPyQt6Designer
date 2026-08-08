@@ -286,6 +286,21 @@ vào model trước. Mỗi view chỉ render operation liên quan thay vì dựn
 scene; selection, zoom, viewport và identity của item được giữ nguyên khi model
 được cập nhật từ code hoặc từ một view khác.
 
+### Đăng ký component riêng
+
+```python
+from monkez_pyqt6.monkez_canva import ElementDefinition
+
+canvas.registerElementDefinition(
+    ElementDefinition("sensor", "Sensor", "Industrial", 150, 86)
+)
+sensor_id = canvas.addElement("sensor", 120, 80)
+```
+
+Category và nút trong Elements pane được tạo từ registry. Nếu project tham chiếu
+component của plugin chưa cài, canvas hiển thị placeholder an toàn và giữ nguyên
+type/data trong document để có thể khôi phục khi plugin xuất hiện.
+
 `canvas.documentModel()`/`canvas.canvasDocument()` trả về model đang gắn. Signal
 `documentOperation(dict)` cung cấp bản JSON-safe của event cho code Qt. Loader vẫn
 đọc version 1 và tự normalize `arrow`/`polyline` cũ thành unified `line`.
