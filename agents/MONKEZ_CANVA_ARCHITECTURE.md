@@ -31,8 +31,9 @@ can ignore the signal or route it into their own logger.
   one/two-way arrows and timer-driven signal-flow animation.
 - `_CanvasEditorToolbox`: compact frameless five-tab pane with a draggable custom
   header for element creation, deep inspection, layers, viewport and persistence.
-- `_CanvasQuickToolbar`: viewport-owned floating Save/zoom/fit/alignment overlay;
-  it never participates in `MonkezCanva` layout or changes view geometry.
+- `_CanvasQuickToolbar`: canvas-owned floating Save/zoom/fit/alignment overlay;
+  it is a sibling above the view, never participates in layout and cannot be
+  scrolled by `QGraphicsView::scrollContentsBy` while the scene is panned.
 - `_canvas_icon()`: dependency-free QPainter icon factory shared by every pane
   and floatbar action; no external icon assets are required at packaging time.
 - `monkez_10_canva_plugin.py`: Designer adapter and preview.
@@ -41,7 +42,8 @@ Elements and connectors use stable string IDs. Application code must retain IDs
 rather than private graphics items.
 
 Node ports are embedded JSON-safe records (`id`, `mode`, `side`, `label`, optional
-normalized `position`). Input/output/free modes have distinct markers. `_CanvasView`
+normalized `position`). Input and output share a triangular marker distinguished
+by semantic color; free uses a diamond. `_CanvasView`
 performs port hit-testing before normal scene selection, paints a transient cubic
 preview, validates direction through `connectPorts()`, then creates a normal
 selectable connector carrying `sourcePort` and `targetPort`. Old `arrow` and
@@ -55,7 +57,9 @@ The Inspector is schema-by-kind rather than one generic form: connector endpoint
 and signal controls are hidden for ordinary elements; media, chart, geometry,
 content, stroke and color groups appear only where meaningful. Connector endpoint
 changes disconnect the old element signals and attach the new pair without
-replacing the connector ID.
+replacing the connector ID. Controls auto-apply through a guarded single-shot
+timer: direct choices apply immediately, while typing is briefly debounced and
+invalid partial JSON is rejected through diagnostics instead of escaping the slot.
 
 Selection is an ordered ID set exposed by `selectedElementIds()` and
 `selectionSetChanged(list)`. Alignment is one document mutation even though it

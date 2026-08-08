@@ -621,18 +621,9 @@ class _CanvasElement(QGraphicsObject):
             color = colors[mode]
             painter.setPen(QPen(QColor("#ffffff"), 1.8))
             painter.setBrush(color)
-            if mode == "input":
-                path = QPainterPath(QPointF(point.x() - 6, point.y() - 6))
-                path.lineTo(QPointF(point.x() + 6, point.y()))
-                path.lineTo(QPointF(point.x() - 6, point.y() + 6))
-                path.closeSubpath()
+            if mode in ("input", "output"):
+                path = self._port_triangle_path(point, port["side"])
                 painter.drawPath(path)
-            elif mode == "output":
-                painter.drawEllipse(point, 6, 6)
-                painter.setPen(QPen(QColor("#ffffff"), 1.3))
-                painter.drawLine(point + QPointF(-2, 0), point + QPointF(3, 0))
-                painter.drawLine(point + QPointF(1, -2), point + QPointF(3, 0))
-                painter.drawLine(point + QPointF(1, 2), point + QPointF(3, 0))
             else:
                 path = QPainterPath(QPointF(point.x(), point.y() - 7))
                 path.lineTo(QPointF(point.x() + 7, point.y()))
@@ -659,6 +650,30 @@ class _CanvasElement(QGraphicsObject):
                 label_rect = QRectF(point.x() - 36, point.y() - 23, 72, 16)
                 alignment = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
             painter.drawText(label_rect, alignment, label)
+
+    @staticmethod
+    def _port_triangle_path(point: QPointF, side: str) -> QPainterPath:
+        if side == "right":
+            vertices = (
+                point + QPointF(6, -6), point + QPointF(-6, 0), point + QPointF(6, 6),
+            )
+        elif side == "top":
+            vertices = (
+                point + QPointF(-6, -6), point + QPointF(0, 6), point + QPointF(6, -6),
+            )
+        elif side == "bottom":
+            vertices = (
+                point + QPointF(-6, 6), point + QPointF(0, -6), point + QPointF(6, 6),
+            )
+        else:
+            vertices = (
+                point + QPointF(-6, -6), point + QPointF(6, 0), point + QPointF(-6, 6),
+            )
+        path = QPainterPath(vertices[0])
+        path.lineTo(vertices[1])
+        path.lineTo(vertices[2])
+        path.closeSubpath()
+        return path
 
     def _paint_media(self, painter: QPainter, rect: QRectF) -> None:
         pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
@@ -1059,6 +1074,10 @@ class _CanvasEditorToolbox(QDialog):
         super().__init__(canvas.window())
         self.canvas = canvas
         self._syncing_layers = False
+        self._syncing_inspector = False
+        self._inspector_apply_timer = QTimer(self)
+        self._inspector_apply_timer.setSingleShot(True)
+        self._inspector_apply_timer.timeout.connect(self._apply_inspector)
         self.setWindowTitle("MonkezCanva Editor")
         self.setWindowFlags(
             Qt.WindowType.Tool
@@ -1405,13 +1424,9 @@ class _CanvasEditorToolbox(QDialog):
             colors.addWidget(button, column // 2, column % 2)
         layout.addWidget(self._colors_group)
 
-        actions = QHBoxLayout()
-        apply_button = QPushButton("Apply changes")
-        apply_button.setObjectName("primaryAction")
-        apply_button.setIcon(_canvas_icon("check", "#ffffff"))
-        apply_button.clicked.connect(self._apply_inspector)
-        actions.addWidget(apply_button)
-        layout.addLayout(actions)
+        auto_apply = QLabel("Changes are applied automatically")
+        auto_apply.setStyleSheet("color: #16a34a; font-size: 9px; padding: 2px")
+        layout.addWidget(auto_apply)
         order = QHBoxLayout()
         front = QPushButton("Bring front")
         front.setIcon(_canvas_icon("front"))
@@ -1423,6 +1438,7 @@ class _CanvasEditorToolbox(QDialog):
         order.addWidget(back)
         layout.addLayout(order)
         layout.addStretch(1)
+        self._connect_inspector_auto_apply()
         scroll.setWidget(body)
         page_layout.addWidget(scroll)
         return page
@@ -1638,7 +1654,39 @@ class _CanvasEditorToolbox(QDialog):
             self._source_edit.setText(path)
             self._apply_inspector()
 
+    def _connect_inspector_auto_apply(self) -> None:
+        for field in (
+            self._text_edit, self._data_edit, self._source_edit, self._points_edit,
+        ):
+            field.textEdited.connect(lambda _text: self._schedule_inspector_apply(220))
+        self._id_edit.editingFinished.connect(lambda: self._schedule_inspector_apply(0))
+        for field in (*self._number_fields.values(), self._line_width_field,
+                      self._flow_speed_field, self._connector_opacity_field,
+                      self._connector_z_field):
+            field.valueChanged.connect(lambda _value: self._schedule_inspector_apply(80))
+        for combo in (
+            self._source_combo, self._target_combo, self._source_port_combo,
+            self._target_port_combo, self._route_combo, self._line_style_combo,
+        ):
+            combo.currentIndexChanged.connect(lambda _index: self._schedule_inspector_apply(0))
+        for check in (
+            self._arrow_start_check, self._arrow_end_check, self._animated_check,
+        ):
+            check.toggled.connect(lambda _checked: self._schedule_inspector_apply(0))
+
+    def _schedule_inspector_apply(self, delay: int = 80) -> None:
+        if not self._syncing_inspector and self.canvas.selectedElementId():
+            self._inspector_apply_timer.start(max(0, int(delay)))
+
     def _apply_inspector(self) -> None:
+        if self._syncing_inspector:
+            return
+        try:
+            self._apply_inspector_values()
+        except (KeyError, TypeError, ValueError) as error:
+            self.canvas.diagnosticMessage.emit(f"Inspector change rejected: {error}")
+
+    def _apply_inspector_values(self) -> None:
         element_id = self.canvas.selectedElementId()
         if not element_id:
             return
@@ -1698,6 +1746,8 @@ class _CanvasEditorToolbox(QDialog):
         self.refreshLayers()
 
     def _sync_inspector(self, element_id: str) -> None:
+        self._syncing_inspector = True
+        self._inspector_apply_timer.stop()
         item = self.canvas.canvasObject(element_id)
         widgets = [
             self._id_edit, self._text_edit, self._data_edit, self._source_edit,
@@ -1799,6 +1849,7 @@ class _CanvasEditorToolbox(QDialog):
                     self._animated_check.setChecked(False)
                     self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.points]))
         del blockers
+        self._syncing_inspector = False
 
     @staticmethod
     def _parse_points(text: str) -> list[list[float]]:
@@ -1854,11 +1905,13 @@ class _CanvasEditorToolbox(QDialog):
         else:
             ports.append(normalized)
         self._set_ports_editor(ports)
+        self._schedule_inspector_apply(0)
 
     def _remove_port_from_editor(self) -> None:
         selected = self._ports_list.selectedItems()
         if selected:
             self._ports_list.takeItem(self._ports_list.row(selected[0]))
+            self._schedule_inspector_apply(0)
 
     def _refresh_endpoint_port_controls(
         self,
@@ -2243,7 +2296,6 @@ class MonkezCanva(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self._quick_toolbar = _CanvasQuickToolbar(self)
-        self._quick_toolbar.setParent(self._view.viewport())
         self._quick_toolbar.hide()
         layout.addWidget(self._view)
         self._toolbox: _CanvasEditorToolbox | None = None
@@ -3341,9 +3393,9 @@ class MonkezCanva(QWidget):
     def _place_quick_toolbar(self) -> None:
         toolbar = self._quick_toolbar
         toolbar.adjustSize()
-        viewport = self._view.viewport()
-        x = max(10, (viewport.width() - toolbar.width()) // 2)
-        toolbar.move(x, 12)
+        view_rect = self._view.geometry()
+        x = view_rect.left() + max(10, (view_rect.width() - toolbar.width()) // 2)
+        toolbar.move(x, view_rect.top() + 12)
 
     def _place_toolbox_on_screen(self) -> None:
         if self._toolbox is None:

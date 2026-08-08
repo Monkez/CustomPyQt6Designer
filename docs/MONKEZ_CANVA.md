@@ -26,14 +26,15 @@ Editor có năm tab:
 
 - **Elements**: thêm shape, chart, node, ảnh và GIF; duplicate/xóa item.
 - **Inspector**: sửa ID, text, source, vị trí, kích thước, rotation, opacity,
-  z-order và ba vai trò màu.
+  z-order và các vai trò màu; thay đổi tự áp dụng, không cần nút Apply.
 - **Layers**: quản lý toàn bộ item theo ID ổn định và chọn nhanh trên canvas.
 - **View**: zoom in/out, 100%, fit, di chuyển viewport bốn hướng, center selection
   và chuyển đổi pan/select mode.
 - **Save**: checkpoint trong phiên, lưu/đọc bền, undo và redo.
 
-Khi bật Edit Mode, thanh quick actions nổi chồng ở mép trên viewport, không tham gia
-layout nên không đẩy canvas xuống hoặc làm thay đổi tâm nhìn. Floatbar cung cấp
+Khi bật Edit Mode, thanh quick actions nổi chồng ở mép trên Canvas, không tham gia
+layout nên không đẩy canvas xuống hoặc làm thay đổi tâm nhìn. Toolbar là child trực
+tiếp của Canvas thay vì viewport cuộn, nên giữ nguyên vị trí khi pan scene. Floatbar cung cấp
 Save, zoom out, 100%, zoom in, Fit và các lệnh căn Left, Right, Top, Bottom, tâm
 ngang, tâm dọc hoặc đúng tâm hai chiều. Các nút căn chỉ bật khi có từ hai item được
 chọn.
@@ -168,7 +169,7 @@ luôn được chuẩn hóa thành một loại `line`.
 Mỗi node có thể có số lượng port tùy ý. Port có ID ổn định và một trong ba mode:
 
 - `input`: marker tam giác màu cam, chỉ nhận kết nối;
-- `output`: marker tròn/mũi tên màu xanh, chỉ phát kết nối;
+- `output`: cùng marker tam giác, màu xanh, chỉ phát kết nối;
 - `free`: marker hình thoi xanh lá, có thể dùng ở một trong hai đầu.
 
 ```python
@@ -191,6 +192,10 @@ Trong Inspector của node, danh sách port có form Add/Update/Remove cho ID, l
 mode và side. Connector Inspector có selector source/target port tương ứng. Khi
 kéo nối ngược từ input sang output, editor tự đảo chiều; cặp input-input hoặc
 output-output bị từ chối và ghi lý do vào `diagnosticMessage`.
+
+Các trường Inspector tự apply: combo/check áp dụng ngay, số học debounce ngắn và
+text/points áp dụng sau khoảng gõ rất ngắn. Dữ liệu points chưa hoàn chỉnh trong
+lúc gõ chỉ tạo diagnostic, không làm đóng ứng dụng hay ghi document lỗi.
 
 Inspector tự thay đổi theo object: media có source picker; chart có series data;
 shape có content/geometry/appearance; line có stroke, arrow và points; node có

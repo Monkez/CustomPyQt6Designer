@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QLabel,
+    QPushButton,
     QScrollArea,
     QTabWidget,
     QToolButton,
@@ -207,6 +208,18 @@ class WidgetTests(unittest.TestCase):
         toolbox._sync_inspector(source)
         self.assertFalse(toolbox._ports_group.isHidden())
         self.assertEqual(2, toolbox._ports_list.count())
+        self.assertNotIn("Apply changes", [button.text() for button in toolbox.findChildren(QPushButton)])
+        toolbox._text_edit.setText("Pump updated")
+        toolbox._text_edit.textEdited.emit("Pump updated")
+        QTest.qWait(240)
+        self.assertEqual("Pump updated", canvas.element(source).text)
+        toolbox._port_id_edit.setText("telemetry")
+        toolbox._port_label_edit.setText("Telemetry")
+        toolbox._port_mode_combo.setCurrentText("Output")
+        toolbox._port_side_combo.setCurrentText("Bottom")
+        toolbox._upsert_port()
+        self.app.processEvents()
+        self.assertIn("telemetry", [port["id"] for port in canvas.nodePorts(source)])
 
         restored = MonkezCanva()
         restored.loadDocument(canvas.toDocument())
@@ -338,9 +351,10 @@ class WidgetTests(unittest.TestCase):
         self.app.processEvents()
 
         self.assertFalse(canvas._quick_toolbar.isHidden())
-        self.assertIs(canvas.view().viewport(), canvas._quick_toolbar.parent())
+        self.assertIs(canvas, canvas._quick_toolbar.parent())
         self.assertEqual(view_geometry_before, canvas.view().geometry())
         self.assertGreater(canvas._quick_toolbar.y(), 0)
+        toolbar_position = canvas._quick_toolbar.pos()
         icon_buttons = canvas._quick_toolbar.findChildren(QToolButton)
         self.assertTrue(icon_buttons)
         self.assertTrue(all(not button.icon().isNull() for button in icon_buttons))
@@ -368,6 +382,7 @@ class WidgetTests(unittest.TestCase):
         QTest.mouseMove(view.viewport(), start + QPoint(70, 0), delay=10)
         QTest.mouseRelease(view.viewport(), Qt.MouseButton.RightButton, pos=start + QPoint(70, 0))
         self.assertNotEqual(before, view.horizontalScrollBar().value())
+        self.assertEqual(toolbar_position, canvas._quick_toolbar.pos())
 
         canvas.setEditMode(False)
         self.assertTrue(canvas._quick_toolbar.isHidden())

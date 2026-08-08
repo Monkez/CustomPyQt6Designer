@@ -135,8 +135,8 @@ Updated: 2026-08-08
   Explorer drag/drop for static images and GIF animation, viewport navigation,
   bounded undo/redo history, debounced autosave, process-local session
   checkpoints and application-data persistence with managed media copies.
-  Edit mode also exposes a compact viewport-overlay Save/zoom/fit/alignment
-  floatbar that never shifts canvas geometry, a modern frameless draggable
+  Edit mode also exposes a compact canvas-owned Save/zoom/fit/alignment floatbar
+  that never shifts canvas geometry or scrolls with a panned viewport, a modern frameless draggable
   control pane, multi-select through the scene or Layers list, and right-button
   blank-canvas viewport pan. Pane/floatbar actions use a shared vector icon set;
   the title no longer carries an EDIT badge. View controls cover line/dot/cross
@@ -149,10 +149,12 @@ Updated: 2026-08-08
   stroke styles, one/two-way arrowheads and animated signal-flow overlays. The
   Inspector exposes only the content, media, chart, geometry, stroke, connector
   and appearance controls relevant to the selected object type. Nodes support
-  configurable input/output/free ports with distinct markers, direct port-to-port
+  configurable input/output/free ports (triangular input/output markers separated
+  by color and a diamond free marker), direct port-to-port
   drag connection, directional validation and persisted connector endpoint IDs.
   Element/connector/object click signals are separated so connector selection no
-  longer crashes element-only handlers.
+  longer crashes element-only handlers. Inspector changes auto-apply with guarded
+  debounce; the obsolete Apply Changes button has been removed.
   See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification
