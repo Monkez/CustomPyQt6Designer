@@ -26,9 +26,10 @@ can ignore the signal or route it into their own logger.
 - `_CanvasScene`: background/grid painting.
 - `_CanvasElement`: shape, node and chart rendering plus resize.
 - `_CanvasConnector`: cubic edge tracking both endpoints.
-- `_CanvasEditorToolbox`: five-tab editor for element creation, deep property
-  inspection, ID/layer management, viewport controls and persistence/history.
-- `_CanvasQuickToolbar`: edit-mode Save/zoom/fit and multi-item alignment actions.
+- `_CanvasEditorToolbox`: compact frameless five-tab pane with a draggable custom
+  header for element creation, deep inspection, layers, viewport and persistence.
+- `_CanvasQuickToolbar`: viewport-owned floating Save/zoom/fit/alignment overlay;
+  it never participates in `MonkezCanva` layout or changes view geometry.
 - `monkez_10_canva_plugin.py`: Designer adapter and preview.
 
 Elements and connectors use stable string IDs. Application code must retain IDs

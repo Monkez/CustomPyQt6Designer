@@ -32,9 +32,15 @@ Editor có năm tab:
   và chuyển đổi pan/select mode.
 - **Save**: checkpoint trong phiên, lưu/đọc bền, undo và redo.
 
-Khi bật Edit Mode, thanh quick actions nằm ngay phía trên canvas cung cấp Save,
-zoom out, 100%, zoom in, Fit và các lệnh căn Left, Right, Top, Bottom, tâm ngang,
-tâm dọc hoặc đúng tâm hai chiều. Các nút căn chỉ bật khi có từ hai item được chọn.
+Khi bật Edit Mode, thanh quick actions nổi chồng ở mép trên viewport, không tham gia
+layout nên không đẩy canvas xuống hoặc làm thay đổi tâm nhìn. Floatbar cung cấp
+Save, zoom out, 100%, zoom in, Fit và các lệnh căn Left, Right, Top, Bottom, tâm
+ngang, tâm dọc hoặc đúng tâm hai chiều. Các nút căn chỉ bật khi có từ hai item được
+chọn.
+
+Control pane là cửa sổ tool không viền, kích thước gọn, có shadow, header kéo được,
+tab tự co đều và nút đóng Edit Mode riêng. Pane dùng chung visual language cho card,
+input, layer row, trạng thái lưu và action chính/nguy hiểm.
 
 Có ba cách chọn nhiều item: giữ `Ctrl` khi bấm, kéo rubber-band qua nhiều item,
 hoặc chọn nhiều dòng trong tab Layers. Giữ chuột phải trên vùng canvas trống rồi

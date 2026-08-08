@@ -135,8 +135,10 @@ Updated: 2026-08-08
   Explorer drag/drop for static images and GIF animation, viewport navigation,
   bounded undo/redo history, debounced autosave, process-local session
   checkpoints and application-data persistence with managed media copies.
-  Edit mode also exposes a compact Save/zoom/fit/alignment toolbar, multi-select
-  through the scene or Layers list, and right-button blank-canvas viewport pan.
+  Edit mode also exposes a compact viewport-overlay Save/zoom/fit/alignment
+  floatbar that never shifts canvas geometry, a modern frameless draggable
+  control pane, multi-select through the scene or Layers list, and right-button
+  blank-canvas viewport pan.
   See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification

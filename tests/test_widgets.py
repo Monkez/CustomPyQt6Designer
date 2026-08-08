@@ -178,10 +178,14 @@ class WidgetTests(unittest.TestCase):
         third = canvas.addElement("rectangle", 480, 220, 120, 90, element_id="third")
         window.resize(900, 600)
         window.show()
+        view_geometry_before = canvas.view().geometry()
         canvas.setEditMode(True)
         self.app.processEvents()
 
         self.assertFalse(canvas._quick_toolbar.isHidden())
+        self.assertIs(canvas.view().viewport(), canvas._quick_toolbar.parent())
+        self.assertEqual(view_geometry_before, canvas.view().geometry())
+        self.assertGreater(canvas._quick_toolbar.y(), 0)
         self.assertEqual([first, second, third], canvas.selectElements([first, second, third]))
         self.assertEqual([first, second, third], canvas.selectedElementIds())
         self.assertTrue(all(button.isEnabled() for button in canvas._quick_toolbar._align_buttons))
@@ -294,6 +298,7 @@ class WidgetTests(unittest.TestCase):
             toolbox = canvas._toolbox
             self.assertIsNotNone(toolbox)
             self.assertEqual(5, toolbox.findChild(QTabWidget).count())
+            self.assertTrue(toolbox.windowFlags() & Qt.WindowType.FramelessWindowHint)
             toolbox.refreshLayers()
             self.assertEqual(2, toolbox._layers.count())
             canvas.setEditMode(False)
