@@ -10,6 +10,7 @@ from .fluent_api import install_fluent_api
 
 _WIDGET_MODULES = {
     "MonkezButton": ".monkez_button",
+    "MonkezCanva": ".monkez_canva",
     "MonkezCheckBox": ".monkez_checkbox",
     "MonkezComboBox": ".monkez_combobox",
     "MonkezFrame": ".monkez_containers",

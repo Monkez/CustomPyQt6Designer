@@ -1,6 +1,6 @@
 # Current engineering status
 
-Updated: 2026-08-03
+Updated: 2026-08-08
 
 ## Current version
 
@@ -10,8 +10,8 @@ Updated: 2026-08-03
 
 ## Supported surface
 
-- 35 public runtime widgets/components.
-- 34 Qt Designer plugins; runtime-only `MonkezToast` is intentionally excluded.
+- 36 public runtime widgets/components.
+- 35 Qt Designer plugins; runtime-only `MonkezToast` is intentionally excluded.
 - Six themes: Material, iOS, Fluent, Bootstrap, Minimal and Dark.
 - Canonical distribution/import names are `monkez-pyqt6` and `monkez_pyqt6`;
   `custom_pyqt6_designer` remains as a compatibility namespace and launcher.
@@ -125,18 +125,23 @@ Updated: 2026-08-03
 - Checkbox checked/partial marks, compact/RTL switches, and clamped linear-gauge
   targets are covered by rendering regression tests.
 - Static checks are reproducible through `lint.bat` and the pinned `dev` extra.
+- `MonkezCanva` provides a native runtime canvas editor with the `Ctrl+D, E`
+  edit chord, an owned floating palette, shapes, bar/line charts, flow
+  nodes/connectors, grid snapping, JSON persistence and APIs for colors, text,
+  chart data, highlight and animation. See `MONKEZ_CANVA_ARCHITECTURE.md`.
 
 ## Latest verification
 
-- The automated suite contains 112 passing tests and covers all 35 public
-  runtime components and 34 Designer plugins.
+- The automated suite contains 115 passing tests and covers all 36 public
+  runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
-  verification targets all 34 Designer plugins.
+  verification targets all 35 Designer plugins.
 - `monkez_pyqt6-0.5.0` wheel and source archive build successfully. An isolated
   wheel install imports the canonical package, compatibility namespace and all
   three UI-loading APIs successfully.
-- The current portable build initializes and constructs all 34 Designer
-  plugins successfully.
+- The last portable release initializes and constructs its 34 Designer
+  plugins successfully. A new portable build is still required to bundle and
+  verify the 35th plugin, `MonkezCanva`.
 - `MonkezDesigner-0.5.0-windows-x64.zip` contains 7,705 entries (266.6 MiB) and
   passes a full entry read/CRC integrity check.
 - Its SHA-256 is

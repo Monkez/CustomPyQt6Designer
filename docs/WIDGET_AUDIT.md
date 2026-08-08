@@ -1,8 +1,8 @@
 # Rà soát khả năng widget
 
-Cập nhật: 2026-08-03
+Cập nhật: 2026-08-08
 
-Package hiện có 35 runtime widget/component và 34 plugin Qt Designer. `MonkezToast`
+Package hiện có 36 runtime widget/component và 35 plugin Qt Designer. `MonkezToast`
 chỉ dùng ở runtime nên không xuất hiện trong Widget Box. Việc rà soát tập
 trung vào những API ứng dụng thường cần nhưng Qt gốc chưa cung cấp thuận tiện,
 đồng thời không tạo property trùng lặp với API kế thừa sẵn có.

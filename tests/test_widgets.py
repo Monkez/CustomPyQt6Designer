@@ -28,6 +28,7 @@ from monkez_pyqt6 import monkez_widgets
 from monkez_pyqt6.monkez_widgets._painting import aligned_corner_radius, aligned_stroke_rect
 from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
+    MonkezCanva,
     MonkezBreadcrumb,
     MonkezCalendarWidget,
     MonkezArcGauge,
@@ -77,7 +78,7 @@ class WidgetTests(unittest.TestCase):
             widget.deleteLater()
 
     def test_themed_widgets_expose_numeric_theme_property(self) -> None:
-        excluded = {"MonkezImage", "MonkezUSBCamera"}
+        excluded = {"MonkezCanva", "MonkezImage", "MonkezUSBCamera"}
         for name in monkez_widgets.__all__:
             if name in excluded:
                 continue
@@ -128,6 +129,60 @@ class WidgetTests(unittest.TestCase):
         self.assertIs(group_box.setContentPadding(15), group_box)
         self.assertEqual(group_box.contentPadding, 15)
         group_box.deleteLater()
+
+    def test_canva_flow_api_and_json_round_trip(self) -> None:
+        canvas = MonkezCanva()
+        source = canvas.addNode("Input", 0, 0, element_id="source")
+        target = canvas.addNode("Output", 240, 0, element_id="target")
+        chart = canvas.addChart([10, 35, 22], "line", 480, 0, element_id="chart")
+        connector = canvas.connectElements(source, target, connector_id="edge")
+        canvas.setElementColor(source, "#ef4444")
+        canvas.setElementText(target, "Result")
+        canvas.setChartData(chart, [12, 42, 30])
+
+        self.assertEqual("edge", connector)
+        self.assertEqual(QColor("#ef4444"), canvas.element(source).color)
+        document = canvas.toDocument()
+        self.assertEqual("monkez-canva", document["format"])
+        self.assertEqual(3, len(document["elements"]))
+        self.assertEqual(1, len(document["connectors"]))
+
+        restored = MonkezCanva()
+        restored.loadDocument(canvas.toJson())
+        self.assertEqual(["source", "target", "chart"], restored.elements())
+        self.assertEqual("Result", restored.element("target").text)
+        self.assertEqual([12, 42, 30], restored.element("chart").data)
+        restored.deleteLater()
+        canvas.deleteLater()
+
+    def test_canva_edit_mode_controls_item_interaction(self) -> None:
+        canvas = MonkezCanva()
+        element_id = canvas.addElement("rectangle", 10, 10)
+        item = canvas.element(element_id)
+        self.assertFalse(item.flags() & item.GraphicsItemFlag.ItemIsMovable)
+        canvas.setEditMode(True)
+        self.assertTrue(item.flags() & item.GraphicsItemFlag.ItemIsMovable)
+        canvas.setEditMode(False)
+        self.assertFalse(item.flags() & item.GraphicsItemFlag.ItemIsMovable)
+        canvas.deleteLater()
+
+    def test_canva_editor_chord_toggles_edit_mode(self) -> None:
+        window = QDialog()
+        layout = QVBoxLayout(window)
+        canvas = MonkezCanva()
+        layout.addWidget(canvas)
+        window.show()
+        canvas.setFocus()
+        self.app.processEvents()
+
+        QTest.keyClick(canvas, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+        QTest.keyClick(canvas, Qt.Key.Key_E)
+        self.app.processEvents()
+        self.assertTrue(canvas.editMode)
+
+        canvas.setEditMode(False)
+        window.close()
+        window.deleteLater()
 
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
         button = MonkezButton()

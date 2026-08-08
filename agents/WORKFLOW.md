@@ -22,7 +22,7 @@ For release-affecting changes, also run:
 build.bat
 ```
 
-The portable build is valid only after all 34 plugins initialize, create their
+The portable build is valid only after all 35 plugins initialize, create their
 widgets and remain stable during verification.
 The windowed Designer verifier must be started with
 `Start-Process -Wait -PassThru`; a direct PowerShell invocation can return
@@ -59,7 +59,7 @@ fallback while keeping the canonical release ZIP name.
 
 The splash plugin is intentionally hidden from the Widget Box by returning
 empty `domXml()`. Full Designer verification must open the packaged standalone
-splash template so all 34 plugins are both initialized and constructed.
+splash template so all 35 plugins are both initialized and constructed.
 
 ## Documentation
 

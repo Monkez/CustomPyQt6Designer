@@ -91,6 +91,7 @@ Các script tiện dụng:
 | `new_splash.bat` | Tạo và mở một form splash độc lập, không lồng trong container khác. |
 | `gallery.bat` | Mở Docs Lab. |
 | `demo.bat` | Chạy project mẫu. |
+| `canva_demo.bat` | Chạy MonkezCanva demo; nhấn `Ctrl+D`, sau đó `E` để edit. |
 | `splash_demo.bat` | Chạy demo splash screen thiết kế bằng Designer. |
 | `benchmark_splash.bat` | Đo thời gian import và paint đầu. |
 | `build_splash_demo.bat` | Build và xác minh app EXE demo tải nền nặng. |
@@ -154,7 +155,7 @@ nhưng code và form mới nên chuyển sang `monkez_pyqt6`.
 1. Tải thư mục release `MonkezDesigner` từ [GitHub Releases](https://github.com/Monkez/CustomPyQt6Designer/releases).
 2. Giữ nguyên toàn bộ cấu trúc thư mục sau khi giải nén.
 3. Chạy `MonkezDesigner.exe`.
-4. Trong Widget Box, tìm các nhóm đánh số từ **Monkez 01 Actions & Selection** đến **Monkez 09 Media**.
+4. Trong Widget Box, tìm các nhóm đánh số từ **Monkez 01 Actions & Selection** đến **Monkez 10 Canvas & Diagram**.
 
 Bản portable đã chứa Qt Designer, PyQt6 Designer bridge, plugin Python và runtime cần thiết. Máy thiết kế giao diện không cần cài Python.
 
@@ -200,6 +201,11 @@ python -m venv .venv
 | 07 Data Display & Gauges | `MonkezTable`, `MonkezLCDNumber`, `MonkezRadialGauge`, `MonkezArcGauge`, `MonkezLinearGauge` |
 | 08 Containers | `MonkezFrame`, `MonkezGroupBox`, `MonkezScrollArea`; `MonkezSplashScreen` is runtime/template-only |
 | 09 Media | `MonkezImage`, `MonkezUSBCamera` |
+| 10 Canvas & Diagram | `MonkezCanva` |
+
+`MonkezCanva` là canvas editor runtime cho chart và flow diagram. Chạy
+`canva_demo.bat`, nhấn `Ctrl+D` rồi `E` để mở palette element nổi. Xem
+[hướng dẫn MonkezCanva](docs/MONKEZ_CANVA.md) để dùng API, signal và JSON.
 
 Các widget giao diện hỗ trợ:
 

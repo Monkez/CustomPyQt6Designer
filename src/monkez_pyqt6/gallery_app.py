@@ -34,6 +34,7 @@ from .monkez_widgets import (
     MonkezArcGauge,
     MonkezBreadcrumb,
     MonkezButton,
+    MonkezCanva,
     MonkezCalendarWidget,
     MonkezCheckBox,
     MonkezComboBox,
@@ -153,6 +154,22 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
             "setStyleIndex(index)", "setLoading(value)", "clicked.connect(slot)",
         ),
         "button = MonkezButton(); button.setText('Save'); button.setThemeIndex(0)",
+    ),
+    WidgetDoc(
+        "MonkezCanva",
+        "Canvas",
+        "Canvas editor cho dashboard, chart va flow diagram; Ctrl+D roi E de bat/tat edit mode.",
+        (
+            "editMode, editorShortcutEnabled",
+            "gridVisible, snapToGrid, gridSize",
+            "backgroundColor, gridColor",
+        ),
+        (
+            "addElement(type, x, y)", "addNode(text, x, y)", "addChart(values, type)",
+            "connectElements(source, target)", "setElementColor(id, color)",
+            "highlightElement(id)", "animateElement(id)", "toJson()", "loadDocument(data)",
+        ),
+        "canvas = MonkezCanva(); a = canvas.addNode('Input'); b = canvas.addNode('Output', 240, 0); canvas.connectElements(a, b)",
     ),
     WidgetDoc(
         "MonkezTextInput",
@@ -452,6 +469,13 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
 WidgetMethodProbe = tuple[str, str, str, Callable[[QWidget], object]]
 
 WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
+    "MonkezCanva": (
+        ("addNode(text, x, y)", "Insert a draggable flow node.", 'addNode("Process", 40, 40)', lambda widget: widget.addNode("Process", 40, 40)),
+        ("addChart(values, type)", "Insert a bar or line chart.", 'addChart([20, 60, 45], "line")', lambda widget: widget.addChart([20, 60, 45], "line")),
+        ("setEditMode(value)", "Show or hide the runtime editing toolbox.", "setEditMode(False)", lambda widget: widget.setEditMode(False)),
+        ("setGridVisible(value)", "Show or hide the canvas grid.", "setGridVisible(False)", lambda widget: widget.setGridVisible(False)),
+        ("fitContent()", "Fit every element inside the viewport.", "fitContent()", lambda widget: widget.fitContent()),
+    ),
     "MonkezButton": (
         ("setButtonTypeIndex(index)", "Switch button style: 0 Filled, 1 Outlined, 2 Text.", "setButtonTypeIndex(1)", lambda widget: widget.setButtonTypeIndex(1)),
         ("setStyleIndex(index)", "Switch content style: 0 Standard or 1 Icon only.", "setStyleIndex(1)", lambda widget: (widget.setIconText("⚙"), widget.setStyleIndex(1))),
@@ -768,7 +792,7 @@ class GalleryWindow(QMainWindow):
         title_box.addWidget(subtitle)
         layout.addLayout(title_box, 1)
 
-        for label, value in (("Widgets", "35"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
+        for label, value in (("Widgets", "36"), ("Docs", str(len(WIDGET_DOCS))), ("Themes", "6")):
             layout.addWidget(self._metric(label, value))
         return header
 
@@ -1821,6 +1845,18 @@ def _table_preview() -> QWidget:
     return widget
 
 
+def _canva_preview() -> QWidget:
+    widget = MonkezCanva()
+    source = widget.addNode("Camera", -180, -45, color="#2563eb")
+    target = widget.addNode("Detection", 70, -45, color="#7c3aed")
+    chart = widget.addChart([28, 64, 48, 82, 70], "line", 330, -75, text="Confidence")
+    widget.connectElements(source, target)
+    widget.connectElements(target, chart)
+    widget.setMinimumSize(620, 300)
+    widget.fitContent()
+    return widget
+
+
 def _image_preview() -> QWidget:
     widget = MonkezImage()
     widget.set_image(_demo_pixmap())
@@ -1965,6 +2001,7 @@ def _breadcrumb_preview() -> QWidget:
 
 
 _DOC_PREVIEW_FACTORIES: dict[str, Callable[[], QWidget]] = {
+    "MonkezCanva": _canva_preview,
     "MonkezButton": _button_preview,
     "MonkezTextInput": _text_input_preview,
     "MonkezComboBox": _combo_preview,

@@ -45,10 +45,11 @@ class PluginTests(unittest.TestCase):
             names.append(plugin.name())
             widget.deleteLater()
 
-        self.assertEqual(len(names), 34)
+        self.assertEqual(len(names), 35)
         self.assertNotIn("MetricCard", names)
         self.assertIn("MonkezStatusBadge", names)
         self.assertIn("MonkezTable", names)
+        self.assertIn("MonkezCanva", names)
 
     def test_theme_task_menu_exposes_all_runtime_themes(self) -> None:
         theme_task_menu = importlib.import_module("theme_task_menu")
@@ -156,6 +157,7 @@ class PluginTests(unittest.TestCase):
             "Monkez 07 Data Display & Gauges",
             "Monkez 08 Containers",
             "Monkez 09 Media",
+            "Monkez 10 Canvas & Diagram",
         ]
         groups = {}
         discovered_groups = []
@@ -185,6 +187,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(groups["MonkezLoadingOverlay"], "Monkez 06 Feedback & Status")
         self.assertEqual(groups["MonkezRadialGauge"], "Monkez 07 Data Display & Gauges")
         self.assertEqual(groups["MonkezScrollArea"], "Monkez 08 Containers")
+        self.assertEqual(groups["MonkezCanva"], "Monkez 10 Canvas & Diagram")
 
     def test_scroll_area_uses_native_designer_structure(self) -> None:
         scroll_plugin = importlib.import_module("monkez_08_scroll_area_plugin")

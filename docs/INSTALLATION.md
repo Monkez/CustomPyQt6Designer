@@ -67,7 +67,7 @@ python -m monkez_pyqt6 --new-splash ui/splash_screen.ui
 python -m monkez_pyqt6 --doctor
 ```
 
-Doctor kiểm tra phiên bản package/Python, đủ 34 plugin, vị trí Qt Designer và
+Doctor kiểm tra phiên bản package/Python, đủ 35 plugin, vị trí Qt Designer và
 Python plugin bridge. Mỗi lỗi đều kèm hướng khắc phục. Xem phiên bản nhanh:
 
 ```powershell
@@ -90,8 +90,8 @@ cần mang theo Designer.
 2. Giải nén toàn bộ file ZIP.
 3. Giữ nguyên `MonkezDesigner.exe` và thư mục `_internal` cạnh nhau.
 4. Chạy `MonkezDesigner.exe`.
-5. Tìm widget trong chín nhóm có thứ tự từ `Monkez 01 Actions & Selection` đến
-   `Monkez 09 Media`.
+5. Tìm widget trong mười nhóm có thứ tự từ `Monkez 01 Actions & Selection` đến
+   `Monkez 10 Canvas & Diagram`.
    Thứ tự này ổn định ở cả bản source và portable; sau khi nâng cấp, hãy đóng
    toàn bộ cửa sổ Designer rồi mở lại để thư mục plugin được quét lại.
 6. Thiết kế và lưu file `.ui`.

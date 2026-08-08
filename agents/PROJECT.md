@@ -13,6 +13,8 @@ Do not make the runtime application depend on the portable Designer.
 ## Architecture
 
 - `src/monkez_pyqt6/monkez_widgets`: runtime widget implementations.
+- `src/monkez_pyqt6/monkez_widgets/monkez_canva.py`: runtime canvas/chart/flow
+  editor; see `agents/MONKEZ_CANVA_ARCHITECTURE.md`.
 - `src/monkez_pyqt6/designer_plugins`: Qt Designer plugin adapters.
 - `src/monkez_pyqt6/launcher.py`: Designer discovery and environment setup.
 - `src/monkez_pyqt6/gallery_app.py`: interactive widget documentation.
