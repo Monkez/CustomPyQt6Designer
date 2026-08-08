@@ -388,6 +388,7 @@ class MonkezCanva(QWidget):
     elementClicked = pyqtSignal(str)
     selectionChanged = pyqtSignal(str)
     documentChanged = pyqtSignal()
+    diagnosticMessage = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -409,9 +410,22 @@ class MonkezCanva(QWidget):
         layout.addWidget(self._view)
         self._toolbox: _CanvasToolbox | None = None
         self._scene.selectionChanged.connect(self._emit_selection)
-        self._toggle_shortcut = QShortcut(QKeySequence("Ctrl+D, E"), self)
-        self._toggle_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
-        self._toggle_shortcut.activated.connect(self.toggleEditMode)
+        self._toggle_shortcuts: list[QShortcut] = []
+        for sequence, label in (
+            ("Ctrl+D, E", "Ctrl+D then E"),
+            ("Ctrl+D, Ctrl+E", "hold Ctrl and press D then E"),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(
+                lambda source=label: self._activate_editor_shortcut(source)
+            )
+            shortcut.activatedAmbiguously.connect(
+                lambda source=label: self.diagnosticMessage.emit(
+                    f"Editor shortcut is ambiguous: {source}"
+                )
+            )
+            self._toggle_shortcuts.append(shortcut)
         delete_shortcut = QShortcut(QKeySequence.StandardKey.Delete, self)
         delete_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         delete_shortcut.activated.connect(self.deleteSelected)
@@ -622,6 +636,10 @@ class MonkezCanva(QWidget):
     def toggleEditMode(self) -> None:
         self.setEditMode(not self._edit_mode)
 
+    def _activate_editor_shortcut(self, source: str) -> None:
+        self.diagnosticMessage.emit(f"Editor shortcut received: {source}")
+        self.toggleEditMode()
+
     def getEditMode(self) -> bool:
         return self._edit_mode
 
@@ -638,17 +656,43 @@ class MonkezCanva(QWidget):
                 self._toolbox = _CanvasToolbox(self)
             self._toolbox.setParent(self.window(), self._toolbox.windowFlags())
             self._toolbox.show()
+            self._place_toolbox_on_screen()
             self._toolbox.raise_()
         elif self._toolbox is not None:
             self._toolbox.hide()
+        toolbox_state = "visible" if self._toolbox is not None and self._toolbox.isVisible() else "hidden"
+        self.diagnosticMessage.emit(f"Edit mode={enabled}; toolbox={toolbox_state}")
         self.editModeChanged.emit(enabled)
+
+    def _place_toolbox_on_screen(self) -> None:
+        if self._toolbox is None:
+            return
+        host = self.window()
+        screen = host.screen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        toolbox_size = self._toolbox.sizeHint().expandedTo(self._toolbox.minimumSizeHint())
+        host_top_right = host.mapToGlobal(host.rect().topRight())
+        x = host_top_right.x() + 12
+        y = host.mapToGlobal(host.rect().topLeft()).y() + 48
+        if x + toolbox_size.width() > available.right():
+            x = host_top_right.x() - toolbox_size.width() - 20
+        x = min(max(x, available.left()), available.right() - toolbox_size.width() + 1)
+        y = min(max(y, available.top()), available.bottom() - toolbox_size.height() + 1)
+        self._toolbox.move(x, y)
+        self.diagnosticMessage.emit(
+            f"Toolbox placed at ({x}, {y}), size={toolbox_size.width()}x{toolbox_size.height()}"
+        )
 
     def getShortcutEnabled(self) -> bool:
         return self._shortcut_enabled
 
     def setShortcutEnabled(self, enabled: bool) -> None:
         self._shortcut_enabled = bool(enabled)
-        self._toggle_shortcut.setEnabled(self._shortcut_enabled)
+        for shortcut in self._toggle_shortcuts:
+            shortcut.setEnabled(self._shortcut_enabled)
+        self.diagnosticMessage.emit(f"Editor shortcuts enabled={self._shortcut_enabled}")
 
     def getGridVisible(self) -> bool:
         return self._grid_visible

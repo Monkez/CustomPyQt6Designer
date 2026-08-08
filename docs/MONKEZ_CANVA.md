@@ -5,8 +5,13 @@
 
 ## Chạy demo
 
-Chạy `canva_demo.bat`, sau đó nhấn `Ctrl+D`, thả phím và nhấn `E`. Cửa sổ
-`MonkezCanva Elements` sẽ xuất hiện. Lặp lại phím tắt để đóng edit mode.
+Chạy `canva_demo.bat`. Có thể nhấn `Ctrl+D`, thả `Ctrl` rồi nhấn `E`, hoặc giữ
+`Ctrl` và lần lượt nhấn `D`, `E`. Cửa sổ `MonkezCanva Elements` sẽ xuất hiện.
+Lặp lại phím tắt để đóng edit mode.
+
+Cửa sổ CMD hiển thị log trực tiếp và đồng thời ghi vào `canva_demo.log` tại thư
+mục dự án. Khi shortcut hoạt động, log phải có `Editor shortcut received`, tiếp
+theo vị trí toolbox và `toolbox=visible`.
 
 Trong edit mode:
 

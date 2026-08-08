@@ -9,9 +9,15 @@ Updated: 2026-08-08
 WebEngine/JavaScript. The requested name is deliberately spelled `Canva`; do not
 rename it to `Canvas` and break `.ui` forms.
 
-The editor chord is `Ctrl+D, E` (`Ctrl+D`, then `E`), scoped to the canvas's top
-level window through `QShortcut.WindowShortcut`. Applications with multiple
-canvases should enable the shortcut on only the currently editable canvas.
+The editor accepts both `Ctrl+D, E` (`Ctrl+D`, release Ctrl, then `E`) and
+`Ctrl+D, Ctrl+E` (keep Ctrl held while pressing both letters). Both shortcuts
+are scoped to the canvas's top-level window through `QShortcut.WindowShortcut`.
+Applications with multiple canvases should enable the shortcut on only the
+currently editable canvas.
+
+`diagnosticMessage` reports shortcut activation, edit-mode state and toolbox
+placement. The demo connects it to console and `canva_demo.log`; library users
+can ignore the signal or route it into their own logger.
 
 ## Current layers
 

@@ -125,8 +125,9 @@ Updated: 2026-08-08
 - Checkbox checked/partial marks, compact/RTL switches, and clamped linear-gauge
   targets are covered by rendering regression tests.
 - Static checks are reproducible through `lint.bat` and the pinned `dev` extra.
-- `MonkezCanva` provides a native runtime canvas editor with the `Ctrl+D, E`
-  edit chord, an owned floating palette, shapes, bar/line charts, flow
+- `MonkezCanva` provides a native runtime canvas editor supporting both release-
+  Ctrl and held-Ctrl forms of the `Ctrl+D, E` chord, an owned floating palette,
+  visible diagnostic logging, shapes, bar/line charts, flow
   nodes/connectors, grid snapping, JSON persistence and APIs for colors, text,
   chart data, highlight and animation. See `MONKEZ_CANVA_ARCHITECTURE.md`.
 

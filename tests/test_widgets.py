@@ -181,6 +181,12 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(canvas.editMode)
 
         canvas.setEditMode(False)
+        QTest.keyClick(canvas, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+        QTest.keyClick(canvas, Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
+        self.app.processEvents()
+        self.assertTrue(canvas.editMode)
+
+        canvas.setEditMode(False)
         window.close()
         window.deleteLater()
 
