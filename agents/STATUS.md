@@ -159,7 +159,14 @@ Updated: 2026-08-08
 
 ## Latest verification
 
-- The automated suite contains 121 passing tests and covers all 36 public
+- MonkezCanva now renders output triangles outward, offers flow/pulse/glow/
+  particles/packet effects on connectors and standalone lines, and persists
+  direction, spacing, intensity and packet timing/icon/loop settings. The compact
+  Inspector applies every field immediately and the pane uses an icon-led pill-tab
+  visual system. Splitter elements provide one-to-many port junctions; addressable
+  packets sent through `send_a_message()` propagate across all splitter branches.
+
+- The automated suite contains 122 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

@@ -164,12 +164,51 @@ Polyline cũng chính là Line có từ ba `points` trở lên. `addPolyline()` 
 cũ có type `arrow`/`polyline` vẫn được đọc như alias tương thích, nhưng dữ liệu mới
 luôn được chuẩn hóa thành một loại `line`.
 
+### Hiệu ứng line và truyền packet
+
+Line độc lập và connector dùng chung các hiệu ứng `flow`, `pulse`, `glow`,
+`particles` và `packet`. Inspector cho phép đổi tức thì màu, tốc độ, chiều chạy,
+khoảng cách và cường độ. Với `packet`, có thể bật Loop, đặt thời gian đi hết một
+đoạn, chu kỳ phát gói và ảnh icon; nếu không chọn ảnh, editor vẽ icon phong bì.
+
+```python
+canvas.updateConnector(
+    "network-edge", animated=True, animationEffect="packet",
+    packetLoop=True, packetDuration=1.4, packetInterval=0.25,
+    packetIcon="assets/message.png",
+)
+message_id = canvas.send_a_message(
+    "network-edge", icon="assets/alert.png", speed=1.5,
+    travel_time=1.2, wait_to_end=True,
+)
+```
+
+Nhiều lần gọi tạo được nhiều gói đang bay đồng thời. `messageSent(line_id,
+message_id)` phát ở mỗi đoạn packet bắt đầu đi qua; `messageArrived(line_id,
+message_id)` phát một lần khi packet tới toàn bộ đích cuối. `sendMessage()` là
+alias kiểu Qt của `send_a_message()`.
+
+### Splitter
+
+Splitter là junction có một input và 2–12 output, có ID và port như node. Packet
+tới input được nhân sang mọi connector nối từ output chưa đi qua; hiệu ứng không
+bị ngắt khi graph phân nhánh. `wait_to_end=True` chỉ trả về sau khi tất cả nhánh
+con hoàn tất.
+
+```python
+splitter = canvas.addSplitter(300, 120, output_count=3, element_id="fan-out")
+canvas.connectPorts("source", "out", splitter, "in")
+canvas.connectPorts(splitter, "out-1", "monitor-a", "in")
+canvas.connectPorts(splitter, "out-2", "monitor-b", "in")
+canvas.connectPorts(splitter, "out-3", "archive", "in")
+```
+
 ## Node có nhiều port
 
 Mỗi node có thể có số lượng port tùy ý. Port có ID ổn định và một trong ba mode:
 
-- `input`: marker tam giác màu cam, chỉ nhận kết nối;
-- `output`: cùng marker tam giác, màu xanh, chỉ phát kết nối;
+- `input`: marker tam giác màu cam, hướng vào node và chỉ nhận kết nối;
+- `output`: marker tam giác màu xanh, hướng ra ngoài node và chỉ phát kết nối;
 - `free`: marker hình thoi xanh lá, có thể dùng ở một trong hai đầu.
 
 ```python

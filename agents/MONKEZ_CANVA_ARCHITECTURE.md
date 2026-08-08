@@ -24,11 +24,11 @@ can ignore the signal or route it into their own logger.
 - `MonkezCanva`: public API, document persistence, properties and signals.
 - `_CanvasView`: native zoom, click routing and blank-area right-button panning.
 - `_CanvasScene`: background/grid painting.
-- `_CanvasElement`: shapes, node, charts, media and unified single/multi-segment
+- `_CanvasElement`: shapes, node, splitter, charts, media and unified single/multi-segment
   line rendering plus resize. Arrowheads are line options, not a separate kind.
 - `_CanvasConnector`: selectable/code-addressable `QGraphicsObject` with stable ID,
   endpoint tracking, straight/bezier/orthogonal/polyline routes, stroke styles,
-  one/two-way arrows and timer-driven signal-flow animation.
+  one/two-way arrows and timer-driven signal-flow/packet animation.
 - `_CanvasEditorToolbox`: compact frameless five-tab pane with a draggable custom
   header for element creation, deep inspection, layers, viewport and persistence.
 - `_CanvasQuickToolbar`: canvas-owned floating Save/zoom/fit/alignment overlay;
@@ -41,9 +41,9 @@ can ignore the signal or route it into their own logger.
 Elements and connectors use stable string IDs. Application code must retain IDs
 rather than private graphics items.
 
-Node ports are embedded JSON-safe records (`id`, `mode`, `side`, `label`, optional
+Node and splitter ports are embedded JSON-safe records (`id`, `mode`, `side`, `label`, optional
 normalized `position`). Input and output share a triangular marker distinguished
-by semantic color; free uses a diamond. `_CanvasView`
+by semantic color and opposing inward/outward direction; free uses a diamond. `_CanvasView`
 performs port hit-testing before normal scene selection, paints a transient cubic
 preview, validates direction through `connectPorts()`, then creates a normal
 selectable connector carrying `sourcePort` and `targetPort`. Old `arrow` and
@@ -60,6 +60,14 @@ changes disconnect the old element signals and attach the new pair without
 replacing the connector ID. Controls auto-apply through a guarded single-shot
 timer: direct choices apply immediately, while typing is briefly debounced and
 invalid partial JSON is rejected through diagnostics instead of escaping the slot.
+
+Line and connector animation share `_paint_path_effect()` with flow, pulse, glow,
+particles and packet modes. Packet instances have stable message IDs and monotonic
+travel timing. `MonkezCanva` tracks pending terminal branches; arrival at a splitter
+fans the same logical message into all unvisited output connectors, and emits one
+final `messageArrived` only after the branch count reaches zero. This defines the
+blocking boundary for `send_a_message(..., wait_to_end=True)` while a nested Qt
+event loop keeps painting and timers responsive.
 
 Selection is an ordered ID set exposed by `selectedElementIds()` and
 `selectionSetChanged(list)`. Alignment is one document mutation even though it

@@ -167,7 +167,9 @@ class WidgetTests(unittest.TestCase):
         spare = canvas.addNode("Valve", 650, 40, element_id="valve")
         line_id = canvas.addLine(
             0, 280, element_id="pipe-line", lineStyle="dash",
-            lineWidth=4, arrowStart=True, arrowEnd=True,
+            lineWidth=4, arrowStart=True, arrowEnd=True, animated=True,
+            animationEffect="pulse", flowDirection="reverse", flowSpacing=7,
+            effectIntensity=1.4,
         )
         polyline_id = canvas.addPolyline(
             [[0, 80], [100, 10], [220, 90]], 300, 300,
@@ -178,7 +180,8 @@ class WidgetTests(unittest.TestCase):
         connector_id = canvas.connectSelected(
             connector_id="water-flow", route="orthogonal", lineStyle="dashdot",
             lineWidth=5, arrowStart=True, arrowEnd=True, animated=True,
-            flowSpeed=2.5, flowColor="#06b6d4",
+            animationEffect="glow", flowSpeed=2.5, flowColor="#06b6d4",
+            flowDirection="reverse", flowSpacing=8, effectIntensity=1.6,
         )
 
         connector = canvas.connector(connector_id)
@@ -188,7 +191,11 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(connector.animated)
         self.assertTrue(connector._timer.isActive())
         self.assertEqual(QColor("#06b6d4"), connector.flow_color)
+        self.assertEqual("glow", connector.animation_effect)
+        self.assertEqual(-1, connector.flow_direction)
         self.assertTrue(canvas.element(line_id).arrow_start)
+        self.assertTrue(canvas.element(line_id)._line_timer.isActive())
+        self.assertEqual("pulse", canvas.element(line_id).animation_effect)
         self.assertEqual("line", canvas.element(polyline_id).kind)
         self.assertEqual(3, len(canvas.element(polyline_id).points))
 
@@ -203,6 +210,8 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(spare, toolbox._target_combo.currentData())
         self.assertEqual("out", toolbox._source_port_combo.currentData())
         self.assertEqual("in", toolbox._target_port_combo.currentData())
+        self.assertEqual("Glow", toolbox._effect_combo.currentText())
+        self.assertEqual("Reverse", toolbox._flow_direction_combo.currentText())
 
         canvas.selectElement(source)
         toolbox._sync_inspector(source)
@@ -229,12 +238,74 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(restored_connector.arrow_start)
         self.assertTrue(restored_connector.arrow_end)
         self.assertTrue(restored_connector.animated)
+        self.assertEqual("glow", restored_connector.animation_effect)
+        self.assertEqual(-1, restored_connector.flow_direction)
+        self.assertEqual("pulse", restored.element(line_id).animation_effect)
         self.assertEqual(spare, restored_connector.target.element_id)
         self.assertEqual([line_id, polyline_id], [value for value in restored.elements() if "pipe" in value])
 
         restored.clear()
         restored.deleteLater()
         canvas.setEditMode(False)
+        canvas.clear()
+        canvas.deleteLater()
+
+    def test_canva_packet_messages_and_splitter_branch_propagation(self) -> None:
+        canvas = MonkezCanva()
+        source = canvas.addNode("Source", 0, 0, element_id="source")
+        splitter = canvas.addSplitter(220, 0, output_count=2, element_id="splitter")
+        target_a = canvas.addNode("A", 440, -100, element_id="target-a")
+        target_b = canvas.addNode("B", 440, 100, element_id="target-b")
+        incoming = canvas.connectElements(
+            source, splitter, connector_id="incoming", sourcePort="out", targetPort="in",
+            animationEffect="packet", packetLoop=False, packetDuration=0.1, packetInterval=0.05,
+        )
+        canvas.connectElements(
+            splitter, target_a, connector_id="branch-a", sourcePort="out-1", targetPort="in",
+        )
+        canvas.connectElements(
+            splitter, target_b, connector_id="branch-b", sourcePort="out-2", targetPort="in",
+        )
+        sent: list[tuple[str, str]] = []
+        arrived: list[tuple[str, str]] = []
+        canvas.messageSent.connect(lambda edge, message: sent.append((edge, message)))
+        canvas.messageArrived.connect(lambda edge, message: arrived.append((edge, message)))
+
+        message_id = canvas.send_a_message(
+            incoming, travel_time=0.1, speed=2.0, wait_to_end=True, message_id="packet-1",
+        )
+
+        self.assertEqual("packet-1", message_id)
+        self.assertEqual({"incoming", "branch-a", "branch-b"}, {edge for edge, _message in sent})
+        self.assertEqual(1, len(arrived))
+        self.assertEqual(message_id, arrived[0][1])
+        self.assertEqual(3, len(canvas.nodePorts(splitter)))
+        self.assertEqual("input", canvas.nodePorts(splitter)[0]["mode"])
+        self.assertFalse(canvas._message_payloads)
+        canvas.updateConnector(incoming, packetLoop=True)
+        self.assertTrue(canvas.connector(incoming)._timer.isActive())
+        document = canvas.toDocument()
+        splitter_data = next(item for item in document["elements"] if item["id"] == splitter)
+        incoming_data = next(item for item in document["connectors"] if item["id"] == incoming)
+        self.assertEqual("splitter", splitter_data["type"])
+        self.assertEqual("packet", incoming_data["animationEffect"])
+        self.assertTrue(incoming_data["packetLoop"])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            icon_path = project / "packet.png"
+            icon = QImage(16, 16, QImage.Format.Format_ARGB32)
+            icon.fill(QColor("#2563eb"))
+            icon.save(str(icon_path))
+            canvas.updateConnector(incoming, packetIcon=str(icon_path))
+            canvas.setProjectDirectory(project)
+            canvas.setPersistenceKey("packet-network")
+            saved = canvas.savePersistent()
+            persisted = json.loads(saved.read_text(encoding="utf-8"))
+            saved_edge = next(item for item in persisted["connectors"] if item["id"] == incoming)
+            self.assertFalse(Path(saved_edge["packetIcon"]).is_absolute())
+            self.assertTrue((saved.parent / saved_edge["packetIcon"]).is_file())
+
         canvas.clear()
         canvas.deleteLater()
 
@@ -264,6 +335,11 @@ class WidgetTests(unittest.TestCase):
         self.app.processEvents()
 
         self.assertEqual(3, len(canvas.nodePorts(source)))
+        source_item = canvas.element(source)
+        output_port = source_item.port("voltage")
+        output_center = source_item.portLocalPosition("voltage")
+        output_apex = source_item._port_marker_path(output_port, output_center).elementAt(1)
+        self.assertGreater(output_apex.x, output_center.x())
         view = canvas.view()
         start = view.mapFromScene(canvas.element(source).portScenePosition("voltage"))
         end = view.mapFromScene(canvas.element(target).portScenePosition("supply"))

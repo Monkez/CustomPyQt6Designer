@@ -45,6 +45,8 @@ def main() -> int:
     canvas.objectClicked.connect(lambda object_id: logger.info("objectClicked -> %s", object_id))
     canvas.autoSaved.connect(lambda target: logger.info("autoSaved -> %s", target))
     canvas.persistentSaved.connect(lambda path: logger.info("persistentSaved -> %s", path))
+    canvas.messageSent.connect(lambda edge, message: logger.info("messageSent -> %s via %s", message, edge))
+    canvas.messageArrived.connect(lambda edge, message: logger.info("messageArrived -> %s at %s", message, edge))
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 
@@ -76,22 +78,42 @@ def main() -> int:
             [28, 56, 44, 78, 66, 88], "line", 450, -80,
             text="Confidence", color="#16a34a", element_id="confidence-chart",
         )
+        splitter = canvas.addSplitter(390, 150, output_count=2, element_id="result-splitter")
+        monitor = canvas.addNode("Event log", 650, 170, color="#db2777", element_id="event-log")
         canvas.connectElements(
             camera, detector, connector_id="camera-to-detector",
             sourcePort="video", targetPort="frames",
             route="bezier", arrowEnd=True, animated=True,
-            flowColor="#38bdf8", flowSpeed=1.3,
+            animationEffect="particles", flowColor="#38bdf8", flowSpeed=1.3,
         )
         canvas.connectElements(
             detector, decision, connector_id="detector-to-decision",
             sourcePort="objects", targetPort="input",
             route="orthogonal", lineStyle="dash", arrowEnd=True,
+            animated=True, animationEffect="glow", effectIntensity=0.8,
         )
         canvas.connectElements(
             decision, chart, connector_id="decision-to-chart",
             route="straight", arrowStart=True, arrowEnd=True,
         )
-        canvas.addLine(-280, 190, element_id="signal-line", arrowEnd=True, text="Signal")
+        canvas.connectElements(
+            decision, splitter, connector_id="decision-to-splitter",
+            sourcePort="no", targetPort="in", route="bezier", arrowEnd=True,
+            animated=True, animationEffect="packet", packetLoop=True,
+            packetDuration=1.8, packetInterval=0.75,
+        )
+        canvas.connectElements(
+            splitter, monitor, connector_id="splitter-to-log",
+            sourcePort="out-1", targetPort="in", route="bezier", arrowEnd=True,
+        )
+        canvas.connectElements(
+            splitter, chart, connector_id="splitter-to-chart",
+            sourcePort="out-2", route="orthogonal", arrowEnd=True,
+        )
+        canvas.addLine(
+            -280, 190, element_id="signal-line", arrowEnd=True, text="Signal",
+            animated=True, animationEffect="pulse", flowColor="#a855f7",
+        )
         canvas.addPolyline(
             [[0, 80], [90, 10], [190, 90]], 80, 190,
             element_id="pipeline", lineWidth=4, arrowEnd=True,

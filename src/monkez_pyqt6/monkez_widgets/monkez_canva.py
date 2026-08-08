@@ -7,6 +7,7 @@ import math
 import os
 import shutil
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from typing import Any
 from PyQt6.QtCore import (
     QSignalBlocker,
     QStandardPaths,
+    QEventLoop,
     QEasingCurve,
     QPointF,
     QPropertyAnimation,
@@ -75,6 +77,7 @@ _ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
     "text": (160, 48),
     "button": (120, 42),
     "node": (180, 96),
+    "splitter": (72, 72),
     "bar_chart": (260, 160),
     "line_chart": (260, 160),
     "image": (280, 180),
@@ -86,6 +89,8 @@ _ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
 
 _GRID_STYLES = ("lines", "dots", "cross")
 _BACKGROUND_IMAGE_MODES = ("fit", "fill", "scale")
+_LINE_EFFECTS = ("flow", "pulse", "glow", "particles", "packet")
+_PORT_KINDS = ("node", "splitter")
 
 
 def _normalize_node_ports(raw_ports: Any) -> list[dict[str, Any]]:
@@ -127,9 +132,121 @@ def _normalize_node_ports(raw_ports: Any) -> list[dict[str, Any]]:
     return ports
 
 
+def _splitter_ports(output_count: int = 3) -> list[dict[str, Any]]:
+    output_count = max(2, min(12, int(output_count)))
+    ports = [{"id": "in", "mode": "input", "side": "left", "label": "In", "position": 0.5}]
+    ports.extend(
+        {
+            "id": f"out-{index + 1}", "mode": "output", "side": "right",
+            "label": str(index + 1), "position": (index + 1) / (output_count + 1),
+        }
+        for index in range(output_count)
+    )
+    return ports
+
+
 def _color(value: Any, fallback: str = "#2563eb") -> QColor:
     result = QColor(value)
     return result if result.isValid() else QColor(fallback)
+
+
+def _paint_path_effect(
+    painter: QPainter,
+    path: QPainterPath,
+    effect: str,
+    color: QColor,
+    width: float,
+    phase: float,
+    spacing: float,
+    intensity: float,
+) -> None:
+    """Paint one animated overlay shared by standalone lines and connectors."""
+    painter.save()
+    effect = effect if effect in _LINE_EFFECTS else "flow"
+    width = max(1.0, float(width))
+    spacing = max(1.0, float(spacing))
+    intensity = max(0.2, min(4.0, float(intensity)))
+    if effect == "packet":
+        painter.restore()
+        return
+    if effect == "pulse":
+        pulse = (math.sin(phase * 0.16) + 1.0) / 2.0
+        pulse_color = QColor(color)
+        pulse_color.setAlphaF(min(1.0, 0.35 + pulse * 0.55))
+        pen = QPen(pulse_color, width * (0.75 + pulse * 0.75 * intensity))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.drawPath(path)
+    elif effect == "glow":
+        for multiplier, alpha in ((4.0, 28), (2.5, 55), (1.35, 115)):
+            glow = QColor(color)
+            glow.setAlpha(min(220, int(alpha * intensity)))
+            pen = QPen(glow, width * multiplier * intensity)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.drawPath(path)
+        core = QPen(color, max(1.0, width * 0.65))
+        core.setDashPattern([1.0, spacing])
+        core.setDashOffset(phase)
+        core.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(core)
+        painter.drawPath(path)
+    elif effect == "particles":
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        count = max(3, min(24, int(5 + intensity * 3)))
+        radius = max(1.8, width * (0.55 + intensity * 0.16))
+        offset = (phase * 0.012) % 1.0
+        for index in range(count):
+            progress = (index / count + offset) % 1.0
+            painter.drawEllipse(path.pointAtPercent(progress), radius, radius)
+    else:
+        pen = QPen(color, max(1.5, width * 0.7 * intensity))
+        pen.setDashPattern([2.0, spacing])
+        pen.setDashOffset(phase)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawPath(path)
+    painter.restore()
+
+
+def _packet_pixmap(icon: Any, size: int = 20) -> QPixmap:
+    if isinstance(icon, QPixmap):
+        return icon.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    if isinstance(icon, QIcon):
+        return icon.pixmap(size, size)
+    if icon:
+        pixmap = QPixmap(str(icon))
+        if not pixmap.isNull():
+            return pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    return QPixmap()
+
+
+def _paint_packets(painter: QPainter, path: QPainterPath, packets: list[dict[str, Any]]) -> None:
+    """Render in-flight message packets; an envelope is used without a custom icon."""
+    now = time.monotonic()
+    for packet in packets:
+        progress = max(0.0, min(1.0, (now - packet["started"]) / packet["duration"]))
+        point = path.pointAtPercent(progress)
+        pixmap = packet.get("pixmap")
+        if not isinstance(pixmap, QPixmap):
+            pixmap = QPixmap()
+        painter.save()
+        painter.translate(point)
+        painter.setPen(QPen(QColor("#ffffff"), 1.4))
+        painter.setBrush(QColor("#2563eb"))
+        painter.drawEllipse(QRectF(-14, -14, 28, 28))
+        if not pixmap.isNull():
+            painter.drawPixmap(-10, -10, pixmap)
+        else:
+            painter.setPen(QPen(QColor("#ffffff"), 1.6))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(QRectF(-8, -6, 16, 12), 2, 2)
+            painter.drawLine(QPointF(-8, -5), QPointF(0, 1))
+            painter.drawLine(QPointF(8, -5), QPointF(0, 1))
+        painter.restore()
 
 
 def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
@@ -256,6 +373,17 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
         painter.drawRoundedRect(QRectF(4, 5, 12, 10), 2, 2)
         painter.drawEllipse(QRectF(1.5, 8.5, 3, 3))
         painter.drawEllipse(QRectF(15.5, 8.5, 3, 3))
+    elif name == "splitter":
+        painter.drawEllipse(QRectF(3, 3, 14, 14))
+        painter.drawLine(QPointF(3, 10), QPointF(9, 10))
+        painter.drawLine(QPointF(9, 10), QPointF(16, 6))
+        painter.drawLine(QPointF(9, 10), QPointF(16, 14))
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QRectF(7.5, 8.5, 3, 3))
+    elif name == "send":
+        painter.drawRoundedRect(QRectF(2, 5, 16, 11), 2, 2)
+        painter.drawLine(QPointF(2, 6), QPointF(10, 12))
+        painter.drawLine(QPointF(18, 6), QPointF(10, 12))
     elif name in ("image", "gif"):
         painter.drawRoundedRect(QRectF(3, 4, 14, 12), 2, 2)
         painter.drawEllipse(QRectF(11.5, 6, 2.5, 2.5))
@@ -430,6 +558,7 @@ class _CanvasScene(QGraphicsScene):
 
 class _CanvasElement(QGraphicsObject):
     changed = pyqtSignal(str)
+    packetArrived = pyqtSignal(str, str)
 
     def __init__(
         self,
@@ -455,14 +584,31 @@ class _CanvasElement(QGraphicsObject):
         self.line_style = str(options.get("lineStyle", "solid")).lower()
         self.arrow_start = bool(options.get("arrowStart", False))
         self.arrow_end = bool(options.get("arrowEnd", False))
+        self.animated = bool(options.get("animated", False))
+        self.animation_effect = str(options.get("animationEffect", "flow")).lower()
+        self.flow_color = _color(options.get("flowColor", "#38bdf8"), "#38bdf8")
+        self.flow_speed = max(0.1, float(options.get("flowSpeed", 1.0)))
+        self.flow_direction = -1 if str(options.get("flowDirection", "forward")).lower() == "reverse" else 1
+        self.flow_spacing = max(1.0, float(options.get("flowSpacing", 5.0)))
+        self.effect_intensity = max(0.2, min(4.0, float(options.get("effectIntensity", 1.0))))
+        self.packet_loop = bool(options.get("packetLoop", False))
+        self.packet_duration = max(0.1, float(options.get("packetDuration", 1.5)))
+        self.packet_interval = max(0.05, float(options.get("packetInterval", 0.7)))
+        self.packet_icon = str(options.get("packetIcon", ""))
+        self._packets: list[dict[str, Any]] = []
+        self._last_packet_at = 0.0
         raw_points = options.get("points", [])
         self.points = [QPointF(float(point[0]), float(point[1])) for point in raw_points]
-        self.ports = _normalize_node_ports(options.get("ports")) if kind == "node" else []
+        self.ports = _normalize_node_ports(options.get("ports")) if kind in _PORT_KINDS else []
         self._pixmap = QPixmap()
         self._movie: QMovie | None = None
         self._highlight = QColor()
         self._resizing = False
         self._resize_origin = QPointF()
+        self._line_phase = 0.0
+        self._line_timer = QTimer(self)
+        self._line_timer.setInterval(40)
+        self._line_timer.timeout.connect(self._advance_line_effect)
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
             | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -473,6 +619,7 @@ class _CanvasElement(QGraphicsObject):
         self.setRotation(float(options.get("rotation", 0.0)))
         self.setZValue(float(options.get("z", 0.0)))
         self._load_media()
+        self._sync_line_animation()
 
     def _load_media(self) -> None:
         self.releaseMedia()
@@ -496,6 +643,10 @@ class _CanvasElement(QGraphicsObject):
             self._movie = None
         self._pixmap = QPixmap()
 
+    def release(self) -> None:
+        self._line_timer.stop()
+        self.releaseMedia()
+
     def setSource(self, source: str) -> None:
         self.source = str(source)
         self._load_media()
@@ -503,7 +654,7 @@ class _CanvasElement(QGraphicsObject):
         self.changed.emit(self.element_id)
 
     def boundingRect(self) -> QRectF:
-        margin = 11 if self.kind == "node" else 5
+        margin = 11 if self.kind in _PORT_KINDS else 5
         return self._rect.adjusted(-margin, -margin, margin, margin)
 
     def port(self, port_id: str) -> dict[str, Any] | None:
@@ -535,7 +686,7 @@ class _CanvasElement(QGraphicsObject):
         return self.mapToScene(self.portLocalPosition(port_id, endpoint))
 
     def portAt(self, scene_position: QPointF, radius: float = 11.0) -> dict[str, Any] | None:
-        if self.kind != "node":
+        if self.kind not in _PORT_KINDS:
             return None
         local = self.mapFromScene(scene_position)
         for port in self.ports:
@@ -592,6 +743,17 @@ class _CanvasElement(QGraphicsObject):
             painter.setPen(QColor("#ffffff"))
             painter.drawText(header.adjusted(12, 0, -12, 0), Qt.AlignmentFlag.AlignVCenter, self.text)
             self._paint_ports(painter)
+        elif self.kind == "splitter":
+            painter.setBrush(QColor("#eff6ff"))
+            painter.setPen(QPen(self.color, 2.2))
+            painter.drawEllipse(rect)
+            center = rect.center()
+            painter.drawLine(QPointF(rect.left() + 10, center.y()), center)
+            painter.drawLine(center, QPointF(rect.right() - 10, rect.top() + 17))
+            painter.drawLine(center, QPointF(rect.right() - 10, rect.bottom() - 17))
+            painter.setBrush(self.color)
+            painter.drawEllipse(center, 4, 4)
+            self._paint_ports(painter)
         else:
             radius = 10 if self.kind in ("button", "rectangle") else 4
             painter.drawRoundedRect(rect, radius, radius)
@@ -622,8 +784,7 @@ class _CanvasElement(QGraphicsObject):
             painter.setPen(QPen(QColor("#ffffff"), 1.8))
             painter.setBrush(color)
             if mode in ("input", "output"):
-                path = self._port_triangle_path(point, port["side"])
-                painter.drawPath(path)
+                painter.drawPath(self._port_marker_path(port, point))
             else:
                 path = QPainterPath(QPointF(point.x(), point.y() - 7))
                 path.lineTo(QPointF(point.x() + 7, point.y()))
@@ -675,6 +836,13 @@ class _CanvasElement(QGraphicsObject):
         path.closeSubpath()
         return path
 
+    def _port_marker_path(self, port: dict[str, Any], point: QPointF | None = None) -> QPainterPath:
+        point = point if point is not None else self.portLocalPosition(port["id"])
+        side = port["side"]
+        if port["mode"] == "output":
+            side = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}[side]
+        return self._port_triangle_path(point, side)
+
     def _paint_media(self, painter: QPainter, rect: QRectF) -> None:
         pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
         painter.drawRoundedRect(rect, 8, 8)
@@ -714,10 +882,58 @@ class _CanvasElement(QGraphicsObject):
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
+        if self.animated:
+            _paint_path_effect(
+                painter, path, self.animation_effect, self.flow_color,
+                self.line_width, self._line_phase, self.flow_spacing,
+                self.effect_intensity,
+            )
+        if self._packets:
+            _paint_packets(painter, path, self._packets)
         if self.arrow_start and len(points) > 1:
             self._paint_line_arrow(painter, points[0], points[1])
         if self.arrow_end and len(points) > 1:
             self._paint_line_arrow(painter, points[-1], points[-2])
+
+    def _advance_line_effect(self) -> None:
+        self._line_phase -= self.flow_speed * self.flow_direction
+        self._advance_packets()
+        self.update()
+
+    def sendPacket(self, message_id: str, icon: Any = None, duration: float | None = None) -> None:
+        resolved_icon = self.packet_icon if icon is None else icon
+        self._packets.append({
+            "id": message_id,
+            "pixmap": _packet_pixmap(resolved_icon),
+            "duration": max(0.1, float(duration or self.packet_duration)),
+            "started": time.monotonic(),
+        })
+        self._line_timer.start()
+
+    def _advance_packets(self) -> None:
+        now = time.monotonic()
+        if self.kind == "line" and self.animation_effect == "packet" and self.packet_loop:
+            if now - self._last_packet_at >= self.packet_interval:
+                self._last_packet_at = now
+                self.sendPacket(uuid.uuid4().hex[:10])
+        arrived = [packet for packet in self._packets if now - packet["started"] >= packet["duration"]]
+        arrived_ids = {id(packet) for packet in arrived}
+        self._packets = [packet for packet in self._packets if id(packet) not in arrived_ids]
+        for packet in arrived:
+            self.packetArrived.emit(self.element_id, packet["id"])
+        if not self.animated and not self.packet_loop and not self._packets:
+            self._line_timer.stop()
+
+    def _sync_line_animation(self) -> None:
+        active = self.kind == "line" and (
+            self.animated or bool(self._packets)
+            or (self.animation_effect == "packet" and self.packet_loop)
+        )
+        if active and not self._line_timer.isActive():
+            self._line_timer.start()
+        elif not active:
+            self._line_timer.stop()
+        self.update()
 
     def _paint_line_arrow(self, painter: QPainter, tip: QPointF, near: QPointF) -> None:
         angle = math.atan2(tip.y() - near.y(), tip.x() - near.x())
@@ -828,6 +1044,17 @@ class _CanvasElement(QGraphicsObject):
             "lineStyle": self.line_style,
             "arrowStart": self.arrow_start,
             "arrowEnd": self.arrow_end,
+            "animated": self.animated,
+            "animationEffect": self.animation_effect,
+            "flowColor": self.flow_color.name(QColor.NameFormat.HexArgb),
+            "flowSpeed": self.flow_speed,
+            "flowDirection": "reverse" if self.flow_direction < 0 else "forward",
+            "flowSpacing": self.flow_spacing,
+            "effectIntensity": self.effect_intensity,
+            "packetLoop": self.packet_loop,
+            "packetDuration": self.packet_duration,
+            "packetInterval": self.packet_interval,
+            "packetIcon": self.packet_icon,
             "points": [[point.x(), point.y()] for point in self.points],
             "ports": [dict(port) for port in self.ports],
             "opacity": self.opacity(),
@@ -840,6 +1067,7 @@ class _CanvasConnector(QGraphicsObject):
     """Selectable, serializable signal path between two node-like elements."""
 
     changed = pyqtSignal(str)
+    packetArrived = pyqtSignal(str, str)
 
     def __init__(
         self,
@@ -867,7 +1095,17 @@ class _CanvasConnector(QGraphicsObject):
         self.arrow_start = bool(options.get("arrowStart", False))
         self.arrow_end = bool(options.get("arrowEnd", True))
         self.animated = bool(options.get("animated", False))
+        self.animation_effect = str(options.get("animationEffect", "flow")).lower()
         self.flow_speed = max(0.1, float(options.get("flowSpeed", 1.0)))
+        self.flow_direction = -1 if str(options.get("flowDirection", "forward")).lower() == "reverse" else 1
+        self.flow_spacing = max(1.0, float(options.get("flowSpacing", 5.0)))
+        self.effect_intensity = max(0.2, min(4.0, float(options.get("effectIntensity", 1.0))))
+        self.packet_loop = bool(options.get("packetLoop", False))
+        self.packet_duration = max(0.1, float(options.get("packetDuration", 1.5)))
+        self.packet_interval = max(0.05, float(options.get("packetInterval", 0.7)))
+        self.packet_icon = str(options.get("packetIcon", ""))
+        self._packets: list[dict[str, Any]] = []
+        self._last_packet_at = 0.0
         self.waypoints = [QPointF(float(point[0]), float(point[1])) for point in options.get("waypoints", [])]
         self.metadata = dict(options.get("metadata", {}))
         self._highlight = QColor()
@@ -943,12 +1181,13 @@ class _CanvasConnector(QGraphicsObject):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(self._path)
         if self.animated:
-            flow_pen = QPen(self.flow_color, max(1.5, self.line_width * 0.65))
-            flow_pen.setDashPattern([2.0, 5.0])
-            flow_pen.setDashOffset(self._flow_phase)
-            flow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(flow_pen)
-            painter.drawPath(self._path)
+            _paint_path_effect(
+                painter, self._path, self.animation_effect, self.flow_color,
+                self.line_width, self._flow_phase, self.flow_spacing,
+                self.effect_intensity,
+            )
+        if self._packets:
+            _paint_packets(painter, self._path, self._packets)
         if self.arrow_start:
             self._paint_arrow(painter, 0.0)
         if self.arrow_end:
@@ -982,13 +1221,49 @@ class _CanvasConnector(QGraphicsObject):
         painter.drawPath(arrow)
 
     def _advance_flow(self) -> None:
-        self._flow_phase -= self.flow_speed
+        self._flow_phase -= self.flow_speed * self.flow_direction
+        self._advance_packets()
         self.update()
 
+    def sendPacket(self, message_id: str, icon: Any = None, duration: float | None = None) -> None:
+        resolved_icon = self.packet_icon if icon is None else icon
+        self._packets.append({
+            "id": message_id,
+            "pixmap": _packet_pixmap(resolved_icon),
+            "duration": max(0.1, float(duration or self.packet_duration)),
+            "started": time.monotonic(),
+        })
+        self._timer.start()
+
+    def _advance_packets(self) -> None:
+        now = time.monotonic()
+        if self.animation_effect == "packet" and self.packet_loop:
+            if now - self._last_packet_at >= self.packet_interval:
+                self._last_packet_at = now
+                message_id = uuid.uuid4().hex[:10]
+                self.canvas._message_payloads[message_id] = {
+                    "icon": self.packet_icon,
+                    "duration": self.packet_duration,
+                    "pending": 1,
+                    "visited": {self.connector_id},
+                }
+                self.sendPacket(message_id)
+                self.canvas.messageSent.emit(self.connector_id, message_id)
+        arrived = [packet for packet in self._packets if now - packet["started"] >= packet["duration"]]
+        arrived_ids = {id(packet) for packet in arrived}
+        self._packets = [packet for packet in self._packets if id(packet) not in arrived_ids]
+        for packet in arrived:
+            self.packetArrived.emit(self.connector_id, packet["id"])
+        if not self.animated and not self.packet_loop and not self._packets:
+            self._timer.stop()
+
     def _sync_animation(self) -> None:
-        if self.animated and not self._timer.isActive():
+        active = self.animated or bool(self._packets) or (
+            self.animation_effect == "packet" and self.packet_loop
+        )
+        if active and not self._timer.isActive():
             self._timer.start()
-        elif not self.animated:
+        elif not active:
             self._timer.stop()
         self.update()
 
@@ -1011,7 +1286,15 @@ class _CanvasConnector(QGraphicsObject):
             "arrowStart": self.arrow_start,
             "arrowEnd": self.arrow_end,
             "animated": self.animated,
+            "animationEffect": self.animation_effect,
             "flowSpeed": self.flow_speed,
+            "flowDirection": "reverse" if self.flow_direction < 0 else "forward",
+            "flowSpacing": self.flow_spacing,
+            "effectIntensity": self.effect_intensity,
+            "packetLoop": self.packet_loop,
+            "packetDuration": self.packet_duration,
+            "packetInterval": self.packet_interval,
+            "packetIcon": self.packet_icon,
             "waypoints": [[point.x(), point.y()] for point in self.waypoints],
             "metadata": dict(self.metadata),
             "opacity": self.opacity(),
@@ -1028,7 +1311,13 @@ class _CanvasPaneHeader(QFrame):
         self.setObjectName("canvasPaneHeader")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
+        brand = QLabel()
+        brand.setObjectName("canvasPaneBrand")
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand.setFixedSize(36, 36)
+        brand.setPixmap(_canvas_icon("node", "#ffffff").pixmap(19, 19))
+        layout.addWidget(brand)
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(0)
@@ -1085,8 +1374,8 @@ class _CanvasEditorToolbox(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(420, 580)
-        self.resize(440, 620)
+        self.setMinimumSize(408, 590)
+        self.resize(430, 650)
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
         panel = QFrame()
@@ -1104,16 +1393,18 @@ class _CanvasEditorToolbox(QDialog):
         tabs = QTabWidget()
         tabs.setObjectName("canvasEditorTabs")
         tabs.setDocumentMode(True)
+        tabs.setIconSize(QSize(15, 15))
         tabs.tabBar().setExpanding(True)
         tabs.tabBar().setUsesScrollButtons(False)
-        tabs.addTab(self._elements_tab(), "Add")
-        tabs.addTab(self._inspector_tab(), "Inspect")
-        tabs.addTab(self._layers_tab(), "Layers")
-        tabs.addTab(self._view_tab(), "View")
-        tabs.addTab(self._save_tab(), "Save")
+        tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
+        tabs.addTab(self._inspector_tab(), _canvas_icon("color"), "Inspect")
+        tabs.addTab(self._layers_tab(), _canvas_icon("front"), "Layers")
+        tabs.addTab(self._view_tab(), _canvas_icon("grid"), "View")
+        tabs.addTab(self._save_tab(), _canvas_icon("save"), "Save")
         content.addWidget(tabs, 1)
-        hint = QLabel("Ctrl+D, E  close     Del  remove     Ctrl+wheel  zoom")
+        hint = QLabel("Ctrl+D, E  close   •   Del  remove   •   Ctrl+wheel  zoom")
         hint.setObjectName("canvasPaneHint")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content.addWidget(hint)
         self.setStyleSheet(self._pane_stylesheet())
         canvas.elementAdded.connect(lambda _element_id: self.refreshLayers())
@@ -1131,39 +1422,55 @@ class _CanvasEditorToolbox(QDialog):
     def _pane_stylesheet() -> str:
         return """
         QFrame#canvasEditorPanel {
-            background: #f8fafc;
-            border: 1px solid #d7e0ea;
-            border-radius: 16px;
+            background: #f7f9fc;
+            border: 1px solid #cbd5e1;
+            border-radius: 18px;
         }
         QFrame#canvasPaneHeader { border: none; background: transparent; }
+        QLabel#canvasPaneBrand { background: #2563eb; border-radius: 10px; }
         QLabel#canvasPaneTitle { color: #0f172a; font-size: 16px; font-weight: 700; }
-        QLabel#canvasPaneSubtitle { color: #64748b; font-size: 10px; }
+        QLabel#canvasPaneSubtitle { color: #64748b; font-size: 10px; padding-top: 1px; }
         QToolButton#canvasPaneClose {
             color: #64748b; background: transparent; border: none;
             border-radius: 9px; min-width: 28px; min-height: 28px; font-weight: 700;
         }
         QToolButton#canvasPaneClose:hover { color: #b91c1c; background: #fee2e2; }
-        QLabel#canvasPaneHint { color: #94a3b8; font-size: 9px; padding: 1px 3px; }
+        QLabel#canvasPaneHint {
+            color: #64748b; background: #eef2f7; border-radius: 8px;
+            font-size: 9px; padding: 5px 7px;
+        }
+        QLabel#canvasObjectType {
+            color: #1d4ed8; background: #e8f0ff; border: 1px solid #c7dcff;
+            border-radius: 8px; padding: 5px 9px; font-weight: 700;
+        }
+        QLabel#autoApplyStatus {
+            color: #15803d; background: #ecfdf3; border: 1px solid #bbf7d0;
+            border-radius: 8px; padding: 5px 8px; font-size: 9px; font-weight: 600;
+        }
         QLabel#canvasSaveStatus {
             color: #166534; background: #dcfce7; border: 1px solid #bbf7d0;
             border-radius: 7px; padding: 7px;
         }
-        QTabWidget#canvasEditorTabs::pane { border: none; background: transparent; }
+        QTabWidget#canvasEditorTabs::pane { border: none; background: transparent; top: 7px; }
+        QTabBar { background: #e9eef5; border-radius: 10px; padding: 3px; }
         QTabBar::tab {
-            color: #64748b; background: transparent; border: none;
-            padding: 7px 10px; margin-right: 2px; font-weight: 600;
+            color: #64748b; background: transparent; border: none; border-radius: 7px;
+            padding: 7px 7px; margin: 0px 1px; font-weight: 600;
         }
-        QTabBar::tab:selected { color: #2563eb; border-bottom: 2px solid #2563eb; }
-        QTabBar::tab:hover:!selected { color: #334155; background: #eef2f7; border-radius: 6px; }
+        QTabBar::tab:selected { color: #1d4ed8; background: #ffffff; }
+        QTabBar::tab:hover:!selected { color: #334155; background: #f8fafc; }
         QGroupBox {
             color: #334155; background: #ffffff; border: 1px solid #e2e8f0;
-            border-radius: 10px; margin-top: 9px; padding: 10px 7px 7px 7px;
+            border-radius: 11px; margin-top: 10px; padding: 11px 8px 8px 8px;
             font-weight: 600;
         }
-        QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
+        QGroupBox::title {
+            color: #64748b; subcontrol-origin: margin; left: 10px; padding: 0 5px;
+            font-size: 9px; font-weight: 700;
+        }
         QPushButton, QToolButton {
             color: #334155; background: #ffffff; border: 1px solid #d7e0ea;
-            border-radius: 7px; padding: 5px 8px; min-height: 24px;
+            border-radius: 8px; padding: 5px 8px; min-height: 25px;
         }
         QPushButton:hover, QToolButton:hover {
             color: #1d4ed8; border-color: #93c5fd; background: #eff6ff;
@@ -1176,7 +1483,8 @@ class _CanvasEditorToolbox(QDialog):
         QPushButton#dangerAction:hover { background: #fee2e2; border-color: #fca5a5; }
         QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
             color: #0f172a; background: #ffffff; border: 1px solid #d7e0ea;
-            border-radius: 7px; padding: 4px 7px; selection-background-color: #bfdbfe;
+            border-radius: 8px; padding: 4px 7px; min-height: 22px;
+            selection-background-color: #bfdbfe;
         }
         QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #60a5fa; }
         QComboBox::drop-down { border: none; width: 22px; }
@@ -1185,6 +1493,7 @@ class _CanvasEditorToolbox(QDialog):
         QListWidget::item { border-radius: 6px; padding: 7px; margin: 1px; }
         QListWidget::item:selected { color: #1d4ed8; background: #dbeafe; }
         QListWidget::item:hover:!selected { background: #f1f5f9; }
+        QScrollArea { background: transparent; border: none; }
         QLabel { color: #475569; }
         """
 
@@ -1199,7 +1508,7 @@ class _CanvasEditorToolbox(QDialog):
                 ("Button", "button"), ("Diamond", "diamond"), ("Triangle", "triangle"),
             ),
             "Diagram & data": (
-                ("Node", "node"), ("Line / arrow", "line"),
+                ("Node", "node"), ("Splitter", "splitter"), ("Line / arrow", "line"),
                 ("Bar chart", "bar_chart"), ("Line chart", "line_chart"),
             ),
             "Media": (("Image", "image"), ("Animated GIF", "animated_image")),
@@ -1262,6 +1571,7 @@ class _CanvasEditorToolbox(QDialog):
         general = QGroupBox("Selection")
         form = QFormLayout(general)
         self._type_label = QLabel("No selection")
+        self._type_label.setObjectName("canvasObjectType")
         self._id_edit = QLineEdit()
         form.addRow("Type", self._type_label)
         form.addRow("Object ID", self._id_edit)
@@ -1375,10 +1685,45 @@ class _CanvasEditorToolbox(QDialog):
         arrow_layout.setContentsMargins(0, 0, 0, 0)
         arrow_layout.addWidget(self._arrow_start_check)
         arrow_layout.addWidget(self._arrow_end_check)
-        self._animated_check = QCheckBox("Animated flow")
+        self._animated_check = QCheckBox("Enable effect")
+        self._effect_combo = QComboBox()
+        self._effect_combo.addItems(("Flow", "Pulse", "Glow", "Particles", "Packet"))
         self._flow_speed_field = QDoubleSpinBox()
         self._flow_speed_field.setRange(0.1, 20.0)
         self._flow_speed_field.setDecimals(1)
+        self._flow_direction_combo = QComboBox()
+        self._flow_direction_combo.addItems(("Forward", "Reverse"))
+        self._flow_spacing_field = QDoubleSpinBox()
+        self._flow_spacing_field.setRange(1.0, 20.0)
+        self._flow_spacing_field.setDecimals(1)
+        self._effect_intensity_field = QDoubleSpinBox()
+        self._effect_intensity_field.setRange(0.2, 4.0)
+        self._effect_intensity_field.setDecimals(1)
+        self._effect_intensity_field.setSingleStep(0.1)
+        self._packet_loop_check = QCheckBox("Repeat continuously")
+        self._packet_duration_field = QDoubleSpinBox()
+        self._packet_duration_field.setRange(0.1, 120.0)
+        self._packet_duration_field.setDecimals(2)
+        self._packet_duration_field.setSuffix(" s")
+        self._packet_interval_field = QDoubleSpinBox()
+        self._packet_interval_field.setRange(0.05, 120.0)
+        self._packet_interval_field.setDecimals(2)
+        self._packet_interval_field.setSuffix(" s")
+        self._packet_icon_edit = QLineEdit()
+        self._packet_icon_edit.setPlaceholderText("Default envelope")
+        self._packet_icon_row = QWidget()
+        packet_icon_layout = QHBoxLayout(self._packet_icon_row)
+        packet_icon_layout.setContentsMargins(0, 0, 0, 0)
+        packet_icon_layout.setSpacing(5)
+        packet_icon_layout.addWidget(self._packet_icon_edit, 1)
+        packet_icon_browse = QToolButton()
+        packet_icon_browse.setIcon(_canvas_icon("folder"))
+        packet_icon_browse.setToolTip("Choose packet icon")
+        packet_icon_browse.clicked.connect(self._choose_packet_icon)
+        packet_icon_layout.addWidget(packet_icon_browse)
+        self._send_packet_button = QPushButton("Send test packet")
+        self._send_packet_button.setIcon(_canvas_icon("send"))
+        self._send_packet_button.clicked.connect(self._send_test_packet)
         self._connector_opacity_field = QDoubleSpinBox()
         self._connector_opacity_field.setRange(0.0, 1.0)
         self._connector_opacity_field.setDecimals(2)
@@ -1392,7 +1737,15 @@ class _CanvasEditorToolbox(QDialog):
         self._source_port_label = QLabel("Source port")
         self._target_port_label = QLabel("Target port")
         self._animation_label = QLabel("Animation")
+        self._effect_label = QLabel("Effect")
         self._flow_speed_label = QLabel("Flow speed")
+        self._flow_direction_label = QLabel("Direction")
+        self._flow_spacing_label = QLabel("Spacing")
+        self._effect_intensity_label = QLabel("Intensity")
+        self._packet_loop_label = QLabel("Loop")
+        self._packet_duration_label = QLabel("Travel time")
+        self._packet_interval_label = QLabel("Emit every")
+        self._packet_icon_label = QLabel("Packet icon")
         self._connector_opacity_label = QLabel("Opacity")
         self._connector_z_label = QLabel("Layer Z")
         self._points_label = QLabel("Waypoints")
@@ -1405,7 +1758,16 @@ class _CanvasEditorToolbox(QDialog):
         stroke_form.addRow("Width", self._line_width_field)
         stroke_form.addRow("Arrowheads", arrow_row)
         stroke_form.addRow(self._animation_label, self._animated_check)
+        stroke_form.addRow(self._effect_label, self._effect_combo)
         stroke_form.addRow(self._flow_speed_label, self._flow_speed_field)
+        stroke_form.addRow(self._flow_direction_label, self._flow_direction_combo)
+        stroke_form.addRow(self._flow_spacing_label, self._flow_spacing_field)
+        stroke_form.addRow(self._effect_intensity_label, self._effect_intensity_field)
+        stroke_form.addRow(self._packet_loop_label, self._packet_loop_check)
+        stroke_form.addRow(self._packet_duration_label, self._packet_duration_field)
+        stroke_form.addRow(self._packet_interval_label, self._packet_interval_field)
+        stroke_form.addRow(self._packet_icon_label, self._packet_icon_row)
+        stroke_form.addRow("", self._send_packet_button)
         stroke_form.addRow(self._connector_opacity_label, self._connector_opacity_field)
         stroke_form.addRow(self._connector_z_label, self._connector_z_field)
         stroke_form.addRow(self._points_label, self._points_edit)
@@ -1424,8 +1786,8 @@ class _CanvasEditorToolbox(QDialog):
             colors.addWidget(button, column // 2, column % 2)
         layout.addWidget(self._colors_group)
 
-        auto_apply = QLabel("Changes are applied automatically")
-        auto_apply.setStyleSheet("color: #16a34a; font-size: 9px; padding: 2px")
+        auto_apply = QLabel("●  Auto apply is on")
+        auto_apply.setObjectName("autoApplyStatus")
         layout.addWidget(auto_apply)
         order = QHBoxLayout()
         front = QPushButton("Bring front")
@@ -1439,6 +1801,7 @@ class _CanvasEditorToolbox(QDialog):
         layout.addLayout(order)
         layout.addStretch(1)
         self._connect_inspector_auto_apply()
+        self._effect_combo.currentIndexChanged.connect(self._sync_packet_controls)
         scroll.setWidget(body)
         page_layout.addWidget(scroll)
         return page
@@ -1600,12 +1963,19 @@ class _CanvasEditorToolbox(QDialog):
         if isinstance(item, _CanvasConnector):
             current = item.flow_color if role == "flow" else item.color
         else:
-            current = item.background if role == "background" else item.text_color if role == "text" else item.color
+            current = (
+                item.flow_color if role == "flow" and item.kind == "line"
+                else item.background if role == "background"
+                else item.text_color if role == "text"
+                else item.color
+            )
         chosen = QColorDialog.getColor(current, self, f"Choose {role} color")
         if chosen.isValid():
             if isinstance(item, _CanvasConnector):
                 key = "flowColor" if role == "flow" else "color"
                 self.canvas.updateConnector(item.connector_id, **{key: chosen})
+            elif role == "flow" and item.kind == "line":
+                self.canvas.updateElement(item.element_id, flowColor=chosen)
             else:
                 self.canvas.setElementColor(item.element_id, chosen, role)
 
@@ -1628,6 +1998,24 @@ class _CanvasEditorToolbox(QDialog):
         )
         if path:
             self.canvas.setBackgroundImage(path)
+
+    def _choose_packet_icon(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self, "Choose packet icon", self._packet_icon_edit.text(),
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp *.svg)",
+        )
+        if path:
+            self._packet_icon_edit.setText(path)
+            self._schedule_inspector_apply(0)
+
+    def _send_test_packet(self) -> None:
+        object_id = self.canvas.selectedElementId()
+        if object_id:
+            self.canvas.send_a_message(
+                object_id,
+                icon=self._packet_icon_edit.text(),
+                travel_time=self._packet_duration_field.value(),
+            )
 
     def _sync_view_controls(self) -> None:
         widgets = (
@@ -1657,26 +2045,43 @@ class _CanvasEditorToolbox(QDialog):
     def _connect_inspector_auto_apply(self) -> None:
         for field in (
             self._text_edit, self._data_edit, self._source_edit, self._points_edit,
+            self._packet_icon_edit,
         ):
-            field.textEdited.connect(lambda _text: self._schedule_inspector_apply(220))
+            field.textEdited.connect(lambda _text: self._schedule_inspector_apply(150))
         self._id_edit.editingFinished.connect(lambda: self._schedule_inspector_apply(0))
         for field in (*self._number_fields.values(), self._line_width_field,
-                      self._flow_speed_field, self._connector_opacity_field,
+                      self._flow_speed_field, self._flow_spacing_field,
+                      self._effect_intensity_field, self._packet_duration_field,
+                      self._packet_interval_field, self._connector_opacity_field,
                       self._connector_z_field):
             field.valueChanged.connect(lambda _value: self._schedule_inspector_apply(80))
         for combo in (
             self._source_combo, self._target_combo, self._source_port_combo,
             self._target_port_combo, self._route_combo, self._line_style_combo,
+            self._effect_combo, self._flow_direction_combo,
         ):
             combo.currentIndexChanged.connect(lambda _index: self._schedule_inspector_apply(0))
         for check in (
             self._arrow_start_check, self._arrow_end_check, self._animated_check,
+            self._packet_loop_check,
         ):
             check.toggled.connect(lambda _checked: self._schedule_inspector_apply(0))
 
     def _schedule_inspector_apply(self, delay: int = 80) -> None:
         if not self._syncing_inspector and self.canvas.selectedElementId():
             self._inspector_apply_timer.start(max(0, int(delay)))
+
+    def _sync_packet_controls(self, _index: int = -1) -> None:
+        visible = self._effect_combo.currentText().lower() == "packet"
+        self._animation_label.setVisible(not visible)
+        self._animated_check.setVisible(not visible)
+        for widget in (
+            self._packet_loop_label, self._packet_loop_check,
+            self._packet_duration_label, self._packet_duration_field,
+            self._packet_interval_label, self._packet_interval_field,
+            self._packet_icon_label, self._packet_icon_row, self._send_packet_button,
+        ):
+            widget.setVisible(visible)
 
     def _apply_inspector(self) -> None:
         if self._syncing_inspector:
@@ -1720,7 +2125,15 @@ class _CanvasEditorToolbox(QDialog):
                 arrowStart=self._arrow_start_check.isChecked(),
                 arrowEnd=self._arrow_end_check.isChecked(),
                 animated=self._animated_check.isChecked(),
+                animationEffect=self._effect_combo.currentText().lower(),
                 flowSpeed=self._flow_speed_field.value(),
+                flowDirection=self._flow_direction_combo.currentText().lower(),
+                flowSpacing=self._flow_spacing_field.value(),
+                effectIntensity=self._effect_intensity_field.value(),
+                packetLoop=self._packet_loop_check.isChecked(),
+                packetDuration=self._packet_duration_field.value(),
+                packetInterval=self._packet_interval_field.value(),
+                packetIcon=self._packet_icon_edit.text(),
                 opacity=self._connector_opacity_field.value(),
                 z=self._connector_z_field.value(),
                 waypoints=points,
@@ -1728,7 +2141,7 @@ class _CanvasEditorToolbox(QDialog):
         else:
             values = {key: field.value() for key, field in self._number_fields.items()}
             values["text"] = self._text_edit.text()
-            if item.kind == "node":
+            if item.kind in _PORT_KINDS:
                 self.canvas.setNodePorts(element_id, self._ports_from_editor())
             if item.kind in ("image", "animated_image"):
                 values["source"] = self._source_edit.text()
@@ -1740,6 +2153,16 @@ class _CanvasEditorToolbox(QDialog):
                     lineWidth=self._line_width_field.value(),
                     arrowStart=self._arrow_start_check.isChecked(),
                     arrowEnd=self._arrow_end_check.isChecked(),
+                    animated=self._animated_check.isChecked(),
+                    animationEffect=self._effect_combo.currentText().lower(),
+                    flowSpeed=self._flow_speed_field.value(),
+                    flowDirection=self._flow_direction_combo.currentText().lower(),
+                    flowSpacing=self._flow_spacing_field.value(),
+                    effectIntensity=self._effect_intensity_field.value(),
+                    packetLoop=self._packet_loop_check.isChecked(),
+                    packetDuration=self._packet_duration_field.value(),
+                    packetInterval=self._packet_interval_field.value(),
+                    packetIcon=self._packet_icon_edit.text(),
                 )
                 values["points"] = points
             self.canvas.updateElement(element_id, **values)
@@ -1757,7 +2180,11 @@ class _CanvasEditorToolbox(QDialog):
             self._source_port_combo, self._target_port_combo, self._route_combo,
             self._line_style_combo, self._line_width_field,
             self._arrow_start_check, self._arrow_end_check, self._animated_check,
-            self._flow_speed_field, self._connector_opacity_field,
+            self._effect_combo, self._flow_speed_field, self._flow_direction_combo,
+            self._flow_spacing_field, self._effect_intensity_field,
+            self._packet_loop_check, self._packet_duration_field,
+            self._packet_interval_field, self._packet_icon_edit,
+            self._connector_opacity_field,
             self._connector_z_field, self._points_edit, *self._number_fields.values(),
         ]
         blockers = [QSignalBlocker(widget) for widget in widgets]
@@ -1784,22 +2211,29 @@ class _CanvasEditorToolbox(QDialog):
                 "image", "animated_image", "line",
             )
             self._content_group.setVisible(content)
-            self._ports_group.setVisible(not connector and item.kind == "node")
+            self._ports_group.setVisible(not connector and item.kind in _PORT_KINDS)
             self._geometry_group.setVisible(not connector)
             self._media_group.setVisible(media)
             self._stroke_group.setVisible(connector or line)
             self._colors_group.show()
             self._color_buttons["background"].setVisible(not connector and not line)
             self._color_buttons["text"].setVisible(content)
-            self._color_buttons["flow"].setVisible(connector)
+            self._color_buttons["flow"].setVisible(connector or line)
             self._route_combo.setEnabled(connector)
             for widget in (self._source_label, self._source_combo, self._source_port_label,
                            self._source_port_combo, self._target_label, self._target_combo,
                            self._target_port_label, self._target_port_combo,
-                           self._route_label, self._route_combo, self._animation_label, self._animated_check,
-                           self._flow_speed_label, self._flow_speed_field, self._connector_opacity_label,
+                           self._route_label, self._route_combo, self._connector_opacity_label,
                            self._connector_opacity_field, self._connector_z_label, self._connector_z_field):
                 widget.setVisible(connector)
+            for widget in (
+                self._animation_label, self._animated_check, self._effect_label,
+                self._effect_combo, self._flow_speed_label, self._flow_speed_field,
+                self._flow_direction_label, self._flow_direction_combo,
+                self._flow_spacing_label, self._flow_spacing_field,
+                self._effect_intensity_label, self._effect_intensity_field,
+            ):
+                widget.setVisible(connector or line)
             show_points = connector or line
             self._points_label.setVisible(show_points)
             self._points_edit.setVisible(show_points)
@@ -1822,7 +2256,15 @@ class _CanvasEditorToolbox(QDialog):
                 self._arrow_start_check.setChecked(item.arrow_start)
                 self._arrow_end_check.setChecked(item.arrow_end)
                 self._animated_check.setChecked(item.animated)
+                self._effect_combo.setCurrentIndex(_LINE_EFFECTS.index(item.animation_effect) if item.animation_effect in _LINE_EFFECTS else 0)
                 self._flow_speed_field.setValue(item.flow_speed)
+                self._flow_direction_combo.setCurrentIndex(1 if item.flow_direction < 0 else 0)
+                self._flow_spacing_field.setValue(item.flow_spacing)
+                self._effect_intensity_field.setValue(item.effect_intensity)
+                self._packet_loop_check.setChecked(item.packet_loop)
+                self._packet_duration_field.setValue(item.packet_duration)
+                self._packet_interval_field.setValue(item.packet_interval)
+                self._packet_icon_edit.setText(item.packet_icon)
                 self._connector_opacity_field.setValue(item.opacity())
                 self._connector_z_field.setValue(item.zValue())
                 self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.waypoints]))
@@ -1832,7 +2274,7 @@ class _CanvasEditorToolbox(QDialog):
                 self._data_label.setVisible(chart)
                 self._data_edit.setVisible(chart)
                 self._source_edit.setText(item.source)
-                self._set_ports_editor(item.ports if item.kind == "node" else [])
+                self._set_ports_editor(item.ports if item.kind in _PORT_KINDS else [])
                 values = {
                     "x": item.pos().x(), "y": item.pos().y(),
                     "width": item._rect.width(), "height": item._rect.height(),
@@ -1846,10 +2288,20 @@ class _CanvasEditorToolbox(QDialog):
                     self._line_width_field.setValue(item.line_width)
                     self._arrow_start_check.setChecked(item.arrow_start)
                     self._arrow_end_check.setChecked(item.arrow_end)
-                    self._animated_check.setChecked(False)
+                    self._animated_check.setChecked(item.animated)
+                    self._effect_combo.setCurrentIndex(_LINE_EFFECTS.index(item.animation_effect) if item.animation_effect in _LINE_EFFECTS else 0)
+                    self._flow_speed_field.setValue(item.flow_speed)
+                    self._flow_direction_combo.setCurrentIndex(1 if item.flow_direction < 0 else 0)
+                    self._flow_spacing_field.setValue(item.flow_spacing)
+                    self._effect_intensity_field.setValue(item.effect_intensity)
+                    self._packet_loop_check.setChecked(item.packet_loop)
+                    self._packet_duration_field.setValue(item.packet_duration)
+                    self._packet_interval_field.setValue(item.packet_interval)
+                    self._packet_icon_edit.setText(item.packet_icon)
                     self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.points]))
         del blockers
         self._syncing_inspector = False
+        self._sync_packet_controls()
 
     @staticmethod
     def _parse_points(text: str) -> list[list[float]]:
@@ -2198,7 +2650,7 @@ class _CanvasView(QGraphicsView):
 
     def _port_at(self, view_position) -> tuple[_CanvasElement, dict[str, Any]] | None:
         item = self.itemAt(view_position)
-        if not isinstance(item, _CanvasElement) or item.kind != "node":
+        if not isinstance(item, _CanvasElement) or item.kind not in _PORT_KINDS:
             return None
         port = item.portAt(self.mapToScene(view_position))
         return (item, port) if port is not None else None
@@ -2259,6 +2711,8 @@ class MonkezCanva(QWidget):
     autoSaved = pyqtSignal(str)
     persistentSaved = pyqtSignal(str)
     persistentLoaded = pyqtSignal(str)
+    messageSent = pyqtSignal(str, str)
+    messageArrived = pyqtSignal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -2270,6 +2724,7 @@ class MonkezCanva(QWidget):
         self._grid_style = 0
         self._background_image = ""
         self._background_image_mode = 0
+        self._message_payloads: dict[str, dict[str, Any]] = {}
         self._background_pixmap = QPixmap()
         self._project_directory = ""
         self._edit_mode = False
@@ -2384,6 +2839,8 @@ class MonkezCanva(QWidget):
             kind = "line"
         elif kind == "polyline":
             kind = "line"
+        if kind == "splitter" and not options.get("ports"):
+            options["ports"] = _splitter_ports()
         if kind not in _ELEMENT_DEFAULTS:
             raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
         default_width, default_height = _ELEMENT_DEFAULTS[kind]
@@ -2395,6 +2852,7 @@ class MonkezCanva(QWidget):
         item.setPos(center.x() - item._rect.width() / 2 if x is None else x, center.y() - item._rect.height() / 2 if y is None else y)
         item.setEditable(self._edit_mode)
         item.changed.connect(self._element_changed)
+        item.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(item)
         self._elements[element_id] = item
         if self._edit_mode:
@@ -2410,16 +2868,22 @@ class MonkezCanva(QWidget):
     def addNode(self, text: str, x: float = 0, y: float = 0, **options) -> str:
         return self.addElement("node", x, y, text=text, **options)
 
+    def addSplitter(self, x: float = 0, y: float = 0, output_count: int = 3, **options) -> str:
+        """Add a one-to-many signal junction whose packets propagate to every output."""
+        options.setdefault("ports", _splitter_ports(output_count))
+        options.setdefault("text", "Splitter")
+        return self.addElement("splitter", x, y, **options)
+
     def nodePorts(self, element_id: str) -> list[dict[str, Any]]:
         item = self._required_element(element_id)
-        if item.kind != "node":
-            raise TypeError(f"Element {element_id!r} is not a node")
+        if item.kind not in _PORT_KINDS:
+            raise TypeError(f"Element {element_id!r} does not support ports")
         return [dict(port) for port in item.ports]
 
     def setNodePorts(self, element_id: str, ports) -> "MonkezCanva":
         item = self._required_element(element_id)
-        if item.kind != "node":
-            raise TypeError(f"Element {element_id!r} is not a node")
+        if item.kind not in _PORT_KINDS:
+            raise TypeError(f"Element {element_id!r} does not support ports")
         item.ports = _normalize_node_ports(ports)
         valid_ids = {port["id"] for port in item.ports}
         for connector in self._connectors.values():
@@ -2628,11 +3092,36 @@ class MonkezCanva(QWidget):
             item.arrow_start = bool(values["arrowStart"])
         if "arrowEnd" in values:
             item.arrow_end = bool(values["arrowEnd"])
+        if "animated" in values:
+            item.animated = bool(values["animated"])
+        if "animationEffect" in values:
+            effect = str(values["animationEffect"]).lower()
+            if effect not in _LINE_EFFECTS:
+                raise ValueError(f"Unsupported line animation effect: {effect}")
+            item.animation_effect = effect
+        if "flowColor" in values:
+            item.flow_color = _color(values["flowColor"], "#38bdf8")
+        if "flowSpeed" in values:
+            item.flow_speed = max(0.1, float(values["flowSpeed"]))
+        if "flowDirection" in values:
+            item.flow_direction = -1 if str(values["flowDirection"]).lower() == "reverse" else 1
+        if "flowSpacing" in values:
+            item.flow_spacing = max(1.0, float(values["flowSpacing"]))
+        if "effectIntensity" in values:
+            item.effect_intensity = max(0.2, min(4.0, float(values["effectIntensity"])))
+        if "packetLoop" in values:
+            item.packet_loop = bool(values["packetLoop"])
+        if "packetDuration" in values:
+            item.packet_duration = max(0.1, float(values["packetDuration"]))
+        if "packetInterval" in values:
+            item.packet_interval = max(0.05, float(values["packetInterval"]))
+        if "packetIcon" in values:
+            item.packet_icon = str(values["packetIcon"])
         if "points" in values:
             item.points = [QPointF(float(point[0]), float(point[1])) for point in values["points"]]
         if "ports" in values:
             self.setNodePorts(element_id, values["ports"])
-        item.update()
+        item._sync_line_animation()
         item.changed.emit(item.element_id)
         self.documentChanged.emit()
         return self
@@ -2686,9 +3175,9 @@ class MonkezCanva(QWidget):
             raise KeyError("Both connector endpoints must exist")
         source_port = str(options.get("sourcePort", ""))
         target_port = str(options.get("targetPort", ""))
-        if source.kind == "node" and not source_port:
+        if source.kind in _PORT_KINDS and not source_port:
             source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
-        if target.kind == "node" and not target_port:
+        if target.kind in _PORT_KINDS and not target_port:
             target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
         self._validate_connection_ports(source, source_port, target, target_port)
         options["sourcePort"] = source_port
@@ -2699,6 +3188,7 @@ class MonkezCanva(QWidget):
         options.setdefault("color", color)
         connector = _CanvasConnector(self, connector_id, source, target, options)
         connector.changed.connect(self._connector_changed)
+        connector.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(connector)
         self._connectors[connector_id] = connector
         self.connectorAdded.emit(connector_id)
@@ -2777,9 +3267,9 @@ class MonkezCanva(QWidget):
             source_port = ""
         if target is not connector.target and target_port and target.port(target_port) is None:
             target_port = ""
-        if source.kind == "node" and not source_port:
+        if source.kind in _PORT_KINDS and not source_port:
             source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
-        if target.kind == "node" and not target_port:
+        if target.kind in _PORT_KINDS and not target_port:
             target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
         self._validate_connection_ports(source, source_port, target, target_port)
         if (
@@ -2841,8 +3331,27 @@ class MonkezCanva(QWidget):
             connector.arrow_end = bool(values["arrowEnd"])
         if "animated" in values:
             connector.animated = bool(values["animated"])
+        if "animationEffect" in values:
+            effect = str(values["animationEffect"]).lower()
+            if effect not in _LINE_EFFECTS:
+                raise ValueError(f"Unsupported connector animation effect: {effect}")
+            connector.animation_effect = effect
         if "flowSpeed" in values:
             connector.flow_speed = max(0.1, float(values["flowSpeed"]))
+        if "flowDirection" in values:
+            connector.flow_direction = -1 if str(values["flowDirection"]).lower() == "reverse" else 1
+        if "flowSpacing" in values:
+            connector.flow_spacing = max(1.0, float(values["flowSpacing"]))
+        if "effectIntensity" in values:
+            connector.effect_intensity = max(0.2, min(4.0, float(values["effectIntensity"])))
+        if "packetLoop" in values:
+            connector.packet_loop = bool(values["packetLoop"])
+        if "packetDuration" in values:
+            connector.packet_duration = max(0.1, float(values["packetDuration"]))
+        if "packetInterval" in values:
+            connector.packet_interval = max(0.05, float(values["packetInterval"]))
+        if "packetIcon" in values:
+            connector.packet_icon = str(values["packetIcon"])
         if "waypoints" in values:
             connector.waypoints = [QPointF(float(point[0]), float(point[1])) for point in values["waypoints"]]
         if "opacity" in values:
@@ -2869,6 +3378,77 @@ class MonkezCanva(QWidget):
             flowSpeed=speed,
             flowColor=color,
         )
+
+    def send_a_message(
+        self,
+        line_id: str,
+        icon: Any = None,
+        speed: float = 1.0,
+        travel_time: float | None = None,
+        wait_to_end: bool = False,
+        message_id: str | None = None,
+    ) -> str:
+        """Send one addressable packet over a line or connector.
+
+        ``speed`` is a multiplier applied to the configured/default travel time.
+        Multiple calls intentionally create concurrent packets. When a packet
+        reaches a splitter it is copied to every unvisited outgoing branch.
+        """
+        item = self.canvasObject(str(line_id))
+        if item is None or (not isinstance(item, _CanvasConnector) and item.kind != "line"):
+            raise TypeError(f"Object {line_id!r} is not a line or connector")
+        speed = max(0.01, float(speed))
+        duration = max(0.1, float(travel_time if travel_time is not None else item.packet_duration) / speed)
+        message_id = str(message_id or uuid.uuid4().hex[:10])
+        if message_id in self._message_payloads:
+            raise ValueError(f"Message id is already in flight: {message_id}")
+        self._message_payloads[message_id] = {
+            "icon": item.packet_icon if icon is None else icon,
+            "duration": duration,
+            "pending": 1,
+            "visited": {str(line_id)},
+        }
+        loop = QEventLoop(self) if wait_to_end else None
+        if loop is not None:
+            def stop_when_arrived(_object_id: str, arrived_id: str) -> None:
+                if arrived_id == message_id:
+                    loop.quit()
+            self.messageArrived.connect(stop_when_arrived)
+        item.sendPacket(message_id, icon, duration)
+        self.messageSent.emit(str(line_id), message_id)
+        if loop is not None:
+            loop.exec()
+            self.messageArrived.disconnect(stop_when_arrived)
+        return message_id
+
+    def sendMessage(self, line_id: str, **options) -> str:
+        """Qt-style alias for :meth:`send_a_message`."""
+        return self.send_a_message(line_id, **options)
+
+    def _on_packet_arrived(self, object_id: str, message_id: str) -> None:
+        payload = self._message_payloads.get(message_id)
+        if payload is None:
+            self.messageArrived.emit(object_id, message_id)
+            return
+        payload["pending"] -= 1
+        connector = self._connectors.get(object_id)
+        outgoing: list[_CanvasConnector] = []
+        if connector is not None and connector.target.kind == "splitter":
+            outgoing = [
+                candidate for candidate in self._connectors.values()
+                if candidate.source is connector.target
+                and candidate.connector_id not in payload["visited"]
+                and (not candidate.source_port or (candidate.source.port(candidate.source_port) or {}).get("mode") in ("output", "free"))
+            ]
+        if outgoing:
+            payload["pending"] += len(outgoing)
+            for branch in outgoing:
+                payload["visited"].add(branch.connector_id)
+                branch.sendPacket(message_id, payload["icon"], payload["duration"])
+                self.messageSent.emit(branch.connector_id, message_id)
+        if payload["pending"] <= 0:
+            self._message_payloads.pop(message_id, None)
+            self.messageArrived.emit(object_id, message_id)
 
     def renameConnector(self, connector_id: str, new_id: str) -> str:
         connector = self._required_connector(connector_id)
@@ -2981,7 +3561,7 @@ class MonkezCanva(QWidget):
             self._scene.removeItem(connector)
             connector.deleteLater()
             self.connectorRemoved.emit(key)
-        item.releaseMedia()
+        item.release()
         self._scene.removeItem(item)
         item.deleteLater()
         self.elementRemoved.emit(str(element_id))
@@ -2991,6 +3571,7 @@ class MonkezCanva(QWidget):
     def clear(self) -> None:
         for element_id in list(self._elements):
             self.removeElement(element_id)
+        self._message_payloads.clear()
 
     def toDocument(self) -> dict[str, Any]:
         return {
@@ -3095,12 +3676,23 @@ class MonkezCanva(QWidget):
         assets = target.parent / "assets" / target.stem
         for entry in payload.get("elements", []):
             source_text = str(entry.get("source", ""))
-            if entry.get("type") not in ("image", "animated_image") or not source_text:
-                continue
             safe_id = "".join(character if character.isalnum() or character in "-_" else "_" for character in str(entry["id"]))
-            managed = self._copy_managed_asset(source_text, safe_id, target, assets)
-            if managed:
-                entry["source"] = managed
+            if entry.get("type") in ("image", "animated_image") and source_text:
+                managed = self._copy_managed_asset(source_text, safe_id, target, assets)
+                if managed:
+                    entry["source"] = managed
+            packet_icon = str(entry.get("packetIcon", ""))
+            if packet_icon:
+                managed = self._copy_managed_asset(packet_icon, f"{safe_id}-packet", target, assets)
+                if managed:
+                    entry["packetIcon"] = managed
+        for entry in payload.get("connectors", []):
+            packet_icon = str(entry.get("packetIcon", ""))
+            if packet_icon:
+                safe_id = "".join(character if character.isalnum() or character in "-_" else "_" for character in str(entry["id"]))
+                managed = self._copy_managed_asset(packet_icon, f"{safe_id}-packet", target, assets)
+                if managed:
+                    entry["packetIcon"] = managed
         scene = payload.setdefault("scene", {})
         background_image = str(scene.get("backgroundImage", ""))
         if background_image:
@@ -3127,6 +3719,10 @@ class MonkezCanva(QWidget):
             media = str(entry.get("source", ""))
             if media and not Path(media).is_absolute():
                 entry["source"] = str((source.parent / Path(media)).resolve())
+        for entry in [*payload.get("elements", []), *payload.get("connectors", [])]:
+            packet_icon = str(entry.get("packetIcon", ""))
+            if packet_icon and not Path(packet_icon).is_absolute():
+                entry["packetIcon"] = str((source.parent / Path(packet_icon)).resolve())
         scene = payload.get("scene", {})
         background_image = str(scene.get("backgroundImage", ""))
         if background_image and not Path(background_image).is_absolute():
