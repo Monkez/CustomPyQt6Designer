@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QScrollArea,
     QTabWidget,
+    QToolButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -157,6 +159,64 @@ class WidgetTests(unittest.TestCase):
         restored.deleteLater()
         canvas.deleteLater()
 
+    def test_canva_advanced_connectors_lines_and_object_specific_inspector(self) -> None:
+        canvas = MonkezCanva()
+        source = canvas.addNode("Pump", 0, 0, element_id="pump")
+        target = canvas.addNode("Tank", 360, 160, element_id="tank")
+        spare = canvas.addNode("Valve", 650, 40, element_id="valve")
+        line_id = canvas.addLine(
+            0, 280, element_id="pipe-line", lineStyle="dash",
+            lineWidth=4, arrowStart=True, arrowEnd=True,
+        )
+        polyline_id = canvas.addPolyline(
+            [[0, 80], [100, 10], [220, 90]], 300, 300,
+            element_id="pipe-polyline", arrowEnd=True,
+        )
+        canvas.setEditMode(True)
+        canvas.selectElements([source, target])
+        connector_id = canvas.connectSelected(
+            connector_id="water-flow", route="orthogonal", lineStyle="dashdot",
+            lineWidth=5, arrowStart=True, arrowEnd=True, animated=True,
+            flowSpeed=2.5, flowColor="#06b6d4",
+        )
+
+        connector = canvas.connector(connector_id)
+        self.assertEqual("water-flow", connector_id)
+        self.assertEqual([connector_id], canvas.selectedObjectIds())
+        self.assertEqual("orthogonal", connector.route)
+        self.assertTrue(connector.animated)
+        self.assertTrue(connector._timer.isActive())
+        self.assertEqual(QColor("#06b6d4"), connector.flow_color)
+        self.assertTrue(canvas.element(line_id).arrow_start)
+        self.assertEqual(3, len(canvas.element(polyline_id).points))
+
+        canvas.reconnectConnector(connector_id, source, spare)
+        self.assertEqual(spare, connector.target.element_id)
+        canvas.selectElement(connector_id)
+        toolbox = canvas._toolbox
+        toolbox._sync_inspector(connector_id)
+        self.assertFalse(toolbox._stroke_group.isHidden())
+        self.assertTrue(toolbox._geometry_group.isHidden())
+        self.assertEqual(source, toolbox._source_combo.currentData())
+        self.assertEqual(spare, toolbox._target_combo.currentData())
+
+        restored = MonkezCanva()
+        restored.loadDocument(canvas.toDocument())
+        restored_connector = restored.connector(connector_id)
+        self.assertEqual("orthogonal", restored_connector.route)
+        self.assertEqual("dashdot", restored_connector.line_style)
+        self.assertTrue(restored_connector.arrow_start)
+        self.assertTrue(restored_connector.arrow_end)
+        self.assertTrue(restored_connector.animated)
+        self.assertEqual(spare, restored_connector.target.element_id)
+        self.assertEqual([line_id, polyline_id], [value for value in restored.elements() if "pipe" in value])
+
+        restored.clear()
+        restored.deleteLater()
+        canvas.setEditMode(False)
+        canvas.clear()
+        canvas.deleteLater()
+
     def test_canva_edit_mode_controls_item_interaction(self) -> None:
         canvas = MonkezCanva()
         element_id = canvas.addElement("rectangle", 10, 10)
@@ -186,6 +246,9 @@ class WidgetTests(unittest.TestCase):
         self.assertIs(canvas.view().viewport(), canvas._quick_toolbar.parent())
         self.assertEqual(view_geometry_before, canvas.view().geometry())
         self.assertGreater(canvas._quick_toolbar.y(), 0)
+        icon_buttons = canvas._quick_toolbar.findChildren(QToolButton)
+        self.assertTrue(icon_buttons)
+        self.assertTrue(all(not button.icon().isNull() for button in icon_buttons))
         self.assertEqual([first, second, third], canvas.selectElements([first, second, third]))
         self.assertEqual([first, second, third], canvas.selectedElementIds())
         self.assertTrue(all(button.isEnabled() for button in canvas._quick_toolbar._align_buttons))
@@ -299,6 +362,7 @@ class WidgetTests(unittest.TestCase):
             self.assertIsNotNone(toolbox)
             self.assertEqual(5, toolbox.findChild(QTabWidget).count())
             self.assertTrue(toolbox.windowFlags() & Qt.WindowType.FramelessWindowHint)
+            self.assertNotIn("EDIT", [label.text() for label in toolbox.findChildren(QLabel)])
             toolbox.refreshLayers()
             self.assertEqual(2, toolbox._layers.count())
             canvas.setEditMode(False)
@@ -309,17 +373,25 @@ class WidgetTests(unittest.TestCase):
     def test_canva_session_persistent_autosave_and_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            persistent_path = root / "workspace.json"
+            project = root / "project"
+            project.mkdir()
+            persistent_path = project / "workspace.json"
             image_path = root / "source.png"
             pixmap = QPixmap(32, 24)
             pixmap.fill(QColor("#22c55e"))
             self.assertTrue(pixmap.save(str(image_path)))
 
             canvas = MonkezCanva()
+            canvas.setProjectDirectory(project)
+            canvas.setPersistenceKey("portable-test")
+            self.assertEqual(project / ".monkez_canva" / "portable-test.json", canvas.persistentPath())
             canvas.persistentPath = lambda: persistent_path
             canvas.setPersistenceKey("test-workspace")
             canvas.setAutoSaveDelay(100)
             image_id = canvas.addMedia(image_path, element_id="saved-image")
+            canvas.setBackgroundImage(image_path)
+            canvas.setBackgroundImageMode("fill")
+            canvas.setGridStyle("dots")
             canvas.saveSession()
             canvas.setElementText(image_id, "Changed")
             self.assertTrue(canvas.restoreSession())
@@ -328,15 +400,41 @@ class WidgetTests(unittest.TestCase):
             saved_path = canvas.savePersistent()
             self.assertEqual(persistent_path, saved_path)
             payload = json.loads(persistent_path.read_text(encoding="utf-8"))
-            copied_media = Path(payload["elements"][0]["source"])
+            self.assertFalse(Path(payload["elements"][0]["source"]).is_absolute())
+            copied_media = persistent_path.parent / payload["elements"][0]["source"]
             self.assertTrue(copied_media.is_file())
             self.assertNotEqual(image_path, copied_media)
+            self.assertFalse(Path(payload["scene"]["backgroundImage"]).is_absolute())
+
+            relocated = root / "relocated-project"
+            shutil.copytree(project, relocated)
+            relocated_path = relocated / "workspace.json"
 
             restored = MonkezCanva()
-            restored.persistentPath = lambda: persistent_path
+            restored.persistentPath = lambda: relocated_path
             self.assertTrue(restored.loadPersistent())
             self.assertEqual(["saved-image"], restored.elements())
             self.assertFalse(restored.element("saved-image")._pixmap.isNull())
+            self.assertTrue(restored.element("saved-image").source.startswith(str(relocated)))
+            self.assertEqual(1, restored.getGridStyle())
+            self.assertEqual(1, restored.getBackgroundImageMode())
+            self.assertFalse(restored._background_pixmap.isNull())
+
+            auto_project = root / "auto-project"
+            auto_project.mkdir()
+            auto_source = MonkezCanva()
+            auto_source.setProjectDirectory(auto_project)
+            auto_source.setPersistenceKey("auto-workspace")
+            auto_source.addNode("Portable", element_id="auto-node")
+            auto_source.savePersistent()
+            auto_restored = MonkezCanva()
+            loaded_paths = []
+            auto_restored.persistentLoaded.connect(loaded_paths.append)
+            auto_restored.setProjectDirectory(auto_project)
+            auto_restored.setPersistenceKey("auto-workspace")
+            self.app.processEvents()
+            self.assertEqual(["auto-node"], auto_restored.elements())
+            self.assertTrue(loaded_paths)
 
             text_id = canvas.addText("First", 0, 0, element_id="history-text")
             QTest.qWait(120)
@@ -347,6 +445,8 @@ class WidgetTests(unittest.TestCase):
             self.assertTrue(canvas.redo())
             self.assertEqual("Second", canvas.element(text_id).text)
             restored.deleteLater()
+            auto_source.deleteLater()
+            auto_restored.deleteLater()
             canvas.deleteLater()
 
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:

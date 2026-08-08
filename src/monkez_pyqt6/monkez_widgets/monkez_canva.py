@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -25,17 +27,21 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QColor,
     QFont,
+    QIcon,
     QKeySequence,
     QMovie,
     QPainter,
     QPainterPath,
+    QPainterPathStroker,
     QPen,
     QPixmap,
     QShortcut,
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QColorDialog,
+    QComboBox,
     QDialog,
     QDoubleSpinBox,
     QFileDialog,
@@ -44,7 +50,6 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QGraphicsItem,
     QGraphicsObject,
-    QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
     QGridLayout,
@@ -55,6 +60,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
@@ -72,12 +78,246 @@ _ELEMENT_DEFAULTS: dict[str, tuple[float, float]] = {
     "line_chart": (260, 160),
     "image": (280, 180),
     "animated_image": (280, 180),
+    "diamond": (120, 100),
+    "triangle": (120, 100),
+    "arrow": (180, 70),
+    "line": (220, 40),
+    "polyline": (240, 120),
 }
+
+_GRID_STYLES = ("lines", "dots", "cross")
+_BACKGROUND_IMAGE_MODES = ("fit", "fill", "scale")
 
 
 def _color(value: Any, fallback: str = "#2563eb") -> QColor:
     result = QColor(value)
     return result if result.isValid() else QColor(fallback)
+
+
+def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
+    """Create small dependency-free vector icons with one coherent stroke style."""
+    pixmap = QPixmap(20, 20)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), 1.7)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    if name == "save":
+        painter.drawRoundedRect(QRectF(3, 2.5, 14, 15), 2, 2)
+        painter.drawRect(QRectF(6, 2.5, 7, 5))
+        painter.drawRoundedRect(QRectF(6, 11, 8, 6.5), 1, 1)
+    elif name in ("zoom_in", "zoom_out"):
+        painter.drawEllipse(QRectF(3, 3, 10, 10))
+        painter.drawLine(QPointF(12, 12), QPointF(17, 17))
+        painter.drawLine(QPointF(6, 8), QPointF(10, 8))
+        if name == "zoom_in":
+            painter.drawLine(QPointF(8, 6), QPointF(8, 10))
+    elif name == "actual_size":
+        font = QFont(painter.font())
+        font.setPixelSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(QRectF(1, 4, 18, 12), Qt.AlignmentFlag.AlignCenter, "1:1")
+    elif name == "fit":
+        for x1, y1, x2, y2, x3, y3 in (
+            (3, 7, 3, 3, 7, 3), (13, 3, 17, 3, 17, 7),
+            (3, 13, 3, 17, 7, 17), (13, 17, 17, 17, 17, 13),
+        ):
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+            painter.drawLine(QPointF(x2, y2), QPointF(x3, y3))
+    elif name.startswith("align_"):
+        edge = name.removeprefix("align_")
+        if edge == "center":
+            painter.drawLine(QPointF(10, 2), QPointF(10, 18))
+            painter.drawLine(QPointF(2, 10), QPointF(18, 10))
+            painter.drawRect(QRectF(5, 6, 10, 8))
+        elif edge in ("left", "right", "hcenter"):
+            anchor = 3 if edge == "left" else 17 if edge == "right" else 10
+            painter.drawLine(QPointF(anchor, 2), QPointF(anchor, 18))
+            offsets = ((4, 9), (7, 13), (5, 11))
+            for row, (start, end) in enumerate(offsets):
+                y = 4 + row * 5
+                if edge == "left":
+                    painter.drawLine(QPointF(anchor, y), QPointF(end, y))
+                elif edge == "right":
+                    painter.drawLine(QPointF(start, y), QPointF(anchor, y))
+                else:
+                    width = end - start
+                    painter.drawLine(QPointF(anchor - width / 2, y), QPointF(anchor + width / 2, y))
+        else:
+            anchor = 3 if edge == "top" else 17 if edge == "bottom" else 10
+            painter.drawLine(QPointF(2, anchor), QPointF(18, anchor))
+            offsets = ((4, 9), (7, 13), (5, 11))
+            for column, (start, end) in enumerate(offsets):
+                x = 4 + column * 5
+                if edge == "top":
+                    painter.drawLine(QPointF(x, anchor), QPointF(x, end))
+                elif edge == "bottom":
+                    painter.drawLine(QPointF(x, start), QPointF(x, anchor))
+                else:
+                    height = end - start
+                    painter.drawLine(QPointF(x, anchor - height / 2), QPointF(x, anchor + height / 2))
+    elif name in ("rectangle", "button"):
+        painter.drawRoundedRect(QRectF(3, 5, 14, 10), 2.5 if name == "button" else 1, 2.5 if name == "button" else 1)
+    elif name == "ellipse":
+        painter.drawEllipse(QRectF(3, 5, 14, 10))
+    elif name in ("diamond", "triangle", "arrow"):
+        if name == "diamond":
+            path = QPainterPath(QPointF(10, 2.5))
+            path.lineTo(17, 10)
+            path.lineTo(10, 17.5)
+            path.lineTo(3, 10)
+        elif name == "triangle":
+            path = QPainterPath(QPointF(10, 3))
+            path.lineTo(17, 16)
+            path.lineTo(3, 16)
+        else:
+            path = QPainterPath(QPointF(2, 7))
+            path.lineTo(12, 7)
+            path.lineTo(12, 3)
+            path.lineTo(18, 10)
+            path.lineTo(12, 17)
+            path.lineTo(12, 13)
+            path.lineTo(2, 13)
+        path.closeSubpath()
+        painter.drawPath(path)
+    elif name in ("line", "polyline", "connector"):
+        path = QPainterPath(QPointF(2, 15 if name == "polyline" else 10))
+        if name == "polyline":
+            path.lineTo(7, 5)
+            path.lineTo(12, 14)
+        elif name == "connector":
+            path.cubicTo(7, 2, 13, 18, 18, 10)
+        else:
+            path.lineTo(18, 10)
+        if name == "polyline":
+            path.lineTo(18, 5)
+        painter.drawPath(path)
+    elif name == "text":
+        painter.drawLine(QPointF(4, 4), QPointF(16, 4))
+        painter.drawLine(QPointF(10, 4), QPointF(10, 17))
+        painter.drawLine(QPointF(7, 17), QPointF(13, 17))
+    elif name in ("bar_chart", "line_chart"):
+        painter.drawLine(QPointF(3, 3), QPointF(3, 17))
+        painter.drawLine(QPointF(3, 17), QPointF(18, 17))
+        if name == "bar_chart":
+            painter.drawRect(QRectF(6, 10, 2.5, 7))
+            painter.drawRect(QRectF(11, 6, 2.5, 11))
+            painter.drawRect(QRectF(16, 8, 2, 9))
+        else:
+            path = QPainterPath(QPointF(5, 14))
+            path.lineTo(9, 8)
+            path.lineTo(13, 11)
+            path.lineTo(17, 5)
+            painter.drawPath(path)
+    elif name == "node":
+        painter.drawRoundedRect(QRectF(4, 5, 12, 10), 2, 2)
+        painter.drawEllipse(QRectF(1.5, 8.5, 3, 3))
+        painter.drawEllipse(QRectF(15.5, 8.5, 3, 3))
+    elif name in ("image", "gif"):
+        painter.drawRoundedRect(QRectF(3, 4, 14, 12), 2, 2)
+        painter.drawEllipse(QRectF(11.5, 6, 2.5, 2.5))
+        path = QPainterPath(QPointF(5, 14))
+        path.lineTo(8.5, 10)
+        path.lineTo(11, 12.5)
+        path.lineTo(14, 9.5)
+        path.lineTo(17, 13)
+        painter.drawPath(path)
+        if name == "gif":
+            painter.setBrush(QColor(color))
+            play = QPainterPath(QPointF(8, 7))
+            play.lineTo(8, 13)
+            play.lineTo(13, 10)
+            play.closeSubpath()
+            painter.drawPath(play)
+    elif name == "delete":
+        painter.drawLine(QPointF(5, 6), QPointF(15, 6))
+        painter.drawLine(QPointF(8, 3.5), QPointF(12, 3.5))
+        painter.drawRoundedRect(QRectF(6, 6, 8, 11), 1, 1)
+        painter.drawLine(QPointF(9, 9), QPointF(9, 14))
+        painter.drawLine(QPointF(11.5, 9), QPointF(11.5, 14))
+    elif name == "duplicate":
+        painter.drawRoundedRect(QRectF(6, 3, 11, 11), 1, 1)
+        painter.drawRoundedRect(QRectF(3, 6, 11, 11), 1, 1)
+    elif name in ("undo", "redo"):
+        if name == "undo":
+            painter.drawLine(QPointF(8, 5), QPointF(4, 9))
+            painter.drawLine(QPointF(4, 9), QPointF(8, 13))
+            path = QPainterPath(QPointF(4, 9))
+            path.cubicTo(15, 5, 17, 10, 15, 15)
+        else:
+            painter.drawLine(QPointF(12, 5), QPointF(16, 9))
+            painter.drawLine(QPointF(16, 9), QPointF(12, 13))
+            path = QPainterPath(QPointF(16, 9))
+            path.cubicTo(5, 5, 3, 10, 5, 15)
+        painter.drawPath(path)
+    elif name == "folder":
+        painter.drawRoundedRect(QRectF(2.5, 6, 15, 10), 2, 2)
+        painter.drawLine(QPointF(3, 6), QPointF(7, 6))
+        painter.drawLine(QPointF(7, 6), QPointF(8.5, 4))
+        painter.drawLine(QPointF(8.5, 4), QPointF(13, 4))
+    elif name == "check":
+        painter.drawLine(QPointF(4, 10), QPointF(8, 14))
+        painter.drawLine(QPointF(8, 14), QPointF(16, 5))
+    elif name == "refresh":
+        path = QPainterPath(QPointF(15, 7))
+        path.cubicTo(11, 2, 4, 5, 4, 10)
+        path.cubicTo(4, 16, 12, 18, 16, 13)
+        painter.drawPath(path)
+        painter.drawLine(QPointF(15, 7), QPointF(11, 7))
+        painter.drawLine(QPointF(15, 7), QPointF(15, 3))
+    elif name in ("front", "back"):
+        painter.drawRect(QRectF(6, 4, 10, 10))
+        painter.drawRect(QRectF(3, 7, 10, 10))
+        painter.drawLine(QPointF(14, 16), QPointF(17, 13 if name == "front" else 17))
+    elif name == "color":
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QRectF(4, 4, 12, 12))
+    elif name == "pan":
+        painter.drawLine(QPointF(10, 2), QPointF(10, 18))
+        painter.drawLine(QPointF(2, 10), QPointF(18, 10))
+        painter.drawLine(QPointF(10, 2), QPointF(7.5, 5))
+        painter.drawLine(QPointF(10, 2), QPointF(12.5, 5))
+        painter.drawLine(QPointF(18, 10), QPointF(15, 7.5))
+        painter.drawLine(QPointF(18, 10), QPointF(15, 12.5))
+    elif name.startswith("arrow_"):
+        direction = name.removeprefix("arrow_")
+        if direction in ("left", "right"):
+            start, end = (16, 4) if direction == "left" else (4, 16)
+            painter.drawLine(QPointF(start, 10), QPointF(end, 10))
+            tip = end
+            wing = 4 if direction == "left" else -4
+            painter.drawLine(QPointF(tip, 10), QPointF(tip + wing, 6))
+            painter.drawLine(QPointF(tip, 10), QPointF(tip + wing, 14))
+        else:
+            start, end = (16, 4) if direction == "up" else (4, 16)
+            painter.drawLine(QPointF(10, start), QPointF(10, end))
+            tip = end
+            wing = 4 if direction == "up" else -4
+            painter.drawLine(QPointF(10, tip), QPointF(6, tip + wing))
+            painter.drawLine(QPointF(10, tip), QPointF(14, tip + wing))
+    elif name == "close":
+        painter.drawLine(QPointF(5, 5), QPointF(15, 15))
+        painter.drawLine(QPointF(15, 5), QPointF(5, 15))
+    elif name == "grid":
+        for x in (4, 10, 16):
+            painter.drawLine(QPointF(x, 3), QPointF(x, 17))
+        for y in (4, 10, 16):
+            painter.drawLine(QPointF(3, y), QPointF(17, y))
+    elif name == "background":
+        painter.drawRoundedRect(QRectF(2.5, 3.5, 15, 13), 2, 2)
+        painter.drawEllipse(QRectF(12, 6, 2.5, 2.5))
+        painter.drawLine(QPointF(4, 14), QPointF(8, 9))
+        painter.drawLine(QPointF(8, 9), QPointF(11, 12))
+        painter.drawLine(QPointF(11, 12), QPointF(14, 10))
+        painter.drawLine(QPointF(14, 10), QPointF(17, 14))
+
+    painter.end()
+    return QIcon(pixmap)
 
 
 class _CanvasScene(QGraphicsScene):
@@ -87,13 +327,59 @@ class _CanvasScene(QGraphicsScene):
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
         painter.fillRect(rect, self.canvas.backgroundColor)
+        pixmap = self.canvas._background_pixmap
+        if not pixmap.isNull():
+            scene_rect = self.sceneRect()
+            source = QRectF(pixmap.rect())
+            if self.canvas._background_image_mode == 2:
+                target = scene_rect
+            else:
+                x_scale = scene_rect.width() / max(1, pixmap.width())
+                y_scale = scene_rect.height() / max(1, pixmap.height())
+                factor = min(x_scale, y_scale) if self.canvas._background_image_mode == 0 else max(x_scale, y_scale)
+                width = pixmap.width() * factor
+                height = pixmap.height() * factor
+                target = QRectF(
+                    scene_rect.center().x() - width / 2,
+                    scene_rect.center().y() - height / 2,
+                    width,
+                    height,
+                )
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            painter.drawPixmap(target, pixmap, source)
+            painter.restore()
         if not self.canvas.gridVisible:
             return
         size = self.canvas.gridSize
         left = math.floor(rect.left() / size) * size
         top = math.floor(rect.top() / size) * size
         minor = QColor(self.canvas.gridColor)
-        painter.setPen(QPen(minor, 0))
+        pen = QPen(minor, 0)
+        if self.canvas._grid_style in (1, 2):
+            pen.setWidthF(1.5)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        if self.canvas._grid_style == 1:
+            x = left
+            while x <= rect.right():
+                y = top
+                while y <= rect.bottom():
+                    painter.drawPoint(QPointF(x, y))
+                    y += size
+                x += size
+            return
+        if self.canvas._grid_style == 2:
+            arm = min(3.0, size * 0.18)
+            x = left
+            while x <= rect.right():
+                y = top
+                while y <= rect.bottom():
+                    painter.drawLine(QPointF(x - arm, y), QPointF(x + arm, y))
+                    painter.drawLine(QPointF(x, y - arm), QPointF(x, y + arm))
+                    y += size
+                x += size
+            return
         x = left
         while x <= rect.right():
             painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
@@ -127,6 +413,12 @@ class _CanvasElement(QGraphicsObject):
         self.data = list(options.get("data", [32, 68, 46, 82, 58]))
         self.metadata = dict(options.get("metadata", {}))
         self.source = str(options.get("source", ""))
+        self.line_width = max(0.5, float(options.get("lineWidth", 2.2)))
+        self.line_style = str(options.get("lineStyle", "solid")).lower()
+        self.arrow_start = bool(options.get("arrowStart", False))
+        self.arrow_end = bool(options.get("arrowEnd", False))
+        raw_points = options.get("points", [])
+        self.points = [QPointF(float(point[0]), float(point[1])) for point in raw_points]
         self._pixmap = QPixmap()
         self._movie: QMovie | None = None
         self._highlight = QColor()
@@ -190,8 +482,38 @@ class _CanvasElement(QGraphicsObject):
 
         if self.kind in ("image", "animated_image"):
             self._paint_media(painter, rect)
+        elif self.kind in ("line", "polyline"):
+            self._paint_line(painter, rect)
+        elif self.kind == "diamond":
+            path = QPainterPath(rect.topLeft() + QPointF(rect.width() / 2, 0))
+            path.lineTo(rect.center() + QPointF(rect.width() / 2, 0))
+            path.lineTo(rect.bottomLeft() + QPointF(rect.width() / 2, 0))
+            path.lineTo(rect.center() - QPointF(rect.width() / 2, 0))
+            path.closeSubpath()
+            painter.drawPath(path)
+            self._paint_centered_text(painter, rect)
+        elif self.kind == "triangle":
+            path = QPainterPath(rect.topLeft() + QPointF(rect.width() / 2, 0))
+            path.lineTo(rect.bottomRight())
+            path.lineTo(rect.bottomLeft())
+            path.closeSubpath()
+            painter.drawPath(path)
+            self._paint_centered_text(painter, rect.adjusted(12, 24, -12, -6))
+        elif self.kind == "arrow":
+            mid = rect.center().y()
+            path = QPainterPath(QPointF(rect.left(), mid - rect.height() * 0.22))
+            path.lineTo(rect.left() + rect.width() * 0.62, mid - rect.height() * 0.22)
+            path.lineTo(rect.left() + rect.width() * 0.62, rect.top())
+            path.lineTo(rect.right(), mid)
+            path.lineTo(rect.left() + rect.width() * 0.62, rect.bottom())
+            path.lineTo(rect.left() + rect.width() * 0.62, mid + rect.height() * 0.22)
+            path.lineTo(rect.left(), mid + rect.height() * 0.22)
+            path.closeSubpath()
+            painter.drawPath(path)
+            self._paint_centered_text(painter, rect.adjusted(8, 4, -34, -4))
         elif self.kind == "ellipse":
             painter.drawEllipse(rect)
+            self._paint_centered_text(painter, rect.adjusted(10, 6, -10, -6))
         elif self.kind in ("bar_chart", "line_chart"):
             painter.drawRoundedRect(rect, 10, 10)
             self._paint_chart(painter, rect)
@@ -224,6 +546,10 @@ class _CanvasElement(QGraphicsObject):
             for point in (rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()):
                 painter.drawRect(QRectF(point.x() - 4, point.y() - 4, 8, 8))
 
+    def _paint_centered_text(self, painter: QPainter, rect: QRectF) -> None:
+        painter.setPen(self.text_color)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.text)
+
     def _paint_media(self, painter: QPainter, rect: QRectF) -> None:
         pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
         painter.drawRoundedRect(rect, 8, 8)
@@ -243,6 +569,58 @@ class _CanvasElement(QGraphicsObject):
             scaled.height(),
         )
         painter.drawPixmap(target, scaled, QRectF(scaled.rect()))
+
+    def _paint_line(self, painter: QPainter, rect: QRectF) -> None:
+        points = self.points
+        if not points:
+            points = (
+                [QPointF(rect.left(), rect.center().y()), QPointF(rect.right(), rect.center().y())]
+                if self.kind == "line"
+                else [
+                    QPointF(rect.left(), rect.bottom()),
+                    QPointF(rect.left() + rect.width() * 0.35, rect.top()),
+                    QPointF(rect.left() + rect.width() * 0.65, rect.bottom()),
+                    QPointF(rect.right(), rect.top()),
+                ]
+            )
+        path = QPainterPath(points[0])
+        for point in points[1:]:
+            path.lineTo(point)
+        pen = QPen(self.color, self.line_width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        styles = {
+            "dash": Qt.PenStyle.DashLine,
+            "dot": Qt.PenStyle.DotLine,
+            "dashdot": Qt.PenStyle.DashDotLine,
+        }
+        pen.setStyle(styles.get(self.line_style, Qt.PenStyle.SolidLine))
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+        if self.arrow_start and len(points) > 1:
+            self._paint_line_arrow(painter, points[0], points[1])
+        if self.arrow_end and len(points) > 1:
+            self._paint_line_arrow(painter, points[-1], points[-2])
+
+    def _paint_line_arrow(self, painter: QPainter, tip: QPointF, near: QPointF) -> None:
+        angle = math.atan2(tip.y() - near.y(), tip.x() - near.x())
+        length = max(8.0, self.line_width * 4.0)
+        left = QPointF(
+            tip.x() - length * math.cos(angle - math.pi / 6),
+            tip.y() - length * math.sin(angle - math.pi / 6),
+        )
+        right = QPointF(
+            tip.x() - length * math.cos(angle + math.pi / 6),
+            tip.y() - length * math.sin(angle + math.pi / 6),
+        )
+        arrow = QPainterPath(tip)
+        arrow.lineTo(left)
+        arrow.lineTo(right)
+        arrow.closeSubpath()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.color)
+        painter.drawPath(arrow)
 
     def _paint_chart(self, painter: QPainter, rect: QRectF) -> None:
         values = [float(value) for value in self.data if isinstance(value, (int, float))]
@@ -330,39 +708,188 @@ class _CanvasElement(QGraphicsObject):
             "data": list(self.data),
             "metadata": dict(self.metadata),
             "source": self.source,
+            "lineWidth": self.line_width,
+            "lineStyle": self.line_style,
+            "arrowStart": self.arrow_start,
+            "arrowEnd": self.arrow_end,
+            "points": [[point.x(), point.y()] for point in self.points],
             "opacity": self.opacity(),
             "rotation": self.rotation(),
             "z": self.zValue(),
         }
 
 
-class _CanvasConnector(QGraphicsPathItem):
-    def __init__(self, connector_id: str, source: _CanvasElement, target: _CanvasElement, color: Any) -> None:
+class _CanvasConnector(QGraphicsObject):
+    """Selectable, serializable signal path between two node-like elements."""
+
+    changed = pyqtSignal(str)
+
+    def __init__(
+        self,
+        canvas: "MonkezCanva",
+        connector_id: str,
+        source: _CanvasElement,
+        target: _CanvasElement,
+        options: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__()
+        options = dict(options or {})
+        self.canvas = canvas
         self.connector_id = connector_id
+        self.element_id = connector_id
+        self.kind = "connector"
         self.source = source
         self.target = target
-        self.color = _color(color, "#64748b")
-        self.setZValue(-1)
-        self.setPen(QPen(self.color, 2.2))
+        self.color = _color(options.get("color", "#64748b"), "#64748b")
+        self.flow_color = _color(options.get("flowColor", "#38bdf8"), "#38bdf8")
+        self.route = str(options.get("route", "bezier")).lower()
+        self.line_style = str(options.get("lineStyle", "solid")).lower()
+        self.line_width = max(0.5, float(options.get("lineWidth", 2.2)))
+        self.arrow_start = bool(options.get("arrowStart", False))
+        self.arrow_end = bool(options.get("arrowEnd", True))
+        self.animated = bool(options.get("animated", False))
+        self.flow_speed = max(0.1, float(options.get("flowSpeed", 1.0)))
+        self.waypoints = [QPointF(float(point[0]), float(point[1])) for point in options.get("waypoints", [])]
+        self.metadata = dict(options.get("metadata", {}))
+        self._path = QPainterPath()
+        self._flow_phase = 0.0
+        self._timer = QTimer(canvas)
+        self._timer.setInterval(40)
+        self._timer.timeout.connect(self._advance_flow)
+        self.setZValue(float(options.get("z", -1)))
+        self.setOpacity(max(0.0, min(1.0, float(options.get("opacity", 1.0)))))
         source.changed.connect(self.updatePath)
         target.changed.connect(self.updatePath)
+        self.setEditable(canvas.editMode)
         self.updatePath()
+        self._sync_animation()
+
+    def boundingRect(self) -> QRectF:
+        margin = max(12.0, self.line_width + 9.0)
+        return self._path.boundingRect().adjusted(-margin, -margin, margin, margin)
+
+    def shape(self) -> QPainterPath:
+        stroker = QPainterPathStroker()
+        stroker.setWidth(max(12.0, self.line_width + 8.0))
+        return stroker.createStroke(self._path)
+
+    def setEditable(self, enabled: bool) -> None:
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, enabled)
+        if not enabled:
+            self.setSelected(False)
 
     def updatePath(self, *_args) -> None:
+        self.prepareGeometryChange()
         start = self.source.mapToScene(self.source._rect.center())
         end = self.target.mapToScene(self.target._rect.center())
-        delta = max(50.0, abs(end.x() - start.x()) * 0.5)
         path = QPainterPath(start)
-        path.cubicTo(QPointF(start.x() + delta, start.y()), QPointF(end.x() - delta, end.y()), end)
-        self.setPath(path)
+        if self.route == "straight":
+            path.lineTo(end)
+        elif self.route in ("orthogonal", "elbow"):
+            middle_x = (start.x() + end.x()) / 2
+            path.lineTo(QPointF(middle_x, start.y()))
+            path.lineTo(QPointF(middle_x, end.y()))
+            path.lineTo(end)
+        elif self.route == "polyline" and self.waypoints:
+            for point in self.waypoints:
+                path.lineTo(point)
+            path.lineTo(end)
+        else:
+            delta = max(50.0, abs(end.x() - start.x()) * 0.5)
+            direction = 1 if end.x() >= start.x() else -1
+            path.cubicTo(
+                QPointF(start.x() + delta * direction, start.y()),
+                QPointF(end.x() - delta * direction, end.y()),
+                end,
+            )
+        self._path = path
+        self.update()
+
+    def paint(self, painter: QPainter, _option, _widget=None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self.isSelected():
+            painter.setPen(QPen(QColor(37, 99, 235, 80), self.line_width + 7, Qt.PenStyle.SolidLine))
+            painter.drawPath(self._path)
+        pen = QPen(self.color, self.line_width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        if self.line_style == "dash":
+            pen.setStyle(Qt.PenStyle.DashLine)
+        elif self.line_style == "dot":
+            pen.setStyle(Qt.PenStyle.DotLine)
+        elif self.line_style == "dashdot":
+            pen.setStyle(Qt.PenStyle.DashDotLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(self._path)
+        if self.animated:
+            flow_pen = QPen(self.flow_color, max(1.5, self.line_width * 0.65))
+            flow_pen.setDashPattern([2.0, 5.0])
+            flow_pen.setDashOffset(self._flow_phase)
+            flow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(flow_pen)
+            painter.drawPath(self._path)
+        if self.arrow_start:
+            self._paint_arrow(painter, 0.0)
+        if self.arrow_end:
+            self._paint_arrow(painter, 1.0)
+
+    def _paint_arrow(self, painter: QPainter, position: float) -> None:
+        point = self._path.pointAtPercent(position)
+        near = self._path.pointAtPercent(0.025 if position == 0.0 else 0.975)
+        dx = point.x() - near.x()
+        dy = point.y() - near.y()
+        angle = math.atan2(dy, dx)
+        length = max(8.0, self.line_width * 4.0)
+        left = QPointF(
+            point.x() - length * math.cos(angle - math.pi / 6),
+            point.y() - length * math.sin(angle - math.pi / 6),
+        )
+        right = QPointF(
+            point.x() - length * math.cos(angle + math.pi / 6),
+            point.y() - length * math.sin(angle + math.pi / 6),
+        )
+        arrow = QPainterPath(point)
+        arrow.lineTo(left)
+        arrow.lineTo(right)
+        arrow.closeSubpath()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.flow_color if self.animated else self.color)
+        painter.drawPath(arrow)
+
+    def _advance_flow(self) -> None:
+        self._flow_phase -= self.flow_speed
+        self.update()
+
+    def _sync_animation(self) -> None:
+        if self.animated and not self._timer.isActive():
+            self._timer.start()
+        elif not self.animated:
+            self._timer.stop()
+        self.update()
+
+    def release(self) -> None:
+        self._timer.stop()
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.connector_id,
+            "type": "connector",
             "source": self.source.element_id,
             "target": self.target.element_id,
             "color": self.color.name(QColor.NameFormat.HexArgb),
+            "flowColor": self.flow_color.name(QColor.NameFormat.HexArgb),
+            "route": self.route,
+            "lineStyle": self.line_style,
+            "lineWidth": self.line_width,
+            "arrowStart": self.arrow_start,
+            "arrowEnd": self.arrow_end,
+            "animated": self.animated,
+            "flowSpeed": self.flow_speed,
+            "waypoints": [[point.x(), point.y()] for point in self.waypoints],
+            "metadata": dict(self.metadata),
+            "opacity": self.opacity(),
+            "z": self.zValue(),
         }
 
 
@@ -386,13 +913,11 @@ class _CanvasPaneHeader(QFrame):
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
         layout.addLayout(title_box)
-        badge = QLabel("EDIT")
-        badge.setObjectName("canvasPaneBadge")
-        layout.addWidget(badge)
         layout.addStretch(1)
         close = QToolButton()
         close.setObjectName("canvasPaneClose")
-        close.setText("x")
+        close.setIcon(_canvas_icon("close"))
+        close.setIconSize(QSize(16, 16))
         close.setToolTip("Close edit mode (Ctrl+D, E)")
         close.clicked.connect(lambda _checked=False: canvas.setEditMode(False))
         layout.addWidget(close)
@@ -430,8 +955,8 @@ class _CanvasEditorToolbox(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(380, 560)
-        self.resize(396, 584)
+        self.setMinimumSize(420, 580)
+        self.resize(440, 620)
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
         panel = QFrame()
@@ -463,9 +988,13 @@ class _CanvasEditorToolbox(QDialog):
         self.setStyleSheet(self._pane_stylesheet())
         canvas.elementAdded.connect(lambda _element_id: self.refreshLayers())
         canvas.elementRemoved.connect(lambda _element_id: self.refreshLayers())
+        canvas.connectorAdded.connect(lambda _connector_id: self.refreshLayers())
+        canvas.connectorRemoved.connect(lambda _connector_id: self.refreshLayers())
         canvas.selectionChanged.connect(self._sync_inspector)
         canvas.selectionSetChanged.connect(lambda _element_ids: self.refreshLayers())
         canvas.autoSaved.connect(self._show_save_status)
+        canvas.documentChanged.connect(self._sync_view_controls)
+        self._sync_inspector(canvas.selectedElementId())
         self.refreshLayers()
 
     @staticmethod
@@ -479,10 +1008,6 @@ class _CanvasEditorToolbox(QDialog):
         QFrame#canvasPaneHeader { border: none; background: transparent; }
         QLabel#canvasPaneTitle { color: #0f172a; font-size: 16px; font-weight: 700; }
         QLabel#canvasPaneSubtitle { color: #64748b; font-size: 10px; }
-        QLabel#canvasPaneBadge {
-            color: #1d4ed8; background: #dbeafe; border: none;
-            border-radius: 8px; padding: 3px 7px; font-size: 9px; font-weight: 700;
-        }
         QToolButton#canvasPaneClose {
             color: #64748b; background: transparent; border: none;
             border-radius: 9px; min-width: 28px; min-height: 28px; font-weight: 700;
@@ -519,11 +1044,13 @@ class _CanvasEditorToolbox(QDialog):
         QPushButton#primaryAction:hover { background: #1d4ed8; border-color: #1d4ed8; }
         QPushButton#dangerAction { color: #b91c1c; background: #fff7f7; border-color: #fecaca; }
         QPushButton#dangerAction:hover { background: #fee2e2; border-color: #fca5a5; }
-        QLineEdit, QDoubleSpinBox, QListWidget {
+        QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
             color: #0f172a; background: #ffffff; border: 1px solid #d7e0ea;
             border-radius: 7px; padding: 4px 7px; selection-background-color: #bfdbfe;
         }
-        QLineEdit:focus, QDoubleSpinBox:focus, QListWidget:focus { border: 1px solid #60a5fa; }
+        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #60a5fa; }
+        QComboBox::drop-down { border: none; width: 22px; }
+        QCheckBox { color: #334155; spacing: 7px; }
         QListWidget { padding: 4px; }
         QListWidget::item { border-radius: 6px; padding: 7px; margin: 1px; }
         QListWidget::item:selected { color: #1d4ed8; background: #dbeafe; }
@@ -537,9 +1064,15 @@ class _CanvasEditorToolbox(QDialog):
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(7)
         groups = {
-            "Shapes": (("Text", "text"), ("Rectangle", "rectangle"), ("Ellipse", "ellipse"), ("Button", "button")),
-            "Data": (("Bar chart", "bar_chart"), ("Line chart", "line_chart")),
-            "Flow & media": (("Node", "node"), ("Image", "image"), ("Animated GIF", "animated_image")),
+            "Shapes": (
+                ("Text", "text"), ("Rectangle", "rectangle"), ("Ellipse", "ellipse"),
+                ("Button", "button"), ("Diamond", "diamond"), ("Triangle", "triangle"),
+            ),
+            "Diagram & data": (
+                ("Node", "node"), ("Arrow", "arrow"), ("Line", "line"),
+                ("Polyline", "polyline"), ("Bar chart", "bar_chart"), ("Line chart", "line_chart"),
+            ),
+            "Media": (("Image", "image"), ("Animated GIF", "animated_image")),
         }
         for group_name, entries in groups.items():
             group = QGroupBox(group_name)
@@ -549,6 +1082,9 @@ class _CanvasEditorToolbox(QDialog):
             for index, (label, kind) in enumerate(entries):
                 button = QToolButton()
                 button.setText(label)
+                button.setIcon(_canvas_icon("gif" if kind == "animated_image" else kind))
+                button.setIconSize(QSize(17, 17))
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
                 button.setMinimumSize(100, 34)
                 if kind in ("image", "animated_image"):
                     button.clicked.connect(lambda _checked=False, value=kind: self._choose_media(value))
@@ -556,12 +1092,20 @@ class _CanvasEditorToolbox(QDialog):
                     button.clicked.connect(lambda _checked=False, value=kind: self.canvas.addElement(value))
                 grid.addWidget(button, index // 2, index % 2)
             layout.addWidget(group)
+        connect_selected = QPushButton("Connect 2 selected items")
+        connect_selected.setObjectName("primaryAction")
+        connect_selected.setIcon(_canvas_icon("connector", "#ffffff"))
+        connect_selected.setToolTip("Create a selectable connector between exactly two selected items")
+        connect_selected.clicked.connect(self.canvas.connectSelected)
+        layout.addWidget(connect_selected)
         layout.addStretch(1)
         buttons = QHBoxLayout()
         duplicate = QPushButton("Duplicate")
+        duplicate.setIcon(_canvas_icon("duplicate"))
         duplicate.clicked.connect(self.canvas.duplicateSelected)
         delete = QPushButton("Delete")
         delete.setObjectName("dangerAction")
+        delete.setIcon(_canvas_icon("delete", "#b91c1c"))
         delete.clicked.connect(self.canvas.deleteSelected)
         buttons.addWidget(duplicate)
         buttons.addWidget(delete)
@@ -574,21 +1118,39 @@ class _CanvasEditorToolbox(QDialog):
 
     def _inspector_tab(self) -> QWidget:
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(4, 6, 4, 4)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 4, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(4, 2, 4, 4)
         layout.setSpacing(7)
-        form = QFormLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(6)
+
+        general = QGroupBox("Selection")
+        form = QFormLayout(general)
         self._type_label = QLabel("No selection")
         self._id_edit = QLineEdit()
-        self._text_edit = QLineEdit()
-        self._source_edit = QLineEdit()
         form.addRow("Type", self._type_label)
-        form.addRow("Item ID", self._id_edit)
-        form.addRow("Text / title", self._text_edit)
-        form.addRow("Media source", self._source_edit)
+        form.addRow("Object ID", self._id_edit)
+        layout.addWidget(general)
+
+        self._content_group = QGroupBox("Content")
+        content_form = QFormLayout(self._content_group)
+        self._text_edit = QLineEdit()
+        self._data_edit = QLineEdit()
+        self._data_edit.setPlaceholderText("Chart values: 20, 40, 60")
+        content_form.addRow("Text / title", self._text_edit)
+        self._data_label = QLabel("Data")
+        content_form.addRow(self._data_label, self._data_edit)
+        layout.addWidget(self._content_group)
+
+        self._geometry_group = QGroupBox("Geometry")
+        geometry_form = QFormLayout(self._geometry_group)
         self._number_fields: dict[str, QDoubleSpinBox] = {}
+        self._number_labels: dict[str, QLabel] = {}
         fields = (
             ("x", "X", -100000.0, 100000.0, 1),
             ("y", "Y", -100000.0, 100000.0, 1),
@@ -604,34 +1166,108 @@ class _CanvasEditorToolbox(QDialog):
             field.setDecimals(decimals)
             field.setSingleStep(0.1 if key == "opacity" else 1.0)
             self._number_fields[key] = field
-            form.addRow(label, field)
-        layout.addLayout(form)
-        colors = QGridLayout()
+            label_widget = QLabel(label)
+            self._number_labels[key] = label_widget
+            geometry_form.addRow(label_widget, field)
+        layout.addWidget(self._geometry_group)
+
+        self._media_group = QGroupBox("Media")
+        media_layout = QVBoxLayout(self._media_group)
+        self._source_edit = QLineEdit()
+        self._source_edit.setPlaceholderText("Image or animated GIF source")
+        media_layout.addWidget(self._source_edit)
+        browse = QPushButton("Browse media…")
+        browse.setIcon(_canvas_icon("folder"))
+        browse.clicked.connect(self._browse_selected_media)
+        media_layout.addWidget(browse)
+        layout.addWidget(self._media_group)
+
+        self._stroke_group = QGroupBox("Line / signal")
+        stroke_form = QFormLayout(self._stroke_group)
+        self._route_combo = QComboBox()
+        self._route_combo.addItems(("Bezier", "Orthogonal", "Straight", "Polyline"))
+        self._source_combo = QComboBox()
+        self._target_combo = QComboBox()
+        for combo in (self._source_combo, self._target_combo):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(12)
+        self._line_style_combo = QComboBox()
+        self._line_style_combo.addItems(("Solid", "Dash", "Dot", "DashDot"))
+        self._line_width_field = QDoubleSpinBox()
+        self._line_width_field.setRange(0.5, 40.0)
+        self._line_width_field.setDecimals(1)
+        self._arrow_start_check = QCheckBox("Start")
+        self._arrow_end_check = QCheckBox("End")
+        arrow_row = QWidget()
+        arrow_layout = QHBoxLayout(arrow_row)
+        arrow_layout.setContentsMargins(0, 0, 0, 0)
+        arrow_layout.addWidget(self._arrow_start_check)
+        arrow_layout.addWidget(self._arrow_end_check)
+        self._animated_check = QCheckBox("Animated flow")
+        self._flow_speed_field = QDoubleSpinBox()
+        self._flow_speed_field.setRange(0.1, 20.0)
+        self._flow_speed_field.setDecimals(1)
+        self._connector_opacity_field = QDoubleSpinBox()
+        self._connector_opacity_field.setRange(0.0, 1.0)
+        self._connector_opacity_field.setDecimals(2)
+        self._connector_z_field = QDoubleSpinBox()
+        self._connector_z_field.setRange(-10000.0, 10000.0)
+        self._points_edit = QLineEdit()
+        self._points_edit.setPlaceholderText("[[x, y], [x, y]]")
+        self._route_label = QLabel("Route")
+        self._source_label = QLabel("Source")
+        self._target_label = QLabel("Target")
+        self._animation_label = QLabel("Animation")
+        self._flow_speed_label = QLabel("Flow speed")
+        self._connector_opacity_label = QLabel("Opacity")
+        self._connector_z_label = QLabel("Layer Z")
+        self._points_label = QLabel("Waypoints")
+        stroke_form.addRow(self._source_label, self._source_combo)
+        stroke_form.addRow(self._target_label, self._target_combo)
+        stroke_form.addRow(self._route_label, self._route_combo)
+        stroke_form.addRow("Stroke", self._line_style_combo)
+        stroke_form.addRow("Width", self._line_width_field)
+        stroke_form.addRow("Arrowheads", arrow_row)
+        stroke_form.addRow(self._animation_label, self._animated_check)
+        stroke_form.addRow(self._flow_speed_label, self._flow_speed_field)
+        stroke_form.addRow(self._connector_opacity_label, self._connector_opacity_field)
+        stroke_form.addRow(self._connector_z_label, self._connector_z_field)
+        stroke_form.addRow(self._points_label, self._points_edit)
+        layout.addWidget(self._stroke_group)
+
+        self._colors_group = QGroupBox("Appearance")
+        colors = QGridLayout(self._colors_group)
+        self._color_buttons: dict[str, QPushButton] = {}
         for column, (label, role) in enumerate(
-            (("Accent", "accent"), ("Background", "background"), ("Text", "text"))
+            (("Accent", "accent"), ("Surface", "background"), ("Text", "text"), ("Flow", "flow"))
         ):
             button = QPushButton(label)
+            button.setIcon(_canvas_icon("color"))
             button.clicked.connect(lambda _checked=False, value=role: self._choose_color(value))
-            colors.addWidget(button, 0, column)
-        layout.addLayout(colors)
+            self._color_buttons[role] = button
+            colors.addWidget(button, column // 2, column % 2)
+        layout.addWidget(self._colors_group)
+
         actions = QHBoxLayout()
-        browse = QPushButton("Browse media…")
-        browse.clicked.connect(self._browse_selected_media)
         apply_button = QPushButton("Apply changes")
         apply_button.setObjectName("primaryAction")
+        apply_button.setIcon(_canvas_icon("check", "#ffffff"))
         apply_button.clicked.connect(self._apply_inspector)
-        actions.addWidget(browse)
         actions.addWidget(apply_button)
         layout.addLayout(actions)
         order = QHBoxLayout()
         front = QPushButton("Bring front")
+        front.setIcon(_canvas_icon("front"))
         front.clicked.connect(self.canvas.bringSelectedToFront)
         back = QPushButton("Send back")
+        back.setIcon(_canvas_icon("back"))
         back.clicked.connect(self.canvas.sendSelectedToBack)
         order.addWidget(front)
         order.addWidget(back)
         layout.addLayout(order)
         layout.addStretch(1)
+        scroll.setWidget(body)
+        page_layout.addWidget(scroll)
         return page
 
     def _layers_tab(self) -> QWidget:
@@ -644,30 +1280,88 @@ class _CanvasEditorToolbox(QDialog):
         self._layers.itemSelectionChanged.connect(self._select_layers)
         layout.addWidget(self._layers, 1)
         refresh = QPushButton("Refresh item list")
+        refresh.setIcon(_canvas_icon("refresh"))
         refresh.clicked.connect(self.refreshLayers)
         layout.addWidget(refresh)
         return page
 
     def _view_tab(self) -> QWidget:
         page = QWidget()
-        layout = QGridLayout(page)
+        layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 8, 4, 4)
         layout.setSpacing(8)
+        navigation = QGroupBox("Viewport")
+        navigation_layout = QGridLayout(navigation)
         actions = (
-            ("Zoom +", self.canvas.zoomIn, 0, 0), ("Zoom −", self.canvas.zoomOut, 0, 1),
-            ("100%", self.canvas.resetZoom, 1, 0), ("Fit all", self.canvas.fitContent, 1, 1),
-            ("←", lambda: self.canvas.moveViewport(-120, 0), 2, 0),
-            ("→", lambda: self.canvas.moveViewport(120, 0), 2, 1),
-            ("↑", lambda: self.canvas.moveViewport(0, -120), 3, 0),
-            ("↓", lambda: self.canvas.moveViewport(0, 120), 3, 1),
-            ("Center selection", self.canvas.centerOnSelection, 4, 0),
-            ("Pan / select", self.canvas.togglePanMode, 4, 1),
+            ("Zoom out", "zoom_out", self.canvas.zoomOut, 0, 0),
+            ("100%", "actual_size", self.canvas.resetZoom, 0, 1),
+            ("Zoom in", "zoom_in", self.canvas.zoomIn, 0, 2),
+            ("Fit all", "fit", self.canvas.fitContent, 1, 0),
+            ("Center", "align_center", self.canvas.centerOnSelection, 1, 1),
+            ("Pan mode", "pan", self.canvas.togglePanMode, 1, 2),
         )
-        for label, callback, row, column in actions:
+        for label, icon, callback, row, column in actions:
             button = QPushButton(label)
+            button.setIcon(_canvas_icon(icon))
             button.clicked.connect(callback)
-            layout.addWidget(button, row, column)
-        layout.setRowStretch(5, 1)
+            navigation_layout.addWidget(button, row, column)
+        move_row = QHBoxLayout()
+        move_row.addWidget(QLabel("Move"))
+        for direction, delta in (
+            ("left", (-120, 0)), ("right", (120, 0)),
+            ("up", (0, -120)), ("down", (0, 120)),
+        ):
+            button = QToolButton()
+            button.setIcon(_canvas_icon(f"arrow_{direction}"))
+            button.setToolTip(f"Move viewport {direction}")
+            button.clicked.connect(
+                lambda _checked=False, value=delta: self.canvas.moveViewport(*value)
+            )
+            move_row.addWidget(button)
+        move_row.addStretch(1)
+        navigation_layout.addLayout(move_row, 2, 0, 1, 3)
+        layout.addWidget(navigation)
+
+        grid_group = QGroupBox("Grid")
+        grid_layout = QGridLayout(grid_group)
+        self._grid_visible_check = QCheckBox("Show grid")
+        self._grid_visible_check.toggled.connect(self.canvas.setGridVisible)
+        grid_layout.addWidget(self._grid_visible_check, 0, 0)
+        self._grid_style_combo = QComboBox()
+        self._grid_style_combo.addItems(("Lines", "Dots", "Cross"))
+        self._grid_style_combo.currentIndexChanged.connect(self.canvas.setGridStyle)
+        grid_layout.addWidget(self._grid_style_combo, 0, 1)
+        grid_color = QPushButton("Grid color")
+        grid_color.setIcon(_canvas_icon("color"))
+        grid_color.clicked.connect(self._choose_grid_color)
+        grid_layout.addWidget(grid_color, 1, 0, 1, 2)
+        layout.addWidget(grid_group)
+
+        background = QGroupBox("Canvas background")
+        background_layout = QGridLayout(background)
+        background_color = QPushButton("Background color")
+        background_color.setIcon(_canvas_icon("color"))
+        background_color.clicked.connect(self._choose_background_color)
+        background_layout.addWidget(background_color, 0, 0)
+        browse_background = QPushButton("Choose image")
+        browse_background.setIcon(_canvas_icon("background"))
+        browse_background.clicked.connect(self._choose_background_image)
+        background_layout.addWidget(browse_background, 0, 1)
+        self._background_path = QLineEdit()
+        self._background_path.setReadOnly(True)
+        self._background_path.setPlaceholderText("No background image")
+        background_layout.addWidget(self._background_path, 1, 0, 1, 2)
+        self._background_mode_combo = QComboBox()
+        self._background_mode_combo.addItems(("Fit", "Fill", "Scale"))
+        self._background_mode_combo.currentIndexChanged.connect(self.canvas.setBackgroundImageMode)
+        background_layout.addWidget(self._background_mode_combo, 2, 0)
+        clear_background = QPushButton("Clear image")
+        clear_background.setIcon(_canvas_icon("delete"))
+        clear_background.clicked.connect(lambda _checked=False: self.canvas.setBackgroundImage(""))
+        background_layout.addWidget(clear_background, 2, 1)
+        layout.addWidget(background)
+        layout.addStretch(1)
+        self._sync_view_controls()
         return page
 
     def _save_tab(self) -> QWidget:
@@ -682,8 +1376,10 @@ class _CanvasEditorToolbox(QDialog):
         session = QGroupBox("Current app session")
         session_layout = QVBoxLayout(session)
         save_session = QPushButton("Save session checkpoint")
+        save_session.setIcon(_canvas_icon("save"))
         save_session.clicked.connect(self.canvas.saveSession)
         restore_session = QPushButton("Restore session checkpoint")
+        restore_session.setIcon(_canvas_icon("refresh"))
         restore_session.clicked.connect(self.canvas.restoreSession)
         session_layout.addWidget(save_session)
         session_layout.addWidget(restore_session)
@@ -692,8 +1388,10 @@ class _CanvasEditorToolbox(QDialog):
         persistent_layout = QVBoxLayout(persistent)
         save_persistent = QPushButton("Save persistent now")
         save_persistent.setObjectName("primaryAction")
+        save_persistent.setIcon(_canvas_icon("save", "#ffffff"))
         save_persistent.clicked.connect(lambda: self.canvas.savePersistent())
         load_persistent = QPushButton("Load persistent data")
+        load_persistent.setIcon(_canvas_icon("folder"))
         load_persistent.clicked.connect(self.canvas.loadPersistent)
         persistent_layout.addWidget(save_persistent)
         persistent_layout.addWidget(load_persistent)
@@ -701,8 +1399,10 @@ class _CanvasEditorToolbox(QDialog):
         history = QGroupBox("History")
         history_layout = QHBoxLayout(history)
         undo = QPushButton("Undo")
+        undo.setIcon(_canvas_icon("undo"))
         undo.clicked.connect(self.canvas.undo)
         redo = QPushButton("Redo")
+        redo.setIcon(_canvas_icon("redo"))
         redo.clicked.connect(self.canvas.redo)
         history_layout.addWidget(undo)
         history_layout.addWidget(redo)
@@ -721,13 +1421,54 @@ class _CanvasEditorToolbox(QDialog):
             self.canvas.addMedia(path, animated=kind == "animated_image")
 
     def _choose_color(self, role: str) -> None:
-        item = self.canvas.element(self.canvas.selectedElementId())
+        item = self.canvas.canvasObject(self.canvas.selectedElementId())
         if item is None:
             return
-        current = item.background if role == "background" else item.text_color if role == "text" else item.color
+        if isinstance(item, _CanvasConnector):
+            current = item.flow_color if role == "flow" else item.color
+        else:
+            current = item.background if role == "background" else item.text_color if role == "text" else item.color
         chosen = QColorDialog.getColor(current, self, f"Choose {role} color")
         if chosen.isValid():
-            self.canvas.setElementColor(item.element_id, chosen, role)
+            if isinstance(item, _CanvasConnector):
+                key = "flowColor" if role == "flow" else "color"
+                self.canvas.updateConnector(item.connector_id, **{key: chosen})
+            else:
+                self.canvas.setElementColor(item.element_id, chosen, role)
+
+    def _choose_grid_color(self) -> None:
+        chosen = QColorDialog.getColor(self.canvas.gridColor, self, "Choose grid color")
+        if chosen.isValid():
+            self.canvas.setGridColor(chosen)
+
+    def _choose_background_color(self) -> None:
+        chosen = QColorDialog.getColor(self.canvas.backgroundColor, self, "Choose canvas background")
+        if chosen.isValid():
+            self.canvas.setBackgroundColor(chosen)
+
+    def _choose_background_image(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Choose canvas background image",
+            self.canvas.getBackgroundImage(),
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp)",
+        )
+        if path:
+            self.canvas.setBackgroundImage(path)
+
+    def _sync_view_controls(self) -> None:
+        widgets = (
+            self._grid_visible_check,
+            self._grid_style_combo,
+            self._background_path,
+            self._background_mode_combo,
+        )
+        blockers = [QSignalBlocker(widget) for widget in widgets]
+        self._grid_visible_check.setChecked(self.canvas.gridVisible)
+        self._grid_style_combo.setCurrentIndex(self.canvas.getGridStyle())
+        self._background_path.setText(self.canvas.getBackgroundImage())
+        self._background_mode_combo.setCurrentIndex(self.canvas.getBackgroundImageMode())
+        del blockers
 
     def _browse_selected_media(self) -> None:
         item = self.canvas.element(self.canvas.selectedElementId())
@@ -744,45 +1485,177 @@ class _CanvasEditorToolbox(QDialog):
         element_id = self.canvas.selectedElementId()
         if not element_id:
             return
+        item = self.canvas.canvasObject(element_id)
+        if item is None:
+            return
         requested_id = self._id_edit.text().strip()
         if requested_id and requested_id != element_id:
-            element_id = self.canvas.renameElement(element_id, requested_id)
-        values = {key: field.value() for key, field in self._number_fields.items()}
-        values.update(text=self._text_edit.text(), source=self._source_edit.text())
-        self.canvas.updateElement(element_id, **values)
+            element_id = (
+                self.canvas.renameConnector(element_id, requested_id)
+                if isinstance(item, _CanvasConnector)
+                else self.canvas.renameElement(element_id, requested_id)
+            )
+        points = self._parse_points(self._points_edit.text())
+        if isinstance(item, _CanvasConnector):
+            source_id = self._source_combo.currentData()
+            target_id = self._target_combo.currentData()
+            if source_id and target_id:
+                self.canvas.reconnectConnector(element_id, str(source_id), str(target_id))
+            self.canvas.updateConnector(
+                element_id,
+                route=self._route_combo.currentText().lower(),
+                lineStyle=self._line_style_combo.currentText().lower(),
+                lineWidth=self._line_width_field.value(),
+                arrowStart=self._arrow_start_check.isChecked(),
+                arrowEnd=self._arrow_end_check.isChecked(),
+                animated=self._animated_check.isChecked(),
+                flowSpeed=self._flow_speed_field.value(),
+                opacity=self._connector_opacity_field.value(),
+                z=self._connector_z_field.value(),
+                waypoints=points,
+            )
+        else:
+            values = {key: field.value() for key, field in self._number_fields.items()}
+            values["text"] = self._text_edit.text()
+            if item.kind in ("image", "animated_image"):
+                values["source"] = self._source_edit.text()
+            if item.kind in ("bar_chart", "line_chart"):
+                values["data"] = self._parse_values(self._data_edit.text())
+            if item.kind in ("line", "polyline"):
+                values.update(
+                    lineStyle=self._line_style_combo.currentText().lower(),
+                    lineWidth=self._line_width_field.value(),
+                    arrowStart=self._arrow_start_check.isChecked(),
+                    arrowEnd=self._arrow_end_check.isChecked(),
+                )
+                if item.kind == "polyline":
+                    values["points"] = points
+            self.canvas.updateElement(element_id, **values)
         self.refreshLayers()
 
     def _sync_inspector(self, element_id: str) -> None:
-        item = self.canvas.element(element_id)
-        widgets = [self._id_edit, self._text_edit, self._source_edit, *self._number_fields.values()]
+        item = self.canvas.canvasObject(element_id)
+        widgets = [
+            self._id_edit, self._text_edit, self._data_edit, self._source_edit,
+            self._source_combo, self._target_combo, self._route_combo,
+            self._line_style_combo, self._line_width_field,
+            self._arrow_start_check, self._arrow_end_check, self._animated_check,
+            self._flow_speed_field, self._connector_opacity_field,
+            self._connector_z_field, self._points_edit, *self._number_fields.values(),
+        ]
         blockers = [QSignalBlocker(widget) for widget in widgets]
         if item is None:
             self._type_label.setText("No selection")
             self._id_edit.clear()
             self._text_edit.clear()
+            self._data_edit.clear()
             self._source_edit.clear()
+            self._content_group.hide()
+            self._geometry_group.hide()
+            self._media_group.hide()
+            self._stroke_group.hide()
+            self._colors_group.hide()
         else:
             self._type_label.setText(item.kind)
             self._id_edit.setText(item.element_id)
-            self._text_edit.setText(item.text)
-            self._source_edit.setText(item.source)
-            values = {
-                "x": item.pos().x(), "y": item.pos().y(),
-                "width": item._rect.width(), "height": item._rect.height(),
-                "rotation": item.rotation(), "opacity": item.opacity(), "z": item.zValue(),
-            }
-            for key, value in values.items():
-                self._number_fields[key].setValue(value)
+            connector = isinstance(item, _CanvasConnector)
+            media = not connector and item.kind in ("image", "animated_image")
+            chart = not connector and item.kind in ("bar_chart", "line_chart")
+            line = not connector and item.kind in ("line", "polyline")
+            content = not connector and item.kind not in (
+                "image", "animated_image", "line", "polyline",
+            )
+            self._content_group.setVisible(content)
+            self._geometry_group.setVisible(not connector)
+            self._media_group.setVisible(media)
+            self._stroke_group.setVisible(connector or line)
+            self._colors_group.show()
+            self._color_buttons["background"].setVisible(not connector and not line)
+            self._color_buttons["text"].setVisible(content)
+            self._color_buttons["flow"].setVisible(connector)
+            self._route_combo.setEnabled(connector)
+            for widget in (self._source_label, self._source_combo, self._target_label, self._target_combo,
+                           self._route_label, self._route_combo, self._animation_label, self._animated_check,
+                           self._flow_speed_label, self._flow_speed_field, self._connector_opacity_label,
+                           self._connector_opacity_field, self._connector_z_label, self._connector_z_field):
+                widget.setVisible(connector)
+            show_points = connector or (line and item.kind == "polyline")
+            self._points_label.setVisible(show_points)
+            self._points_edit.setVisible(show_points)
+            if connector:
+                self._source_combo.clear()
+                self._target_combo.clear()
+                for candidate_id in self.canvas.elements():
+                    candidate = self.canvas.element(candidate_id)
+                    label = f"{candidate_id}  ·  {candidate.kind}"
+                    self._source_combo.addItem(label, candidate_id)
+                    self._target_combo.addItem(label, candidate_id)
+                self._source_combo.setCurrentIndex(self._source_combo.findData(item.source.element_id))
+                self._target_combo.setCurrentIndex(self._target_combo.findData(item.target.element_id))
+                routes = ("bezier", "orthogonal", "straight", "polyline")
+                styles = ("solid", "dash", "dot", "dashdot")
+                self._route_combo.setCurrentIndex(routes.index(item.route) if item.route in routes else 0)
+                self._line_style_combo.setCurrentIndex(styles.index(item.line_style) if item.line_style in styles else 0)
+                self._line_width_field.setValue(item.line_width)
+                self._arrow_start_check.setChecked(item.arrow_start)
+                self._arrow_end_check.setChecked(item.arrow_end)
+                self._animated_check.setChecked(item.animated)
+                self._flow_speed_field.setValue(item.flow_speed)
+                self._connector_opacity_field.setValue(item.opacity())
+                self._connector_z_field.setValue(item.zValue())
+                self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.waypoints]))
+            else:
+                self._text_edit.setText(item.text)
+                self._data_edit.setText(", ".join(str(value) for value in item.data) if chart else "")
+                self._data_label.setVisible(chart)
+                self._data_edit.setVisible(chart)
+                self._source_edit.setText(item.source)
+                values = {
+                    "x": item.pos().x(), "y": item.pos().y(),
+                    "width": item._rect.width(), "height": item._rect.height(),
+                    "rotation": item.rotation(), "opacity": item.opacity(), "z": item.zValue(),
+                }
+                for key, value in values.items():
+                    self._number_fields[key].setValue(value)
+                if line:
+                    styles = ("solid", "dash", "dot", "dashdot")
+                    self._line_style_combo.setCurrentIndex(styles.index(item.line_style) if item.line_style in styles else 0)
+                    self._line_width_field.setValue(item.line_width)
+                    self._arrow_start_check.setChecked(item.arrow_start)
+                    self._arrow_end_check.setChecked(item.arrow_end)
+                    self._animated_check.setChecked(False)
+                    self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.points]))
         del blockers
+
+    @staticmethod
+    def _parse_points(text: str) -> list[list[float]]:
+        if not text.strip():
+            return []
+        values = json.loads(text)
+        if not isinstance(values, list) or any(not isinstance(point, list | tuple) or len(point) != 2 for point in values):
+            raise ValueError("Points must use [[x, y], ...] format")
+        return [[float(point[0]), float(point[1])] for point in values]
+
+    @staticmethod
+    def _parse_values(text: str) -> list[float]:
+        if not text.strip():
+            return []
+        if text.lstrip().startswith("["):
+            values = json.loads(text)
+        else:
+            values = [value.strip() for value in text.split(",")]
+        return [float(value) for value in values]
 
     def refreshLayers(self) -> None:
         if self._syncing_layers:
             return
-        selected = set(self.canvas.selectedElementIds())
+        selected = set(self.canvas.selectedObjectIds())
         blocker = QSignalBlocker(self._layers)
         self._layers.clear()
-        for item in sorted(self.canvas._elements.values(), key=lambda value: value.zValue(), reverse=True):
-            label = QListWidgetItem(f"{item.element_id}  ·  {item.kind}  ·  {item.text}")
+        objects = [*self.canvas._elements.values(), *self.canvas._connectors.values()]
+        for item in sorted(objects, key=lambda value: value.zValue(), reverse=True):
+            description = getattr(item, "text", "")
+            label = QListWidgetItem(f"{item.element_id}  ·  {item.kind}  ·  {description}")
             label.setData(Qt.ItemDataRole.UserRole, item.element_id)
             self._layers.addItem(label)
             if item.element_id in selected:
@@ -831,36 +1704,45 @@ class _CanvasQuickToolbar(QFrame):
         layout.setContentsMargins(7, 6, 7, 6)
         layout.setSpacing(2)
         save = self._button(
-            "Save", lambda _checked=False: canvas.savePersistent(),
-            "Save persistent data now", 54,
+            "", lambda _checked=False: canvas.savePersistent(),
+            "Save project workspace", 36, "save",
         )
         save.setObjectName("quickSave")
         self._separator(layout)
-        self._button("-", canvas.zoomOut, "Zoom out", 28)
-        self._button("100", canvas.resetZoom, "Reset zoom to 100%", 42)
-        self._button("+", canvas.zoomIn, "Zoom in", 28)
-        self._button("Fit", canvas.fitContent, "Fit all items", 38)
+        self._button("", canvas.zoomOut, "Zoom out", 34, "zoom_out")
+        self._button("", canvas.resetZoom, "Reset zoom to 100%", 34, "actual_size")
+        self._button("", canvas.zoomIn, "Zoom in", 34, "zoom_in")
+        self._button("", canvas.fitContent, "Fit all items", 34, "fit")
         self._separator(layout)
         self._align_buttons: list[QToolButton] = []
-        for label, alignment, width in (
-            ("Left", "left", 42), ("H-C", "hcenter", 38), ("Right", "right", 46),
-            ("Top", "top", 38), ("V-C", "vcenter", 38), ("Bottom", "bottom", 56),
-            ("Center", "center", 52),
+        for alignment in (
+            "left", "hcenter", "right", "top", "vcenter", "bottom", "center",
         ):
             button = self._button(
-                label,
+                "",
                 lambda _checked=False, value=alignment: canvas.alignSelected(value),
-                width=width,
+                f"Align selected items: {alignment}",
+                34,
+                f"align_{alignment}",
             )
-            button.setToolTip(f"Align selected items: {alignment}")
             self._align_buttons.append(button)
         canvas.selectionSetChanged.connect(self._update_alignment_state)
         self._update_alignment_state(canvas.selectedElementIds())
 
-    def _button(self, label: str, callback, tooltip: str = "", width: int | None = None) -> QToolButton:
+    def _button(
+        self,
+        label: str,
+        callback,
+        tooltip: str = "",
+        width: int | None = None,
+        icon: str = "",
+    ) -> QToolButton:
         button = QToolButton(self)
         button.setText(label)
         button.setToolTip(tooltip or label)
+        if icon:
+            button.setIcon(_canvas_icon(icon, "#ffffff" if icon == "save" else "#475569"))
+            button.setIconSize(QSize(18, 18))
         if width is not None:
             button.setFixedWidth(width)
         button.clicked.connect(callback)
@@ -875,7 +1757,7 @@ class _CanvasQuickToolbar(QFrame):
         layout.addWidget(line)
 
     def _update_alignment_state(self, element_ids: list[str]) -> None:
-        enabled = len(element_ids) >= 2
+        enabled = len([element_id for element_id in element_ids if element_id in self.canvas._elements]) >= 2
         for button in self._align_buttons:
             button.setEnabled(enabled)
 
@@ -939,7 +1821,7 @@ class _CanvasView(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
         item = self.itemAt(event.position().toPoint())
-        if isinstance(item, _CanvasElement):
+        if isinstance(item, (_CanvasElement, _CanvasConnector)):
             self.canvas.elementClicked.emit(item.element_id)
 
     def dragEnterEvent(self, event) -> None:
@@ -985,6 +1867,8 @@ class MonkezCanva(QWidget):
     editModeChanged = pyqtSignal(bool)
     elementAdded = pyqtSignal(str)
     elementRemoved = pyqtSignal(str)
+    connectorAdded = pyqtSignal(str)
+    connectorRemoved = pyqtSignal(str)
     elementClicked = pyqtSignal(str)
     selectionChanged = pyqtSignal(str)
     selectionSetChanged = pyqtSignal(list)
@@ -1002,11 +1886,17 @@ class MonkezCanva(QWidget):
         self._grid_visible = True
         self._snap_to_grid = True
         self._grid_size = 20
+        self._grid_style = 0
+        self._background_image = ""
+        self._background_image_mode = 0
+        self._background_pixmap = QPixmap()
+        self._project_directory = ""
         self._edit_mode = False
         self._shortcut_enabled = True
         self._fit_pending = False
         self._pan_mode = False
         self._persistent_key = ""
+        self._persistent_auto_load_attempted = False
         self._auto_save_enabled = True
         self._auto_save_delay = 500
         self._session_document: dict[str, Any] | None = None
@@ -1071,11 +1961,15 @@ class MonkezCanva(QWidget):
     def element(self, element_id: str) -> _CanvasElement | None:
         return self._elements.get(str(element_id))
 
+    def canvasObject(self, object_id: str) -> _CanvasElement | _CanvasConnector | None:
+        key = str(object_id)
+        return self._elements.get(key) or self._connectors.get(key)
+
     def elements(self) -> list[str]:
         return list(self._elements)
 
     def selectedElementId(self) -> str:
-        selected = self.selectedElementIds()
+        selected = self.selectedObjectIds()
         return selected[0] if selected else ""
 
     def selectedElementIds(self) -> list[str]:
@@ -1084,6 +1978,15 @@ class MonkezCanva(QWidget):
             for element_id, item in self._elements.items()
             if item.isSelected()
         ]
+
+    def selectedObjectIds(self) -> list[str]:
+        selected = self.selectedElementIds()
+        selected.extend(
+            connector_id
+            for connector_id, connector in self._connectors.items()
+            if connector.isSelected()
+        )
+        return selected
 
     def addElement(
         self,
@@ -1100,8 +2003,8 @@ class MonkezCanva(QWidget):
             raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
         default_width, default_height = _ELEMENT_DEFAULTS[kind]
         element_id = str(element_id or uuid.uuid4().hex[:10])
-        if element_id in self._elements:
-            raise ValueError(f"Duplicate MonkezCanva element id: {element_id}")
+        if element_id in self._elements or element_id in self._connectors:
+            raise ValueError(f"Duplicate MonkezCanva object id: {element_id}")
         item = _CanvasElement(element_id, kind, width or default_width, height or default_height, options)
         center = self._view.mapToScene(self._view.viewport().rect().center())
         item.setPos(center.x() - item._rect.width() / 2 if x is None else x, center.y() - item._rect.height() / 2 if y is None else y)
@@ -1121,6 +2024,13 @@ class MonkezCanva(QWidget):
 
     def addNode(self, text: str, x: float = 0, y: float = 0, **options) -> str:
         return self.addElement("node", x, y, text=text, **options)
+
+    def addLine(self, x: float = 0, y: float = 0, **options) -> str:
+        return self.addElement("line", x, y, **options)
+
+    def addPolyline(self, points, x: float = 0, y: float = 0, **options) -> str:
+        options["points"] = [[float(point[0]), float(point[1])] for point in points]
+        return self.addElement("polyline", x, y, **options)
 
     def addChart(self, values, chart_type: str = "bar", x: float = 0, y: float = 0, **options) -> str:
         kind = "line_chart" if str(chart_type).lower() == "line" else "bar_chart"
@@ -1143,7 +2053,7 @@ class MonkezCanva(QWidget):
         return self.addElement(kind, x, y, source=source, **options)
 
     def selectElement(self, element_id: str, additive: bool = False) -> bool:
-        item = self._elements.get(str(element_id))
+        item = self.canvasObject(str(element_id))
         if item is None:
             return False
         if not additive:
@@ -1164,7 +2074,7 @@ class MonkezCanva(QWidget):
             return []
         selected = []
         for element_id in requested:
-            item = self._elements.get(element_id)
+            item = self.canvasObject(element_id)
             if item is not None:
                 item.setSelected(True)
                 selected.append(element_id)
@@ -1239,8 +2149,8 @@ class MonkezCanva(QWidget):
         requested = str(new_id).strip()
         if not requested:
             raise ValueError("MonkezCanva item ID cannot be empty")
-        if requested != element_id and requested in self._elements:
-            raise ValueError(f"Duplicate MonkezCanva element id: {requested}")
+        if requested != element_id and (requested in self._elements or requested in self._connectors):
+            raise ValueError(f"Duplicate MonkezCanva object id: {requested}")
         if requested == element_id:
             return requested
         self._elements.pop(element_id)
@@ -1275,15 +2185,35 @@ class MonkezCanva(QWidget):
             item.setZValue(float(values["z"]))
         if "metadata" in values:
             item.metadata = dict(values["metadata"])
+        if "data" in values:
+            item.data = list(values["data"])
+        if "lineWidth" in values:
+            item.line_width = max(0.5, float(values["lineWidth"]))
+        if "lineStyle" in values:
+            item.line_style = str(values["lineStyle"]).lower()
+        if "arrowStart" in values:
+            item.arrow_start = bool(values["arrowStart"])
+        if "arrowEnd" in values:
+            item.arrow_end = bool(values["arrowEnd"])
+        if "points" in values:
+            item.points = [QPointF(float(point[0]), float(point[1])) for point in values["points"]]
         item.update()
         item.changed.emit(item.element_id)
         self.documentChanged.emit()
         return self
 
     def duplicateSelected(self) -> str:
-        item = self.element(self.selectedElementId())
+        item = self.canvasObject(self.selectedElementId())
         if item is None:
             return ""
+        if isinstance(item, _CanvasConnector):
+            values = item.to_dict()
+            values.pop("id", None)
+            values.pop("type", None)
+            source_id = values.pop("source")
+            target_id = values.pop("target")
+            color = values.pop("color")
+            return self.connectElements(source_id, target_id, color, **values)
         values = item.to_dict()
         values.pop("id", None)
         kind = values.pop("type")
@@ -1294,28 +2224,166 @@ class MonkezCanva(QWidget):
         return self.addElement(kind, x, y, width, height, **values)
 
     def bringSelectedToFront(self) -> None:
-        item = self.element(self.selectedElementId())
+        item = self.canvasObject(self.selectedElementId())
         if item is not None:
-            item.setZValue(max((entry.zValue() for entry in self._elements.values()), default=0) + 1)
+            objects = [*self._elements.values(), *self._connectors.values()]
+            item.setZValue(max((entry.zValue() for entry in objects), default=0) + 1)
             self.documentChanged.emit()
 
     def sendSelectedToBack(self) -> None:
-        item = self.element(self.selectedElementId())
+        item = self.canvasObject(self.selectedElementId())
         if item is not None:
-            item.setZValue(min((entry.zValue() for entry in self._elements.values()), default=0) - 1)
+            objects = [*self._elements.values(), *self._connectors.values()]
+            item.setZValue(min((entry.zValue() for entry in objects), default=0) - 1)
             self.documentChanged.emit()
 
-    def connectElements(self, source_id: str, target_id: str, color: Any = "#64748b", connector_id: str | None = None) -> str:
+    def connectElements(
+        self,
+        source_id: str,
+        target_id: str,
+        color: Any = "#64748b",
+        connector_id: str | None = None,
+        **options,
+    ) -> str:
         source = self._elements.get(str(source_id))
         target = self._elements.get(str(target_id))
         if source is None or target is None:
             raise KeyError("Both connector endpoints must exist")
         connector_id = str(connector_id or uuid.uuid4().hex[:10])
-        connector = _CanvasConnector(connector_id, source, target, color)
+        if connector_id in self._connectors or connector_id in self._elements:
+            raise ValueError(f"Duplicate MonkezCanva object id: {connector_id}")
+        options.setdefault("color", color)
+        connector = _CanvasConnector(self, connector_id, source, target, options)
+        connector.changed.connect(self._connector_changed)
         self._scene.addItem(connector)
         self._connectors[connector_id] = connector
+        self.connectorAdded.emit(connector_id)
         self.documentChanged.emit()
         return connector_id
+
+    def connectSelected(self, **options) -> str:
+        """Connect exactly two selected elements and select the new connector."""
+        selected = self.selectedElementIds()
+        if len(selected) != 2:
+            self.diagnosticMessage.emit("Select exactly two elements to create a connector")
+            return ""
+        connector_id = self.connectElements(selected[0], selected[1], **options)
+        if self._edit_mode:
+            self._scene.clearSelection()
+            self._connectors[connector_id].setSelected(True)
+        return connector_id
+
+    def reconnectConnector(
+        self,
+        connector_id: str,
+        source_id: str,
+        target_id: str,
+    ) -> "MonkezCanva":
+        """Change connector endpoints while preserving its ID and visual settings."""
+        connector = self._required_connector(connector_id)
+        source = self._required_element(source_id)
+        target = self._required_element(target_id)
+        if connector.source is source and connector.target is target:
+            return self
+        for endpoint in (connector.source, connector.target):
+            try:
+                endpoint.changed.disconnect(connector.updatePath)
+            except TypeError:
+                pass
+        connector.source = source
+        connector.target = target
+        source.changed.connect(connector.updatePath)
+        target.changed.connect(connector.updatePath)
+        connector.updatePath()
+        connector.changed.emit(connector.connector_id)
+        return self
+
+    def connector(self, connector_id: str) -> _CanvasConnector | None:
+        return self._connectors.get(str(connector_id))
+
+    def connectors(self) -> list[str]:
+        return list(self._connectors)
+
+    def updateConnector(self, connector_id: str, **values) -> "MonkezCanva":
+        connector = self._required_connector(connector_id)
+        if "route" in values:
+            route = str(values["route"]).lower()
+            if route not in ("bezier", "orthogonal", "straight", "polyline"):
+                raise ValueError(f"Unsupported connector route: {route}")
+            connector.route = route
+        if "lineStyle" in values:
+            style = str(values["lineStyle"]).lower()
+            if style not in ("solid", "dash", "dot", "dashdot"):
+                raise ValueError(f"Unsupported connector line style: {style}")
+            connector.line_style = style
+        if "lineWidth" in values:
+            connector.line_width = max(0.5, float(values["lineWidth"]))
+        if "color" in values:
+            connector.color = _color(values["color"], "#64748b")
+        if "flowColor" in values:
+            connector.flow_color = _color(values["flowColor"], "#38bdf8")
+        if "arrowStart" in values:
+            connector.arrow_start = bool(values["arrowStart"])
+        if "arrowEnd" in values:
+            connector.arrow_end = bool(values["arrowEnd"])
+        if "animated" in values:
+            connector.animated = bool(values["animated"])
+        if "flowSpeed" in values:
+            connector.flow_speed = max(0.1, float(values["flowSpeed"]))
+        if "waypoints" in values:
+            connector.waypoints = [QPointF(float(point[0]), float(point[1])) for point in values["waypoints"]]
+        if "opacity" in values:
+            connector.setOpacity(max(0.0, min(1.0, float(values["opacity"]))))
+        if "z" in values:
+            connector.setZValue(float(values["z"]))
+        if "metadata" in values:
+            connector.metadata = dict(values["metadata"])
+        connector.updatePath()
+        connector._sync_animation()
+        connector.changed.emit(connector.connector_id)
+        return self
+
+    def animateConnector(
+        self,
+        connector_id: str,
+        enabled: bool = True,
+        speed: float = 1.0,
+        color: Any = "#38bdf8",
+    ) -> "MonkezCanva":
+        return self.updateConnector(
+            connector_id,
+            animated=enabled,
+            flowSpeed=speed,
+            flowColor=color,
+        )
+
+    def renameConnector(self, connector_id: str, new_id: str) -> str:
+        connector = self._required_connector(connector_id)
+        requested = str(new_id).strip()
+        if not requested:
+            raise ValueError("MonkezCanva connector ID cannot be empty")
+        if requested != connector_id and (requested in self._connectors or requested in self._elements):
+            raise ValueError(f"Duplicate MonkezCanva object id: {requested}")
+        if requested == connector_id:
+            return requested
+        self._connectors.pop(connector_id)
+        connector.connector_id = requested
+        connector.element_id = requested
+        self._connectors[requested] = connector
+        self.itemIdChanged.emit(connector_id, requested)
+        self.documentChanged.emit()
+        return requested
+
+    def removeConnector(self, connector_id: str) -> bool:
+        connector = self._connectors.pop(str(connector_id), None)
+        if connector is None:
+            return False
+        connector.release()
+        self._scene.removeItem(connector)
+        connector.deleteLater()
+        self.connectorRemoved.emit(str(connector_id))
+        self.documentChanged.emit()
+        return True
 
     def setElementColor(self, element_id: str, color: Any, role: str = "accent") -> "MonkezCanva":
         item = self._required_element(element_id)
@@ -1377,6 +2445,8 @@ class MonkezCanva(QWidget):
         for item in list(self._scene.selectedItems()):
             if isinstance(item, _CanvasElement):
                 self.removeElement(item.element_id)
+            elif isinstance(item, _CanvasConnector):
+                self.removeConnector(item.connector_id)
 
     def removeElement(self, element_id: str) -> bool:
         item = self._elements.pop(str(element_id), None)
@@ -1385,7 +2455,10 @@ class MonkezCanva(QWidget):
         attached = [key for key, connector in self._connectors.items() if item in (connector.source, connector.target)]
         for key in attached:
             connector = self._connectors.pop(key)
+            connector.release()
             self._scene.removeItem(connector)
+            connector.deleteLater()
+            self.connectorRemoved.emit(key)
         item.releaseMedia()
         self._scene.removeItem(item)
         item.deleteLater()
@@ -1401,7 +2474,18 @@ class MonkezCanva(QWidget):
         return {
             "format": "monkez-canva",
             "version": 1,
-            "scene": {"width": self._scene.sceneRect().width(), "height": self._scene.sceneRect().height()},
+            "scene": {
+                "width": self._scene.sceneRect().width(),
+                "height": self._scene.sceneRect().height(),
+                "gridVisible": self._grid_visible,
+                "snapToGrid": self._snap_to_grid,
+                "gridSize": self._grid_size,
+                "gridStyle": self._grid_style,
+                "gridColor": self._grid_color.name(QColor.NameFormat.HexArgb),
+                "backgroundColor": self._background_color.name(QColor.NameFormat.HexArgb),
+                "backgroundImage": self._background_image,
+                "backgroundImageMode": self._background_image_mode,
+            },
             "elements": [item.to_dict() for item in self._elements.values()],
             "connectors": [item.to_dict() for item in self._connectors.values()],
         }
@@ -1416,17 +2500,59 @@ class MonkezCanva(QWidget):
         return target
 
     def persistentPath(self) -> Path:
-        root = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
         key = self._persistent_key or self.objectName() or "monkez_canva"
         safe_key = "".join(character if character.isalnum() or character in "-_." else "_" for character in key)
-        return root / "monkez_canva" / f"{safe_key}.json"
+        return self.projectDirectoryPath() / ".monkez_canva" / f"{safe_key}.json"
+
+    def projectDirectoryPath(self) -> Path:
+        if self._project_directory:
+            return Path(self._project_directory).expanduser().resolve()
+        configured = os.environ.get("MONKEZ_CANVA_PROJECT_DIR", "").strip()
+        if configured:
+            return Path(configured).expanduser().resolve()
+        candidates = [Path.cwd()]
+        if sys.argv and sys.argv[0]:
+            candidates.append(Path(sys.argv[0]).expanduser().resolve().parent)
+        markers = (".git", "pyproject.toml", "setup.py", "requirements.txt")
+        for candidate in candidates:
+            for directory in (candidate, *candidate.parents):
+                if any((directory / marker).exists() for marker in markers):
+                    return directory
+        return Path.cwd().resolve()
+
+    def legacyPersistentPath(self) -> Path:
+        root = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
+        return root / "monkez_canva" / self.persistentPath().name
+
+    def setProjectDirectory(self, path: str | Path) -> "MonkezCanva":
+        self._project_directory = str(Path(path).expanduser().resolve()) if str(path).strip() else ""
+        self._persistent_auto_load_attempted = False
+        if self._persistent_key:
+            QTimer.singleShot(0, self._auto_load_persistent)
+        return self
+
+    def getProjectDirectory(self) -> str:
+        return str(self.projectDirectoryPath())
 
     def setPersistenceKey(self, key: str) -> "MonkezCanva":
         self._persistent_key = str(key).strip()
+        self._persistent_auto_load_attempted = False
+        if self._persistent_key:
+            QTimer.singleShot(0, self._auto_load_persistent)
         return self
 
     def getPersistenceKey(self) -> str:
         return self._persistent_key
+
+    def _auto_load_persistent(self) -> None:
+        if self._persistent_auto_load_attempted or not self._persistent_key:
+            return
+        self._persistent_auto_load_attempted = True
+        if self._elements or self._connectors:
+            self.diagnosticMessage.emit("Portable auto-load skipped: canvas already contains objects")
+            return
+        if self.persistentPath().is_file() or self.legacyPersistentPath().is_file():
+            self.loadPersistent()
 
     def saveSession(self) -> dict[str, Any]:
         self._session_document = json.loads(self.toJson(indent=None))
@@ -1449,15 +2575,16 @@ class MonkezCanva(QWidget):
             source_text = str(entry.get("source", ""))
             if entry.get("type") not in ("image", "animated_image") or not source_text:
                 continue
-            source = Path(source_text)
-            if not source.is_file():
-                continue
             safe_id = "".join(character if character.isalnum() or character in "-_" else "_" for character in str(entry["id"]))
-            destination = assets / f"{safe_id}-{source.name}"
-            assets.mkdir(parents=True, exist_ok=True)
-            if source.resolve() != destination.resolve():
-                shutil.copy2(source, destination)
-            entry["source"] = str(destination)
+            managed = self._copy_managed_asset(source_text, safe_id, target, assets)
+            if managed:
+                entry["source"] = managed
+        scene = payload.setdefault("scene", {})
+        background_image = str(scene.get("backgroundImage", ""))
+        if background_image:
+            managed = self._copy_managed_asset(background_image, "background", target, assets)
+            if managed:
+                scene["backgroundImage"] = managed
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         self.persistentSaved.emit(str(target))
         self.autoSaved.emit(str(target))
@@ -1466,12 +2593,45 @@ class MonkezCanva(QWidget):
     def loadPersistent(self) -> bool:
         source = self.persistentPath()
         if not source.is_file():
-            self.diagnosticMessage.emit(f"Persistent document not found: {source}")
-            return False
-        self._restore_document(json.loads(source.read_text(encoding="utf-8")))
+            legacy = self.legacyPersistentPath()
+            if legacy.is_file():
+                source = legacy
+                self.diagnosticMessage.emit(f"Migrating legacy persistent document: {legacy}")
+            else:
+                self.diagnosticMessage.emit(f"Persistent document not found: {source}")
+                return False
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        for entry in payload.get("elements", []):
+            media = str(entry.get("source", ""))
+            if media and not Path(media).is_absolute():
+                entry["source"] = str((source.parent / Path(media)).resolve())
+        scene = payload.get("scene", {})
+        background_image = str(scene.get("backgroundImage", ""))
+        if background_image and not Path(background_image).is_absolute():
+            scene["backgroundImage"] = str((source.parent / Path(background_image)).resolve())
+        self._restore_document(payload)
+        if source != self.persistentPath():
+            self.savePersistent()
         self.persistentLoaded.emit(str(source))
         self.autoSaved.emit(f"loaded {source}")
         return True
+
+    @staticmethod
+    def _copy_managed_asset(source_text: str, asset_id: str, target: Path, assets: Path) -> str:
+        source = Path(source_text).expanduser()
+        if not source.is_file():
+            return ""
+        try:
+            source.resolve().relative_to(assets.resolve())
+            return source.resolve().relative_to(target.parent.resolve()).as_posix()
+        except ValueError:
+            pass
+        safe_name = "".join(character if character.isalnum() or character in "-_." else "_" for character in source.name)
+        destination = assets / f"{asset_id}-{safe_name}"
+        assets.mkdir(parents=True, exist_ok=True)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        return destination.relative_to(target.parent).as_posix()
 
     def setAutoSaveEnabled(self, enabled: bool) -> None:
         self._auto_save_enabled = bool(enabled)
@@ -1556,6 +2716,22 @@ class MonkezCanva(QWidget):
             raise ValueError("Unsupported MonkezCanva document")
         previous = self._restoring
         self._restoring = True
+        scene = data.get("scene", {})
+        width = max(100.0, float(scene.get("width", self._scene.sceneRect().width())))
+        height = max(100.0, float(scene.get("height", self._scene.sceneRect().height())))
+        self._scene.setSceneRect(-width / 2, -height / 2, width, height)
+        self._grid_visible = bool(scene.get("gridVisible", self._grid_visible))
+        self._snap_to_grid = bool(scene.get("snapToGrid", self._snap_to_grid))
+        self._grid_size = max(4, int(scene.get("gridSize", self._grid_size)))
+        self._grid_style = max(0, min(len(_GRID_STYLES) - 1, int(scene.get("gridStyle", self._grid_style))))
+        self._grid_color = _color(scene.get("gridColor", self._grid_color), "#e2e8f0")
+        self._background_color = _color(scene.get("backgroundColor", self._background_color), "#f8fafc")
+        self._background_image = str(scene.get("backgroundImage", ""))
+        self._background_image_mode = max(
+            0,
+            min(len(_BACKGROUND_IMAGE_MODES) - 1, int(scene.get("backgroundImageMode", 0))),
+        )
+        self._background_pixmap = QPixmap(self._background_image) if self._background_image else QPixmap()
         self.clear()
         for entry in data.get("elements", []):
             values = dict(entry)
@@ -1567,8 +2743,15 @@ class MonkezCanva(QWidget):
             height = values.pop("height", None)
             self.addElement(kind, x, y, width, height, element_id, **values)
         for entry in data.get("connectors", []):
-            self.connectElements(entry["source"], entry["target"], entry.get("color", "#64748b"), entry.get("id"))
+            values = dict(entry)
+            source_id = values.pop("source")
+            target_id = values.pop("target")
+            connector_id = values.pop("id", None)
+            values.pop("type", None)
+            color = values.pop("color", "#64748b")
+            self.connectElements(source_id, target_id, color, connector_id, **values)
         self._restoring = previous
+        self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         if not previous:
             self.documentChanged.emit()
 
@@ -1628,7 +2811,7 @@ class MonkezCanva(QWidget):
         self._view.centerOn(center + QPointF(float(dx), float(dy)))
 
     def centerOnSelection(self) -> bool:
-        item = self.element(self.selectedElementId())
+        item = self.canvasObject(self.selectedElementId())
         if item is None:
             return False
         self._view.centerOn(item)
@@ -1663,6 +2846,8 @@ class MonkezCanva(QWidget):
         self._edit_mode = enabled
         for item in self._elements.values():
             item.setEditable(enabled)
+        for connector in self._connectors.values():
+            connector.setEditable(enabled)
         if enabled:
             self._place_quick_toolbar()
             self._quick_toolbar.show()
@@ -1724,41 +2909,117 @@ class MonkezCanva(QWidget):
         return self._grid_visible
 
     def setGridVisible(self, visible: bool) -> None:
-        self._grid_visible = bool(visible)
+        visible = bool(visible)
+        if visible == self._grid_visible:
+            return
+        self._grid_visible = visible
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
 
     def getSnapToGrid(self) -> bool:
         return self._snap_to_grid
 
     def setSnapToGrid(self, enabled: bool) -> None:
-        self._snap_to_grid = bool(enabled)
+        enabled = bool(enabled)
+        if enabled == self._snap_to_grid:
+            return
+        self._snap_to_grid = enabled
+        self.documentChanged.emit()
 
     def getGridSize(self) -> int:
         return self._grid_size
 
     def setGridSize(self, size: int) -> None:
-        self._grid_size = max(4, int(size))
+        size = max(4, int(size))
+        if size == self._grid_size:
+            return
+        self._grid_size = size
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
+
+    def getGridStyle(self) -> int:
+        return self._grid_style
+
+    def setGridStyle(self, style: int | str) -> None:
+        if isinstance(style, str):
+            normalized = style.lower().strip()
+            if normalized not in _GRID_STYLES:
+                raise ValueError(f"Unsupported MonkezCanva grid style: {style}")
+            index = _GRID_STYLES.index(normalized)
+        else:
+            index = max(0, min(len(_GRID_STYLES) - 1, int(style)))
+        if index == self._grid_style:
+            return
+        self._grid_style = index
+        self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
 
     def getBackgroundColor(self) -> QColor:
         return QColor(self._background_color)
 
     def setBackgroundColor(self, value: Any) -> None:
-        self._background_color = _color(value, "#f8fafc")
+        color = _color(value, "#f8fafc")
+        if color == self._background_color:
+            return
+        self._background_color = color
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
+
+    def getBackgroundImage(self) -> str:
+        return self._background_image
+
+    def setBackgroundImage(self, path: str | Path) -> None:
+        text = str(path).strip()
+        source = str(Path(text).expanduser().resolve()) if text else ""
+        if source == self._background_image:
+            return
+        pixmap = QPixmap(source) if source else QPixmap()
+        if source and pixmap.isNull():
+            raise ValueError(f"Unsupported canvas background image: {source}")
+        self._background_image = source
+        self._background_pixmap = pixmap
+        self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
+
+    def getBackgroundImageMode(self) -> int:
+        return self._background_image_mode
+
+    def setBackgroundImageMode(self, mode: int | str) -> None:
+        if isinstance(mode, str):
+            normalized = mode.lower().strip()
+            if normalized not in _BACKGROUND_IMAGE_MODES:
+                raise ValueError(f"Unsupported canvas background image mode: {mode}")
+            index = _BACKGROUND_IMAGE_MODES.index(normalized)
+        else:
+            index = max(0, min(len(_BACKGROUND_IMAGE_MODES) - 1, int(mode)))
+        if index == self._background_image_mode:
+            return
+        self._background_image_mode = index
+        self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
 
     def getGridColor(self) -> QColor:
         return QColor(self._grid_color)
 
     def setGridColor(self, value: Any) -> None:
-        self._grid_color = _color(value, "#e2e8f0")
+        color = _color(value, "#e2e8f0")
+        if color == self._grid_color:
+            return
+        self._grid_color = color
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
+        self.documentChanged.emit()
 
     def _required_element(self, element_id: str) -> _CanvasElement:
         item = self._elements.get(str(element_id))
         if item is None:
             raise KeyError(f"Unknown MonkezCanva element: {element_id}")
         return item
+
+    def _required_connector(self, connector_id: str) -> _CanvasConnector:
+        connector = self._connectors.get(str(connector_id))
+        if connector is None:
+            raise KeyError(f"Unknown MonkezCanva connector: {connector_id}")
+        return connector
 
     def _clear_highlight(self, item: _CanvasElement) -> None:
         if item.element_id in self._elements:
@@ -1768,8 +3029,11 @@ class MonkezCanva(QWidget):
     def _element_changed(self, _element_id: str) -> None:
         self.documentChanged.emit()
 
+    def _connector_changed(self, _connector_id: str) -> None:
+        self.documentChanged.emit()
+
     def _emit_selection(self) -> None:
-        element_ids = self.selectedElementIds()
+        element_ids = self.selectedObjectIds()
         self.selectionChanged.emit(element_ids[0] if element_ids else "")
         self.selectionSetChanged.emit(element_ids)
 
@@ -1778,9 +3042,13 @@ class MonkezCanva(QWidget):
     gridVisible = pyqtProperty(bool, getGridVisible, setGridVisible)
     snapToGrid = pyqtProperty(bool, getSnapToGrid, setSnapToGrid)
     gridSize = pyqtProperty(int, getGridSize, setGridSize)
+    gridStyle = pyqtProperty(int, getGridStyle, setGridStyle)
     backgroundColor = pyqtProperty(QColor, getBackgroundColor, setBackgroundColor)
+    backgroundImage = pyqtProperty(str, getBackgroundImage, setBackgroundImage)
+    backgroundImageMode = pyqtProperty(int, getBackgroundImageMode, setBackgroundImageMode)
     gridColor = pyqtProperty(QColor, getGridColor, setGridColor)
     persistenceKey = pyqtProperty(str, getPersistenceKey, setPersistenceKey)
+    projectDirectory = pyqtProperty(str, getProjectDirectory, setProjectDirectory)
     autoSaveEnabled = pyqtProperty(bool, getAutoSaveEnabled, setAutoSaveEnabled)
     autoSaveDelay = pyqtProperty(int, getAutoSaveDelay, setAutoSaveDelay)
 

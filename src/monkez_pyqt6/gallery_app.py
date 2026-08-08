@@ -161,16 +161,20 @@ WIDGET_DOCS: tuple[WidgetDoc, ...] = (
         "Canvas editor cho dashboard, chart va flow diagram; Ctrl+D roi E de bat/tat edit mode.",
         (
             "editMode, editorShortcutEnabled",
-            "gridVisible, snapToGrid, gridSize",
-            "backgroundColor, gridColor",
-            "persistenceKey, autoSaveEnabled, autoSaveDelay",
+            "gridVisible, snapToGrid, gridSize, gridStyle",
+            "backgroundColor, backgroundImage, backgroundImageMode, gridColor",
+            "persistenceKey, projectDirectory, autoSaveEnabled, autoSaveDelay",
         ),
         (
             "addElement(type, x, y)", "addNode(text, x, y)", "addChart(values, type)",
+            "addLine(x, y)", "addPolyline(points, x, y)",
             "addMedia(path)", "renameElement(id, new_id)", "updateElement(id, **values)",
-            "selectElements(ids)", "selectedElementIds()", "alignSelected(edge)",
-            "connectElements(source, target)", "setElementColor(id, color)",
+            "selectElements(ids)", "selectedObjectIds()", "alignSelected(edge)",
+            "connectElements(source, target, **style)", "connectSelected()",
+            "updateConnector(id, **values)", "animateConnector(id, enabled)",
+            "reconnectConnector(id, source, target)", "setElementColor(id, color)",
             "saveSession()", "savePersistent()", "undo()", "redo()",
+            "setGridStyle(style)", "setBackgroundImage(path)",
             "fitContent()", "zoomIn()", "zoomOut()", "moveViewport(dx, dy)",
         ),
         "canvas = MonkezCanva(); a = canvas.addNode('Input'); b = canvas.addNode('Output', 240, 0); canvas.connectElements(a, b)",
@@ -478,6 +482,7 @@ WIDGET_METHOD_PROBES: dict[str, tuple[WidgetMethodProbe, ...]] = {
         ("addChart(values, type)", "Insert a bar or line chart.", 'addChart([20, 60, 45], "line")', lambda widget: widget.addChart([20, 60, 45], "line")),
         ("setEditMode(value)", "Show or hide the runtime editing toolbox.", "setEditMode(False)", lambda widget: widget.setEditMode(False)),
         ("setGridVisible(value)", "Show or hide the canvas grid.", "setGridVisible(False)", lambda widget: widget.setGridVisible(False)),
+        ("setGridStyle(style)", "Choose lines, dots or cross grid.", 'setGridStyle("dots")', lambda widget: widget.setGridStyle("dots")),
         ("fitContent()", "Fit every element inside the viewport.", "fitContent()", lambda widget: widget.fitContent()),
         ("zoomIn()", "Zoom the canvas viewport in.", "zoomIn()", lambda widget: widget.zoomIn()),
         ("zoomOut()", "Zoom the canvas viewport out.", "zoomOut()", lambda widget: widget.zoomOut()),
@@ -1858,8 +1863,11 @@ def _canva_preview() -> QWidget:
     source = widget.addNode("Camera", -180, -45, color="#2563eb")
     target = widget.addNode("Detection", 70, -45, color="#7c3aed")
     chart = widget.addChart([28, 64, 48, 82, 70], "line", 330, -75, text="Confidence")
-    widget.connectElements(source, target)
-    widget.connectElements(target, chart)
+    widget.connectElements(
+        source, target, route="orthogonal", arrowEnd=True,
+        animated=True, flowColor="#38bdf8",
+    )
+    widget.connectElements(target, chart, route="bezier", arrowStart=True, arrowEnd=True)
     widget.setMinimumSize(620, 300)
     widget.fitContent()
     return widget

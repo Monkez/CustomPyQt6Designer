@@ -39,10 +39,12 @@ def main() -> int:
     canvas.diagnosticMessage.connect(logger.info)
     canvas.editModeChanged.connect(lambda enabled: logger.info("editModeChanged -> %s", enabled))
     canvas.elementAdded.connect(lambda element_id: logger.info("elementAdded -> %s", element_id))
+    canvas.connectorAdded.connect(lambda connector_id: logger.info("connectorAdded -> %s", connector_id))
     canvas.elementClicked.connect(lambda element_id: logger.info("elementClicked -> %s", element_id))
     canvas.autoSaved.connect(lambda target: logger.info("autoSaved -> %s", target))
     canvas.persistentSaved.connect(lambda path: logger.info("persistentSaved -> %s", path))
     canvas.setPersistenceKey("demo-workspace")
+    logger.info("Portable project workspace: %s", canvas.persistentPath())
 
     if not canvas.loadPersistent():
         camera = canvas.addNode("Camera", -360, -50, color="#0ea5e9", element_id="camera")
@@ -52,9 +54,24 @@ def main() -> int:
             [28, 56, 44, 78, 66, 88], "line", 450, -80,
             text="Confidence", color="#16a34a", element_id="confidence-chart",
         )
-        canvas.connectElements(camera, detector, connector_id="camera-to-detector")
-        canvas.connectElements(detector, decision, connector_id="detector-to-decision")
-        canvas.connectElements(decision, chart, connector_id="decision-to-chart")
+        canvas.connectElements(
+            camera, detector, connector_id="camera-to-detector",
+            route="bezier", arrowEnd=True, animated=True,
+            flowColor="#38bdf8", flowSpeed=1.3,
+        )
+        canvas.connectElements(
+            detector, decision, connector_id="detector-to-decision",
+            route="orthogonal", lineStyle="dash", arrowEnd=True,
+        )
+        canvas.connectElements(
+            decision, chart, connector_id="decision-to-chart",
+            route="straight", arrowStart=True, arrowEnd=True,
+        )
+        canvas.addLine(-280, 190, element_id="signal-line", arrowEnd=True, text="Signal")
+        canvas.addPolyline(
+            [[0, 80], [90, 10], [190, 90]], 80, 190,
+            element_id="pipeline", lineWidth=4, arrowEnd=True,
+        )
     canvas.elementClicked.connect(lambda element_id: canvas.highlightElement(element_id))
     window.resize(1180, 680)
     window.show()

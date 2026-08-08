@@ -40,7 +40,9 @@ chọn.
 
 Control pane là cửa sổ tool không viền, kích thước gọn, có shadow, header kéo được,
 tab tự co đều và nút đóng Edit Mode riêng. Pane dùng chung visual language cho card,
-input, layer row, trạng thái lưu và action chính/nguy hiểm.
+input, layer row, trạng thái lưu và action chính/nguy hiểm. Badge chữ `EDIT` đã được
+bỏ; mọi action trong pane và floatbar dùng icon vector DPI-safe kèm tooltip, còn các
+action cần diễn giải vẫn giữ cả icon lẫn text.
 
 Có ba cách chọn nhiều item: giữ `Ctrl` khi bấm, kéo rubber-band qua nhiều item,
 hoặc chọn nhiều dòng trong tab Layers. Giữ chuột phải trên vùng canvas trống rồi
@@ -113,6 +115,47 @@ Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`,
 `documentChanged()`. Signal `selectionSetChanged(list)` cung cấp toàn bộ ID đang
 được chọn; `selectedElementIds()` trả về cùng tập ID theo thứ tự document.
 
+## Connector, line và mô phỏng dòng tín hiệu
+
+Connector là một object độc lập có ID, selection, layer Z, opacity, metadata và
+vòng đời signal riêng. Chọn đúng hai element rồi bấm **Connect 2 selected items**
+để tạo nhanh; sau đó chọn chính đường nối để Inspector hiện các thuộc tính chuyên
+biệt. Có thể đổi source/target mà vẫn giữ nguyên ID của connector.
+
+```python
+edge = canvas.connectElements(
+    "pump", "tank", connector_id="water-main",
+    route="orthogonal",       # bezier | orthogonal | straight | polyline
+    lineStyle="dashdot",      # solid | dash | dot | dashdot
+    lineWidth=4,
+    arrowStart=False,
+    arrowEnd=True,
+    animated=True,
+    flowColor="#06b6d4",
+    flowSpeed=1.8,
+    metadata={"signal": "water"},
+)
+canvas.updateConnector(edge, route="bezier", arrowStart=True)
+canvas.animateConnector(edge, True, speed=2.5, color="#38bdf8")
+canvas.reconnectConnector(edge, "pump-backup", "tank")
+
+line = canvas.addLine(40, 300, element_id="separator", arrowEnd=True)
+polyline = canvas.addPolyline(
+    [[0, 80], [100, 10], [220, 90]], 320, 260,
+    element_id="manual-pipe", lineWidth=5, arrowEnd=True,
+)
+```
+
+Animation dùng một lớp dash chuyển động phủ trên stroke chính, phù hợp minh họa
+dòng điện, nước hoặc luồng dữ liệu. `canvasObject(id)` truy cập thống nhất element
+hoặc connector; `connector(id)`, `connectors()` và `selectedObjectIds()` dành cho
+logic cần phân biệt rõ hai loại. Toàn bộ route, waypoint, style, hai đầu mũi tên,
+animation và metadata đều được serialize/autosave.
+
+Inspector tự thay đổi theo object: media có source picker; chart có series data;
+shape có content/geometry/appearance; line/polyline có stroke, arrow và points;
+connector có endpoint, route, flow animation, waypoint, opacity và layer Z.
+
 ## Lưu và đọc tài liệu
 
 ```python
@@ -129,12 +172,14 @@ Editor có ba tầng lưu:
    history undo/redo cũng được tạo tại đây.
 2. **Save session checkpoint**: lưu mốc khôi phục trong vòng đời process hiện tại;
    đóng app sẽ mất checkpoint này.
-3. **Save persistent now**: ghi JSON vào `QStandardPaths.AppDataLocation` và copy
-   ảnh/GIF vào thư mục assets do MonkezCanva quản lý. Dữ liệu còn nguyên sau khi
-   app chính khởi động lại.
+3. **Save persistent now**: ghi JSON vào `.monkez_canva/<persistenceKey>.json`
+   ngay trong project và copy ảnh/GIF/background vào thư mục assets bên cạnh.
+   JSON chỉ lưu đường dẫn tương đối, vì vậy có thể copy cả project sang máy hoặc
+   ổ đĩa khác rồi tự load mà không cần sửa path.
 
 ```python
 canvas.setPersistenceKey("main-dashboard")
+canvas.setProjectDirectory("D:/Projects/MyApp")  # tùy chọn
 canvas.setAutoSaveDelay(500)
 canvas.setAutoSaveEnabled(True)
 
@@ -145,9 +190,38 @@ canvas.savePersistent()
 canvas.loadPersistent()
 ```
 
-Khi `persistenceKey` khác rỗng và `autoSaveEnabled=True`, mỗi autosave debounce sẽ
-đồng thời cập nhật bản lưu bền. Nếu không đặt key, autosave chỉ giữ draft/history
-trong RAM và nút lưu bền dùng `objectName` hoặc key mặc định.
+Project root được tự dò từ working directory hoặc vị trí entry script thông qua
+`.git`, `pyproject.toml`, `setup.py` hay `requirements.txt`. Có thể override bằng
+`setProjectDirectory()` hoặc biến môi trường `MONKEZ_CANVA_PROJECT_DIR`. Khi
+`persistenceKey` khác rỗng và `autoSaveEnabled=True`, mỗi autosave debounce đồng
+thời cập nhật bản lưu portable. Dữ liệu AppData của bản cũ được tự phát hiện và
+migrate vào project trong lần load đầu tiên.
+
+Sau khi `persistenceKey` (và `projectDirectory` nếu cần) được cấu hình, event loop
+sẽ tự nạp file portable nếu Canvas còn trống. Cơ chế này cố ý không thay thế một
+Canvas đã được code thêm object. Có thể gọi `loadPersistent()` thủ công khi ứng
+dụng thực sự muốn ghi đè nội dung hiện tại.
+
+Khi copy project, cần copy cả thư mục ẩn `.monkez_canva`. Nếu không đặt key,
+autosave chỉ giữ draft/history trong RAM và nút lưu bền dùng `objectName` hoặc key
+mặc định.
+
+## Grid và background
+
+Tab View cho phép bật/tắt grid, chọn `Lines`, `Dots` hoặc `Cross`, đổi grid color,
+background color, chọn background image và mode `Fit`, `Fill` hoặc `Scale`.
+
+```python
+canvas.setGridVisible(True)
+canvas.setGridStyle("dots")
+canvas.setGridColor("#cbd5e1")
+canvas.setBackgroundColor("#f8fafc")
+canvas.setBackgroundImage("assets/workspace-bg.png")
+canvas.setBackgroundImageMode("fill")
+```
+
+Các thiết lập scene này nằm trong document/history/autosave và background image
+cũng được quản lý như một portable project asset.
 
 Định dạng JSON hiện tại có `format: "monkez-canva"`, `version: 1`, danh sách
 `elements` và `connectors`. Mỗi element có `metadata` để ứng dụng gắn business ID
@@ -155,8 +229,9 @@ hoặc cấu hình riêng. Tài liệu không chứa và không thực thi Pytho
 
 ## Thuộc tính Qt Designer
 
-`gridVisible`, `snapToGrid`, `gridSize`, `backgroundColor`, `gridColor`,
-`editorShortcutEnabled`, `editMode`, `persistenceKey`, `autoSaveEnabled` và
+`gridVisible`, `snapToGrid`, `gridSize`, `gridStyle`, `backgroundColor`,
+`backgroundImage`, `backgroundImageMode`, `gridColor`, `editorShortcutEnabled`,
+`editMode`, `persistenceKey`, `projectDirectory`, `autoSaveEnabled` và
 `autoSaveDelay` xuất hiện trong Property Editor. Không nên
 lưu `editMode=True` trong form phát hành; hãy dùng chord runtime khi cần sửa.
 

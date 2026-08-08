@@ -24,16 +24,26 @@ can ignore the signal or route it into their own logger.
 - `MonkezCanva`: public API, document persistence, properties and signals.
 - `_CanvasView`: native zoom, click routing and blank-area right-button panning.
 - `_CanvasScene`: background/grid painting.
-- `_CanvasElement`: shape, node and chart rendering plus resize.
-- `_CanvasConnector`: cubic edge tracking both endpoints.
+- `_CanvasElement`: shapes, node, charts, media, line and polyline rendering plus resize.
+- `_CanvasConnector`: selectable/code-addressable `QGraphicsObject` with stable ID,
+  endpoint tracking, straight/bezier/orthogonal/polyline routes, stroke styles,
+  one/two-way arrows and timer-driven signal-flow animation.
 - `_CanvasEditorToolbox`: compact frameless five-tab pane with a draggable custom
   header for element creation, deep inspection, layers, viewport and persistence.
 - `_CanvasQuickToolbar`: viewport-owned floating Save/zoom/fit/alignment overlay;
   it never participates in `MonkezCanva` layout or changes view geometry.
+- `_canvas_icon()`: dependency-free QPainter icon factory shared by every pane
+  and floatbar action; no external icon assets are required at packaging time.
 - `monkez_10_canva_plugin.py`: Designer adapter and preview.
 
 Elements and connectors use stable string IDs. Application code must retain IDs
 rather than private graphics items.
+
+The Inspector is schema-by-kind rather than one generic form: connector endpoint
+and signal controls are hidden for ordinary elements; media, chart, geometry,
+content, stroke and color groups appear only where meaningful. Connector endpoint
+changes disconnect the old element signals and attach the new pair without
+replacing the connector ID.
 
 Selection is an ordered ID set exposed by `selectedElementIds()` and
 `selectionSetChanged(list)`. Alignment is one document mutation even though it
@@ -48,16 +58,24 @@ need a registry/allowlist; importing module names from documents is unacceptable
 ## Autosave and durable storage
 
 Autosave is debounce-based. It updates the in-memory draft and bounded history;
-when `persistenceKey` is configured it also writes the durable JSON. Explicit
-session checkpoints remain process-local. Persistent saves copy media into the
-application-data asset directory so a restart does not depend on a temporary
-drag source.
+when `persistenceKey` is configured it writes `.monkez_canva/<key>.json` under
+the detected/explicit project root. Managed element media and background images
+are copied below `.monkez_canva/assets/<key>/`, while JSON stores POSIX-style
+relative paths. Moving the whole project therefore preserves loadability.
+Legacy AppData documents and absolute paths remain readable and are migrated on
+first load. Setting a persistence key schedules a safe auto-load after property
+configuration; it proceeds only while the canvas is empty, so application-created
+objects are never silently replaced. Explicit session checkpoints remain process-local.
+
+Scene version 1 also persists grid visibility/size/style/colors and background
+color/image/mode. Grid renderers are lines, dots and crosses; background modes
+are fit, fill and non-aspect-preserving scale.
 
 ## Roadmap
 
 1. Clipboard, keyboard nudging and mixed-value multi-selection property editing.
 2. Public element registry using schema + renderer/editor factories.
-3. Typed ports, connector validation, orthogonal routing and auto layout.
+3. Typed ports, connector validation, obstacle-avoiding routing and auto layout.
 4. Declarative data bindings and throttled live chart updates.
 5. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
 6. Large-scene profiling, level-of-detail rendering and culling tests.
@@ -66,7 +84,8 @@ drag source.
 ## Verification focus
 
 - Lazy import remains intact and runtime does not import Designer packages.
-- JSON round trips preserve IDs, chart values, styles and connectors.
+- JSON round trips preserve IDs, chart values, line/polyline points and advanced
+  connector routes, arrows, styles, animation and endpoints.
 - View mode keeps items immovable; edit mode enables selection/movement.
 - Designer discovers exactly one plugin class from the module.
 - Gallery docs and preview cover the public widget surface.
