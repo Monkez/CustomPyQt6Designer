@@ -84,6 +84,14 @@ _GRID_STYLES = ("lines", "dots", "cross")
 _BACKGROUND_IMAGE_MODES = ("fit", "fill", "scale")
 _LINE_EFFECTS = ("flow", "pulse", "glow", "particles", "packet")
 _PORT_KINDS = ("node", "splitter")
+_ELEMENT_STANDARD_PROPERTIES = {
+    "id", "type", "x", "y", "width", "height", "text", "color", "background",
+    "textColor", "data", "metadata", "source", "lineWidth", "lineStyle",
+    "arrowStart", "arrowEnd", "animated", "animationEffect", "flowColor",
+    "flowSpeed", "flowDirection", "flowSpacing", "effectIntensity", "packetLoop",
+    "packetDuration", "packetInterval", "packetIcon", "points", "ports", "opacity",
+    "rotation", "z",
+}
 
 
 def _normalize_node_ports(raw_ports: Any) -> list[dict[str, Any]]:
@@ -572,11 +580,13 @@ class _CanvasElement(QGraphicsObject):
         width: float,
         height: float,
         options: dict[str, Any] | None = None,
+        definition: ElementDefinition | None = None,
     ) -> None:
         super().__init__()
         options = dict(options or {})
         self.element_id = element_id
         self.kind = kind
+        self.definition = definition
         self._rect = QRectF(0, 0, max(24.0, width), max(24.0, height))
         self.text = str(options.get("text", kind.replace("_", " ").title()))
         self.color = _color(options.get("color", "#2563eb"))
@@ -584,6 +594,11 @@ class _CanvasElement(QGraphicsObject):
         self.text_color = _color(options.get("textColor", "#0f172a"), "#0f172a")
         self.data = list(options.get("data", [32, 68, 46, 82, 58]))
         self.metadata = dict(options.get("metadata", {}))
+        self.custom_properties = {
+            key: value for key, value in options.items()
+            if key not in _ELEMENT_STANDARD_PROPERTIES
+        }
+        self._renderer_error = ""
         self.source = str(options.get("source", ""))
         self.line_width = max(0.5, float(options.get("lineWidth", 2.2)))
         self.line_style = str(options.get("lineStyle", "solid")).lower()
@@ -604,7 +619,10 @@ class _CanvasElement(QGraphicsObject):
         self._last_packet_at = 0.0
         raw_points = options.get("points", [])
         self.points = [QPointF(float(point[0]), float(point[1])) for point in raw_points]
-        self.ports = _normalize_node_ports(options.get("ports")) if kind in _PORT_KINDS else []
+        self.supports_ports = kind in _PORT_KINDS or bool(
+            definition is not None and "ports" in definition.capabilities
+        )
+        self.ports = _normalize_node_ports(options.get("ports")) if self.supports_ports else []
         self._pixmap = QPixmap()
         self._movie: QMovie | None = None
         self._highlight = QColor()
@@ -659,7 +677,7 @@ class _CanvasElement(QGraphicsObject):
         self.changed.emit(self.element_id)
 
     def boundingRect(self) -> QRectF:
-        margin = 11 if self.kind in _PORT_KINDS else 5
+        margin = 11 if self.supports_ports else 5
         return self._rect.adjusted(-margin, -margin, margin, margin)
 
     def port(self, port_id: str) -> dict[str, Any] | None:
@@ -691,7 +709,7 @@ class _CanvasElement(QGraphicsObject):
         return self.mapToScene(self.portLocalPosition(port_id, endpoint))
 
     def portAt(self, scene_position: QPointF, radius: float = 11.0) -> dict[str, Any] | None:
-        if self.kind not in _PORT_KINDS:
+        if not self.supports_ports:
             return None
         local = self.mapFromScene(scene_position)
         for port in self.ports:
@@ -712,6 +730,26 @@ class _CanvasElement(QGraphicsObject):
         outline = self._highlight if self._highlight.isValid() else self.color
         painter.setPen(QPen(outline, 2.0))
         painter.setBrush(self.background)
+
+        if self.definition is not None and self.definition.renderer_factory is not None:
+            try:
+                self.definition.renderer_factory(painter, self, rect, option, widget)
+                self._renderer_error = ""
+            except Exception as error:  # plugin boundary: paint must never escape into Qt
+                message = f"Renderer {self.kind!r} failed: {error}"
+                if message != self._renderer_error and self.scene() is not None:
+                    self.scene().canvas.diagnosticMessage.emit(message)
+                self._renderer_error = message
+                painter.setPen(QPen(QColor("#dc2626"), 2.0))
+                painter.setBrush(QColor("#fef2f2"))
+                painter.drawRoundedRect(rect, 8, 8)
+                painter.setPen(QColor("#991b1b"))
+                painter.drawText(
+                    rect.adjusted(8, 8, -8, -8),
+                    Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                    f"Renderer error\n{self.kind}",
+                )
+            return
 
         if self.kind in ("image", "animated_image"):
             self._paint_media(painter, rect)
@@ -1031,7 +1069,7 @@ class _CanvasElement(QGraphicsObject):
         return super().itemChange(change, value)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "id": self.element_id,
             "type": self.kind,
             "x": self.pos().x(),
@@ -1066,6 +1104,8 @@ class _CanvasElement(QGraphicsObject):
             "rotation": self.rotation(),
             "z": self.zValue(),
         }
+        result.update(self.custom_properties)
+        return result
 
 
 class _CanvasConnector(QGraphicsObject):
@@ -1537,7 +1577,15 @@ class _CanvasEditorToolbox(QDialog):
 
     def _elements_tab(self) -> QWidget:
         page = QWidget()
-        layout = QVBoxLayout(page)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(7)
         registry = self.canvas.elementRegistry()
@@ -1583,6 +1631,8 @@ class _CanvasEditorToolbox(QDialog):
         drop_hint.setWordWrap(True)
         drop_hint.setStyleSheet("color: #64748b")
         layout.addWidget(drop_hint)
+        scroll.setWidget(body)
+        page_layout.addWidget(scroll)
         return page
 
     def _inspector_tab(self) -> QWidget:
@@ -1852,6 +1902,13 @@ class _CanvasEditorToolbox(QDialog):
             self._color_buttons[role] = button
             colors.addWidget(button, column // 2, column % 2)
         layout.addWidget(self._colors_group)
+
+        self._extension_inspector_host = QWidget()
+        self._extension_inspector_layout = QVBoxLayout(self._extension_inspector_host)
+        self._extension_inspector_layout.setContentsMargins(0, 0, 0, 0)
+        self._extension_inspector_widget: QWidget | None = None
+        self._extension_inspector_host.hide()
+        layout.insertWidget(2, self._extension_inspector_host)
 
         auto_apply = QLabel("●  Auto apply is on")
         auto_apply.setObjectName("autoApplyStatus")
@@ -2208,7 +2265,7 @@ class _CanvasEditorToolbox(QDialog):
         else:
             values = {key: field.value() for key, field in self._number_fields.items()}
             values["text"] = self._text_edit.text()
-            if item.kind in _PORT_KINDS:
+            if item.supports_ports:
                 self.canvas.setNodePorts(element_id, self._ports_from_editor())
             if item.kind in ("image", "animated_image"):
                 values["source"] = self._source_edit.text()
@@ -2275,18 +2332,22 @@ class _CanvasEditorToolbox(QDialog):
             self._type_label.setText(item.kind)
             self._id_edit.setText(item.element_id)
             connector = isinstance(item, _CanvasConnector)
-            media = not connector and item.kind in ("image", "animated_image")
-            chart = not connector and item.kind in ("bar_chart", "line_chart")
-            line = not connector and item.kind == "line"
-            content = not connector and item.kind not in (
-                "image", "animated_image", "line",
+            definition = None if connector else self.canvas.elementRegistry().definition(item.kind)
+            capabilities = (
+                definition.capabilities
+                if definition is not None and definition.capabilities
+                else frozenset({"content", "geometry", "appearance"})
             )
+            media = not connector and "media" in capabilities
+            chart = not connector and "chart" in capabilities
+            line = not connector and "signal" in capabilities
+            content = not connector and "content" in capabilities
             self._content_group.setVisible(content)
-            self._ports_group.setVisible(not connector and item.kind in _PORT_KINDS)
-            self._geometry_group.setVisible(not connector)
+            self._ports_group.setVisible(not connector and "ports" in capabilities)
+            self._geometry_group.setVisible(not connector and "geometry" in capabilities)
             self._media_group.setVisible(media)
             self._stroke_group.setVisible(connector or line)
-            self._colors_group.show()
+            self._colors_group.setVisible(connector or "appearance" in capabilities)
             self._color_buttons["background"].setVisible(not connector and not line)
             self._color_buttons["text"].setVisible(content)
             self._color_buttons["flow"].setVisible(connector or line)
@@ -2345,7 +2406,7 @@ class _CanvasEditorToolbox(QDialog):
                 self._data_label.setVisible(chart)
                 self._data_edit.setVisible(chart)
                 self._source_edit.setText(item.source)
-                self._set_ports_editor(item.ports if item.kind in _PORT_KINDS else [])
+                self._set_ports_editor(item.ports if item.supports_ports else [])
                 values = {
                     "x": item.pos().x(), "y": item.pos().y(),
                     "width": item._rect.width(), "height": item._rect.height(),
@@ -2371,8 +2432,38 @@ class _CanvasEditorToolbox(QDialog):
                     self._packet_icon_edit.setText(item.packet_icon)
                     self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.points]))
         del blockers
+        self._sync_extension_inspector(item)
         self._syncing_inspector = False
         self._sync_packet_controls()
+
+    def _sync_extension_inspector(self, item: _CanvasElement | _CanvasConnector | None) -> None:
+        if self._extension_inspector_widget is not None:
+            self._extension_inspector_layout.removeWidget(self._extension_inspector_widget)
+            self._extension_inspector_widget.deleteLater()
+            self._extension_inspector_widget = None
+        self._extension_inspector_host.hide()
+        if item is None or isinstance(item, _CanvasConnector):
+            return
+        definition = self.canvas.elementRegistry().definition(item.kind)
+        if definition is None or definition.inspector_factory is None:
+            return
+        try:
+            widget = definition.inspector_factory(self.canvas, item)
+        except Exception as error:  # plugin boundary: selection must remain safe
+            self.canvas.diagnosticMessage.emit(
+                f"Inspector {definition.type_id!r} failed: {error}"
+            )
+            return
+        if widget is None:
+            return
+        if not isinstance(widget, QWidget):
+            self.canvas.diagnosticMessage.emit(
+                f"Inspector factory for {definition.type_id!r} must return QWidget or None"
+            )
+            return
+        self._extension_inspector_widget = widget
+        self._extension_inspector_layout.addWidget(widget)
+        self._extension_inspector_host.show()
 
     @staticmethod
     def _parse_points(text: str) -> list[list[float]]:
@@ -2723,7 +2814,7 @@ class _CanvasView(QGraphicsView):
 
     def _port_at(self, view_position) -> tuple[_CanvasElement, dict[str, Any]] | None:
         item = self.itemAt(view_position)
-        if not isinstance(item, _CanvasElement) or item.kind not in _PORT_KINDS:
+        if not isinstance(item, _CanvasElement) or not item.supports_ports:
             return None
         port = item.portAt(self.mapToScene(view_position))
         return (item, port) if port is not None else None
@@ -2885,7 +2976,12 @@ class MonkezCanva(QWidget):
         replace_existing: bool = False,
     ) -> "MonkezCanva":
         """Register component metadata used by add APIs and the Elements pane."""
-        self._element_registry.register(definition, replace_existing=replace_existing)
+        existing = self._element_registry.definition(definition.type_id)
+        replace_missing = existing is not None and existing.plugin_id == "__missing__"
+        self._element_registry.register(
+            definition, replace_existing=replace_existing or replace_missing
+        )
+        self._reconcile_registry_records(definition.type_id)
         if self._toolbox is not None:
             was_visible = self._toolbox.isVisible()
             self._toolbox.close()
@@ -2895,6 +2991,18 @@ class MonkezCanva(QWidget):
                 self._ensure_toolbox()
                 self._toolbox.show()
         return self
+
+    def unregisterElementPlugin(self, plugin_id: str) -> tuple[str, ...]:
+        """Unload registry metadata owned by one plugin; existing records stay intact."""
+        removed = self._element_registry.unregister_owner(plugin_id)
+        for definition in removed:
+            for item in self._elements.values():
+                if item.kind == definition.type_id:
+                    item.definition = None
+                    item.update()
+        if self._toolbox is not None:
+            self._toolbox._sync_inspector(self.selectedElementId())
+        return tuple(definition.type_id for definition in removed)
 
     def element(self, element_id: str) -> _CanvasElement | None:
         return self._elements.get(str(element_id))
@@ -2942,11 +3050,14 @@ class MonkezCanva(QWidget):
             kind = "line"
         elif kind == "polyline":
             kind = "line"
+        definition = self._element_registry.definition(kind)
         if kind == "splitter" and not options.get("ports"):
             options["ports"] = _splitter_ports()
-        elif kind == "node" and "ports" not in options:
+        elif (
+            kind == "node"
+            or definition is not None and "ports" in definition.capabilities
+        ) and "ports" not in options:
             options["ports"] = _normalize_node_ports(None)
-        definition = self._element_registry.definition(kind)
         if definition is None:
             raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
         default_width, default_height = definition.default_size
@@ -2968,9 +3079,16 @@ class MonkezCanva(QWidget):
                 resolved_height,
                 options,
             )
-            self._document_model.add_element(record)
+            self._document_model.add_element(definition.prepare_record(record))
             return element_id
-        item = _CanvasElement(element_id, kind, width or default_width, height or default_height, options)
+        item = _CanvasElement(
+            element_id,
+            kind,
+            width or default_width,
+            height or default_height,
+            options,
+            definition,
+        )
         center = self._view.mapToScene(self._view.viewport().rect().center())
         item.setPos(center.x() - item._rect.width() / 2 if x is None else x, center.y() - item._rect.height() / 2 if y is None else y)
         item.setEditable(self._edit_mode)
@@ -2999,13 +3117,13 @@ class MonkezCanva(QWidget):
 
     def nodePorts(self, element_id: str) -> list[dict[str, Any]]:
         item = self._required_element(element_id)
-        if item.kind not in _PORT_KINDS:
+        if not item.supports_ports:
             raise TypeError(f"Element {element_id!r} does not support ports")
         return [dict(port) for port in item.ports]
 
     def setNodePorts(self, element_id: str, ports) -> "MonkezCanva":
         item = self._required_element(element_id)
-        if item.kind not in _PORT_KINDS:
+        if not item.supports_ports:
             raise TypeError(f"Element {element_id!r} does not support ports")
         item.ports = _normalize_node_ports(ports)
         valid_ids = {port["id"] for port in item.ports}
@@ -3252,7 +3370,9 @@ class MonkezCanva(QWidget):
                 float(current.get("height", default_height)),
                 current,
             )
-            self._document_model.update_element(element_id, normalized)
+            self._document_model.update_element(
+                element_id, definition.prepare_record(normalized)
+            )
             return self
         item = self._required_element(element_id)
         if "x" in values or "y" in values:
@@ -3315,6 +3435,12 @@ class MonkezCanva(QWidget):
             item.points = [QPointF(float(point[0]), float(point[1])) for point in values["points"]]
         if "ports" in values:
             self.setNodePorts(element_id, values["ports"])
+        item.custom_properties.update(
+            {
+                key: value for key, value in values.items()
+                if key not in _ELEMENT_STANDARD_PROPERTIES
+            }
+        )
         item._sync_line_animation()
         item.changed.emit(item.element_id)
         self.documentChanged.emit()
@@ -3369,9 +3495,9 @@ class MonkezCanva(QWidget):
             raise KeyError("Both connector endpoints must exist")
         source_port = str(options.get("sourcePort", ""))
         target_port = str(options.get("targetPort", ""))
-        if source.kind in _PORT_KINDS and not source_port:
+        if source.supports_ports and not source_port:
             source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
-        if target.kind in _PORT_KINDS and not target_port:
+        if target.supports_ports and not target_port:
             target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
         self._validate_connection_ports(source, source_port, target, target_port)
         options["sourcePort"] = source_port
@@ -3468,9 +3594,9 @@ class MonkezCanva(QWidget):
             source_port = ""
         if target is not connector.target and target_port and target.port(target_port) is None:
             target_port = ""
-        if source.kind in _PORT_KINDS and not source_port:
+        if source.supports_ports and not source_port:
             source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
-        if target.kind in _PORT_KINDS and not target_port:
+        if target.supports_ports and not target_port:
             target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
         self._validate_connection_ports(source, source_port, target, target_port)
         if (
@@ -3832,6 +3958,8 @@ class MonkezCanva(QWidget):
             raise TypeError("MonkezCanva.setDocumentModel expects a CanvasDocument")
         if document is self._document_model:
             return self
+        prepared = self._prepare_document_for_registry(document.to_dict())
+        document.reconcile(prepared, origin=self)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
         self._document_model = document
@@ -3839,6 +3967,36 @@ class MonkezCanva(QWidget):
         self._last_rendered_document_revision = document.revision
         self._render_document(document.to_dict())
         return self
+
+    def _prepare_document_for_registry(self, data: dict[str, Any]) -> dict[str, Any]:
+        prepared = json.loads(json.dumps(data))
+        prepared["elements"] = [
+            self._element_registry.prepare_record(entry)
+            if self._element_registry.definition(str(entry.get("type", ""))) is not None
+            else entry
+            for entry in prepared.get("elements", [])
+        ]
+        return prepared
+
+    def _reconcile_registry_records(self, type_id: str) -> None:
+        if self._document_model is None:
+            return
+        data = self._document_model.to_dict()
+        changed = False
+        for index, entry in enumerate(data.get("elements", [])):
+            if str(entry.get("type", "")).lower() != str(type_id).lower():
+                continue
+            migrated = self._element_registry.prepare_record(entry)
+            if migrated != entry:
+                data["elements"][index] = migrated
+                changed = True
+        if changed:
+            self._document_model.reconcile(data)
+        else:
+            for item in self._elements.values():
+                if item.kind == str(type_id).lower():
+                    item.definition = self._element_registry.require(type_id)
+                    item.update()
 
     @staticmethod
     def _model_values(values: dict[str, Any]) -> dict[str, Any]:
@@ -3866,9 +4024,8 @@ class MonkezCanva(QWidget):
                 result[key] = _color(result[key], fallback).name(QColor.NameFormat.HexArgb)
         return result
 
-    @classmethod
     def _element_model_record(
-        cls,
+        self,
         element_id: str,
         kind: str,
         x: float,
@@ -3877,9 +4034,13 @@ class MonkezCanva(QWidget):
         height: float,
         options: dict[str, Any],
     ) -> dict[str, Any]:
-        values = cls._model_values(options)
+        values = self._model_values(options)
+        definition = self._element_registry.definition(kind)
+        supports_ports = kind in _PORT_KINDS or bool(
+            definition is not None and "ports" in definition.capabilities
+        )
         direction = str(values.get("flowDirection", "forward")).lower()
-        return {
+        record = {
             "id": element_id,
             "type": kind,
             "x": float(x),
@@ -3909,11 +4070,18 @@ class MonkezCanva(QWidget):
             "packetInterval": max(0.05, float(values.get("packetInterval", 0.7))),
             "packetIcon": str(values.get("packetIcon", "")),
             "points": [[float(point[0]), float(point[1])] for point in values.get("points", [])],
-            "ports": _normalize_node_ports(values.get("ports")) if kind in _PORT_KINDS else [],
+            "ports": _normalize_node_ports(values.get("ports")) if supports_ports else [],
             "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
             "rotation": float(values.get("rotation", 0.0)),
             "z": float(values.get("z", 0.0)),
         }
+        record.update(
+            {
+                key: value for key, value in values.items()
+                if key not in _ELEMENT_STANDARD_PROPERTIES
+            }
+        )
+        return record
 
     @classmethod
     def _connector_model_record(
@@ -4079,8 +4247,7 @@ class MonkezCanva(QWidget):
 
     def _add_element_record(self, entry: dict[str, Any]) -> str:
         values = dict(entry)
-        kind = values.pop("type")
-        element_id = values.pop("id")
+        kind = str(values["type"])
         if self._element_registry.definition(kind) is None:
             self._element_registry.register(
                 ElementDefinition(
@@ -4095,11 +4262,15 @@ class MonkezCanva(QWidget):
                         "color": "#dc2626",
                         "background": "#fef2f2",
                     },
+                    plugin_id="__missing__",
                 )
             )
             self.diagnosticMessage.emit(
                 f"Missing component type {kind!r}; rendered a safe placeholder"
             )
+        values = self._element_registry.prepare_record(values)
+        kind = values.pop("type")
+        element_id = values.pop("id")
         x = values.pop("x", 0)
         y = values.pop("y", 0)
         width = values.pop("width", None)
@@ -4110,10 +4281,11 @@ class MonkezCanva(QWidget):
         values = dict(entry)
         values.pop("id", None)
         values.pop("type", None)
-        if self._required_element(element_id).kind not in _PORT_KINDS:
+        if not self._required_element(element_id).supports_ports:
             values.pop("ports", None)
         self.updateElement(element_id, **values)
         item = self._required_element(element_id)
+        item.definition = self._element_registry.definition(item.kind)
         item.color = _color(values.get("color", item.color), "#2563eb")
         item.background = _color(values.get("background", item.background), "#ffffff")
         item.text_color = _color(values.get("textColor", item.text_color), "#0f172a")

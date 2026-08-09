@@ -163,6 +163,13 @@ Updated: 2026-08-09
   ordered per-canvas registry. The Elements pane and element size/default lookup
   are metadata-driven; custom types can be registered without editing the pane,
   while unavailable project types load as safe missing-component placeholders.
+  The registry now also validates schema definitions/records, runs contiguous
+  component migrations, dispatches optional renderer and Inspector factories,
+  drives standard Inspector sections by capability and tracks plugin ownership.
+  Factory failures remain inside the plugin boundary and late registration
+  restores placeholders without replacing IDs.
+  Windows visual QA at 448x710 verified the scroll-bounded custom category and
+  a contextual `Sensor properties` Inspector card without pane growth/clipping.
 - `MC-CORE-MODEL-001` now provides a Qt-free `CanvasDocument` with immutable
   scene/element/connector/port/group/resource records, finite-JSON and graph
   validation, revisioned granular events, legacy line normalization, atomic
@@ -195,7 +202,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 133 passing tests and covers all 36 public
+- The automated suite contains 137 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

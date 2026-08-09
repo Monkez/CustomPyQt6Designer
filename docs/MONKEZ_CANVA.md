@@ -291,15 +291,39 @@ scene; selection, zoom, viewport và identity của item được giữ nguyên 
 ```python
 from monkez_pyqt6.monkez_canva import ElementDefinition
 
+def migrate_sensor_v1(record):
+    record["value"] = record.pop("reading")
+    return record
+
 canvas.registerElementDefinition(
-    ElementDefinition("sensor", "Sensor", "Industrial", 150, 86)
+    ElementDefinition(
+        "sensor", "Sensor", "Industrial", 150, 86,
+        defaults={"unit": "bar"},
+        schema={
+            "required": ["value"],
+            "properties": {
+                "value": {"type": "number", "minimum": 0},
+                "unit": {"type": "string", "enum": ["bar", "psi"]},
+            },
+        },
+        schema_version=2,
+        migrations={1: migrate_sensor_v1},
+        plugin_id="industrial-pack",
+        plugin_version="1.0.0",
+        capabilities={"content", "geometry", "appearance", "ports"},
+        renderer_factory=paint_sensor,       # (painter, item, rect, option, widget)
+        inspector_factory=inspect_sensor,    # (canvas, item) -> QWidget | None
+    )
 )
-sensor_id = canvas.addElement("sensor", 120, 80)
+sensor_id = canvas.addElement("sensor", 120, 80, value=42)
 ```
 
 Category và nút trong Elements pane được tạo từ registry. Nếu project tham chiếu
 component của plugin chưa cài, canvas hiển thị placeholder an toàn và giữ nguyên
 type/data trong document để có thể khôi phục khi plugin xuất hiện.
+`canvas.unregisterElementPlugin("industrial-pack")` gỡ toàn bộ factory thuộc
+plugin nhưng không xóa record. Khi đăng ký lại type, placeholder được khôi phục
+tại chỗ và giữ nguyên ID. Document không bao giờ tự import module từ JSON.
 
 `canvas.documentModel()`/`canvas.canvasDocument()` trả về model đang gắn. Signal
 `documentOperation(dict)` cung cấp bản JSON-safe của event cho code Qt. Loader vẫn

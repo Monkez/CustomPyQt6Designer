@@ -264,6 +264,100 @@ class WidgetTests(unittest.TestCase):
         canvas.setDocumentModel(unknown)
         self.assertEqual("vendor-widget", canvas.element("legacy").kind)
         self.assertEqual("Missing components", canvas.elementRegistry().require("vendor-widget").category)
+        canvas.registerElementDefinition(
+            ElementDefinition(
+                "vendor-widget", "Vendor widget", "Vendor", 160, 80,
+                plugin_id="vendor-pack",
+            )
+        )
+        self.assertEqual("vendor-pack", canvas.element("legacy").definition.plugin_id)
+        canvas.deleteLater()
+
+    def test_canva_registry_migrates_records_and_dispatches_extension_factories(self) -> None:
+        paint_calls = []
+        inspector_calls = []
+
+        def migrate(record):
+            record["value"] = record.pop("reading")
+            return record
+
+        def render(painter, item, rect, _option, _widget):
+            paint_calls.append(item.custom_properties["value"])
+            painter.drawRoundedRect(rect, 8, 8)
+
+        def inspect(_canvas, item):
+            inspector_calls.append(item.element_id)
+            return QLabel(f"Value: {item.custom_properties['value']}")
+
+        canvas = MonkezCanva()
+        canvas.registerElementDefinition(
+            ElementDefinition(
+                "sensor", "Sensor", "Industrial", 150, 86,
+                schema={
+                    "required": ["value"],
+                    "properties": {"value": {"type": "number"}},
+                },
+                schema_version=2,
+                migrations={1: migrate},
+                renderer_factory=render,
+                inspector_factory=inspect,
+                plugin_id="industrial-pack",
+            )
+        )
+        document = CanvasDocument.from_dict(
+            {
+                "format": "monkez-canva", "version": 1, "scene": {},
+                "elements": [{"id": "s1", "type": "sensor", "reading": 12}],
+                "connectors": [],
+            }
+        )
+        canvas.setDocumentModel(document)
+        self.assertEqual(2, document.element("s1").properties["componentVersion"])
+        self.assertEqual(12, canvas.element("s1").custom_properties["value"])
+        image = QImage(200, 120, QImage.Format.Format_ARGB32)
+        painter = QPainter(image)
+        canvas.element("s1").paint(painter, None)
+        painter.end()
+        self.assertEqual([12], paint_calls)
+
+        canvas.setEditMode(True)
+        canvas.selectElement("s1")
+        self.app.processEvents()
+        self.assertEqual(["s1"], inspector_calls)
+        self.assertLessEqual(canvas._toolbox.height(), 760)
+        self.assertFalse(canvas._toolbox._extension_inspector_host.isHidden())
+        self.assertEqual(("sensor",), canvas.unregisterElementPlugin("industrial-pack"))
+        self.assertIsNone(canvas.elementRegistry().definition("sensor"))
+        self.assertEqual("sensor", document.element("s1").type)
+        canvas.deleteLater()
+
+    def test_canva_plugin_factory_failures_degrade_without_escaping_qt(self) -> None:
+        diagnostics = []
+
+        def broken_renderer(*_args):
+            raise RuntimeError("paint exploded")
+
+        canvas = MonkezCanva()
+        canvas.diagnosticMessage.connect(diagnostics.append)
+        canvas.registerElementDefinition(
+            ElementDefinition(
+                "broken", "Broken", "Testing", 120, 80,
+                renderer_factory=broken_renderer,
+                inspector_factory=lambda *_args: object(),
+                plugin_id="broken-pack",
+            )
+        )
+        canvas.addElement("broken", element_id="broken-1")
+        image = QImage(160, 100, QImage.Format.Format_ARGB32)
+        painter = QPainter(image)
+        canvas.element("broken-1").paint(painter, None)
+        painter.end()
+        canvas.setEditMode(True)
+        canvas.selectElement("broken-1")
+        self.app.processEvents()
+
+        self.assertTrue(any("Renderer 'broken' failed" in message for message in diagnostics))
+        self.assertTrue(any("must return QWidget" in message for message in diagnostics))
         canvas.deleteLater()
 
     def test_canva_advanced_connectors_lines_and_object_specific_inspector(self) -> None:

@@ -128,12 +128,17 @@ Phase 1.1 is complete. Follow-up work moves to the registry and command layers:
 
 ### Registry progress — 2026-08-09
 
-Phase 1.2 foundation now provides public `ElementDefinition` and
+Phase 1.2 now provides public `ElementDefinition` and
 `ElementRegistry` APIs, isolated per canvas through a cloneable built-in catalog.
 The Elements pane, add defaults and custom component categories read registry
 metadata. Unknown project component types render as explicit safe placeholders.
-Renderer, Inspector factory, schema/migration hooks and plugin ownership metadata
-remain for the next registry increment.
+Definitions now include validated JSON-schema rules, component versions,
+contiguous migrations, capability-driven standard Inspector sections, optional
+renderer/Inspector factories and plugin ownership/version metadata. Plugin unload
+preserves records; late registration restores missing components in place.
+
+Phase 1.2 acceptance is complete. The next core milestone is Phase 1.3:
+command-based history with minimal inverse operations, macros and compression.
 
 ## Backlog tracking
 

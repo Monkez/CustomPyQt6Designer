@@ -1,6 +1,6 @@
 # MonkezCanva architecture
 
-Updated: 2026-08-08
+Updated: 2026-08-09
 
 The complete approved expansion sequence and module extraction contract now live
 in `MONKEZ_CANVA_IMPLEMENTATION_PLAN.md`; the user-facing milestone roadmap is
@@ -105,6 +105,23 @@ originate canonical snapshots.
 Document format version 1 is JSON-only and does not evaluate Python. Loading
 validates the format and supported element kinds. Future custom element plugins
 need a registry/allowlist; importing module names from documents is unacceptable.
+
+## Component registry and plugin boundary
+
+Every canvas owns a clone of the Qt-free built-in `ElementRegistry`. An
+`ElementDefinition` declares its stable type ID, palette metadata, default size
+and values, capability set, JSON-schema subset, component schema version,
+contiguous migrations and plugin ownership. Built-ins use native painting plus
+capability-driven standard Inspector sections; extensions may supply explicit
+renderer and Inspector factories without changing `monkez_canva.py`.
+
+Documents never contain Python module or callable names. Registration happens in
+trusted application/plugin code. Records are migrated, defaulted and validated
+before entering a canvas. Factory exceptions are contained at the Qt boundary:
+renderer failures paint an error placeholder and Inspector failures emit
+diagnostics. Unloading a plugin removes its factories but preserves canonical
+records. Re-registering a previously missing type replaces its placeholder and
+restores the renderer without changing object IDs.
 
 ## Autosave and durable storage
 

@@ -36,6 +36,59 @@ class ElementRegistryTests(unittest.TestCase):
         )
         self.assertEqual("Pressure sensor", registry.require("sensor").label)
 
+    def test_schema_defaults_migrations_and_plugin_ownership(self) -> None:
+        def migrate_v1(record):
+            record["value"] = record.pop("reading")
+            return record
+
+        definition = ElementDefinition(
+            "sensor",
+            "Sensor",
+            "Industrial",
+            144,
+            88,
+            defaults={"unit": "bar"},
+            schema={
+                "required": ["value"],
+                "properties": {
+                    "value": {"type": "number", "minimum": 0, "maximum": 100},
+                    "unit": {"type": "string", "enum": ["bar", "psi"]},
+                },
+            },
+            schema_version=2,
+            migrations={1: migrate_v1},
+            plugin_id="industrial-pack",
+            plugin_version="1.4.0",
+        )
+        registry = ElementRegistry([definition])
+
+        migrated = registry.prepare_record(
+            {"id": "pressure", "type": "sensor", "reading": 42}
+        )
+        self.assertEqual(2, migrated["componentVersion"])
+        self.assertEqual(42, migrated["value"])
+        self.assertEqual("bar", migrated["unit"])
+        self.assertEqual((definition,), registry.owned_by("industrial-pack"))
+        self.assertEqual((definition,), registry.unregister_owner("industrial-pack"))
+        with self.assertRaises(TypeError):
+            definition.schema["properties"]["value"]["minimum"] = -10
+        with self.assertRaisesRegex(ValueError, ">= 0"):
+            definition.prepare_record(
+                {"id": "bad", "type": "sensor", "componentVersion": 2, "value": -1}
+            )
+
+    def test_schema_requires_contiguous_migration_chain(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing migrations"):
+            ElementDefinition(
+                "future", "Future", "Custom", 100, 100, schema_version=3,
+                migrations={1: lambda record: record},
+            )
+        with self.assertRaisesRegex(ValueError, "Unsupported schema type"):
+            ElementDefinition(
+                "bad-schema", "Bad", "Custom", 100, 100,
+                schema={"properties": {"value": {"type": "callable"}}},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

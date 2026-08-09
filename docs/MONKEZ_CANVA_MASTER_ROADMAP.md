@@ -54,10 +54,11 @@ Acceptance:
 - an unknown element loads as a safe missing-component placeholder;
 - duplicate type IDs and invalid schemas fail with actionable diagnostics.
 
-Progress (2026-08-09): public ordered/cloneable definitions, built-in metadata,
+Completed (2026-08-09): public ordered/cloneable definitions, built-in schemas,
 metadata-driven Add pane/default sizes, custom registration and safe missing-type
-placeholders are implemented. Renderer/Inspector factories, schema migrations and
-plugin ownership metadata remain.
+placeholders are implemented. Definitions support validated schemas, versioned
+migrations, capability-driven Inspector sections, renderer/Inspector factories
+and plugin ownership. Factory errors degrade safely and plugin unload keeps data.
 
 ### 1.3 Command-based history
 
