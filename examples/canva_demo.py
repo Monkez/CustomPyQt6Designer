@@ -124,6 +124,22 @@ def main() -> int:
             len(object_ids),
         )
     )
+    canvas.documentDiagnosticsReady.connect(
+        lambda report: logger.info(
+            "documentDiagnosticsReady -> %s errors=%s warnings=%s",
+            report["severity"],
+            report["counts"]["error"],
+            report["counts"]["warning"],
+        )
+    )
+    canvas.documentDiffReady.connect(
+        lambda report: logger.info(
+            "documentDiffReady -> added=%s removed=%s modified=%s",
+            report["counts"]["added"],
+            report["counts"]["removed"],
+            report["counts"]["modified"],
+        )
+    )
     canvas.enableWorkflowComponents()
     canvas.enableAllComponentPacks()
     canvas.registerElementPlugin(TELEMETRY_PLUGIN)
@@ -358,6 +374,7 @@ def main() -> int:
     logger.info("Dashboard, Industrial and Software component packs are enabled")
     logger.info("Select an element and open Inspector > Data bindings for live data")
     logger.info("Open reusable project templates with Ctrl+K, then search 'templates'")
+    logger.info("Open document health and changes since save with Ctrl+K, then search 'health'")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)
     return result

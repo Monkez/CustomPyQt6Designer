@@ -367,7 +367,11 @@ Updated: 2026-08-09
   search, tag filters, metadata, safe thumbnails, generated previews and
   one-click insertion. Thumbnail capture uses transactional export; browser,
   blank context and Ctrl+K share the same public API.
-- The automated suite contains 238 tests and covers all 36 public
+- `MC-ECOSYSTEM-DIAGNOSTICS-006` adds stable document fingerprints, structured
+  health findings and ID-based semantic diff. The detached report shows graph
+  metrics and changes since the last clean save/load baseline, verifies saved
+  assets and exports JSON without mutating history.
+- The automated suite contains 244 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

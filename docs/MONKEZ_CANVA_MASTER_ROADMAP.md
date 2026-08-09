@@ -282,6 +282,13 @@ fallback previews and one-click Undoable insertion. Project templates can captur
 their own PNG preview transactionally; blank-canvas context and Ctrl+K expose the
 same browser without making the main Control Pane denser.
 
+Completed slice (2026-08-09): `MC-ECOSYSTEM-DIAGNOSTICS-006` adds a Qt-free,
+structured document health engine and stable ID-based semantic diff. A detached
+Document Health window exposes registry/schema/version, group/resource and saved
+asset-integrity findings, canvas metrics and changes since the clean save/load
+baseline. Reports are exportable JSON and discoverable from blank context or
+Ctrl+K without mutating history.
+
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;

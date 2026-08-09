@@ -441,6 +441,17 @@ assets are absent. Thumbnail capture reuses the transactional selection export
 pipeline, restores prior selection and never dirties the document. Browser,
 blank context and Ctrl+K all call the same public canvas methods.
 
+`monkez_canva/diagnostics.py` is the Qt-free document observability boundary.
+It validates a detached JSON copy, optionally applies the active registry and
+asset-integrity findings, then returns immutable issues, metrics and a canonical
+SHA-256 fingerprint. Semantic diff keys record collections by stable ID, so JSON
+array ordering cannot create false changes; nested field paths remain explicit.
+
+`_CanvasDocumentReport` is a read-only adapter over those report objects. The
+canvas owns a detached clean baseline updated only at save/load/clean model
+attachment boundaries. Health refresh, JSON export, Ctrl+K and context actions
+call public facade methods and never reconcile or mutate the document.
+
 `monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
 One render-state context temporarily hides excluded objects, clears selection and
 smart-guide artifacts, optionally suppresses background/grid painting, then

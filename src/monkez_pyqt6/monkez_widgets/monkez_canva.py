@@ -98,6 +98,8 @@ from monkez_pyqt6.monkez_canva import (
     normalize_template_id,
     CanvasPageConfig,
     DataBindingEngine,
+    DocumentDiagnosticsReport,
+    DocumentDiff,
     ElementDefinition,
     ElementRegistry,
     LayoutEdge,
@@ -125,6 +127,8 @@ from monkez_pyqt6.monkez_canva import (
     component_pack,
     build_selection_payload,
     create_default_element_registry,
+    diagnose_document,
+    diff_documents,
     load_json_with_recovery,
     layout_graph,
     normalize_component_ids,
@@ -2619,6 +2623,7 @@ class _CanvasCommandPalette(QDialog):
                 ),
             ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
             ("template:browse", "Browse project templates", "Templates", "catalog reusable subflow", "grid", True, canvas.showProjectTemplateBrowser),
+            ("document:health", "Open document health report", "Document", "diagnostics integrity diff changes", "command", True, canvas.showDocumentDiagnostics),
         ))
         if selected:
             all_locked = all(canvas.objectState(object_id)["locked"] for object_id in selected)
@@ -2968,6 +2973,298 @@ class _CanvasTemplateBrowser(QDialog):
         self.canvas.diagnosticMessage.emit(
             f"Template Browser inserted {template_id!r} as {group_id!r}"
         )
+
+
+class _CanvasDocumentReport(QDialog):
+    """Detached, read-only health and baseline-diff report for one canvas."""
+
+    def __init__(self, canvas: "MonkezCanva") -> None:
+        super().__init__(canvas.window())
+        self.canvas = canvas
+        self._report: DocumentDiagnosticsReport | None = None
+        self._diff: DocumentDiff | None = None
+        self.setWindowTitle("MonkezCanva Document Health")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.setMinimumSize(720, 540)
+        self.resize(790, 590)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 16)
+        root.setSpacing(12)
+
+        header = QHBoxLayout()
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
+        title = QLabel("Document health")
+        title.setObjectName("documentReportTitle")
+        self._fingerprint = QLabel()
+        self._fingerprint.setObjectName("documentReportFingerprint")
+        title_box.addWidget(title)
+        title_box.addWidget(self._fingerprint)
+        self._status = QLabel()
+        self._status.setObjectName("documentReportStatus")
+        header.addLayout(title_box)
+        header.addStretch(1)
+        header.addWidget(self._status)
+        root.addLayout(header)
+
+        metrics = QFrame()
+        metrics.setObjectName("documentMetrics")
+        metrics_layout = QHBoxLayout(metrics)
+        metrics_layout.setContentsMargins(14, 10, 14, 10)
+        metrics_layout.setSpacing(8)
+        self._metric_labels: dict[str, QLabel] = {}
+        for key, label in (
+            ("elements", "Elements"),
+            ("connectors", "Links"),
+            ("groups", "Groups"),
+            ("resources", "Assets"),
+        ):
+            box = QVBoxLayout()
+            box.setSpacing(1)
+            value = QLabel("0")
+            value.setObjectName("documentMetricValue")
+            caption = QLabel(label)
+            caption.setObjectName("documentMetricCaption")
+            value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            box.addWidget(value)
+            box.addWidget(caption)
+            metrics_layout.addLayout(box, 1)
+            self._metric_labels[key] = value
+        root.addWidget(metrics)
+
+        self._tabs = QTabWidget()
+        self._tabs.setDocumentMode(True)
+        health = QWidget()
+        health_layout = QVBoxLayout(health)
+        health_layout.setContentsMargins(10, 12, 10, 10)
+        health_layout.setSpacing(8)
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Show"))
+        self._severity_filter = QComboBox()
+        self._severity_filter.addItem("All findings", "all")
+        self._severity_filter.addItem("Errors", "error")
+        self._severity_filter.addItem("Warnings", "warning")
+        self._severity_filter.addItem("Information", "info")
+        filter_row.addWidget(self._severity_filter)
+        filter_row.addStretch(1)
+        self._issue_count = QLabel()
+        self._issue_count.setObjectName("documentReportMuted")
+        filter_row.addWidget(self._issue_count)
+        health_layout.addLayout(filter_row)
+        self._issues = QListWidget()
+        self._issues.setObjectName("documentReportList")
+        health_layout.addWidget(self._issues, 1)
+        self._issue_detail = QPlainTextEdit()
+        self._issue_detail.setObjectName("documentReportDetail")
+        self._issue_detail.setReadOnly(True)
+        self._issue_detail.setMaximumHeight(105)
+        health_layout.addWidget(self._issue_detail)
+        self._tabs.addTab(health, "Health")
+
+        changes = QWidget()
+        changes_layout = QVBoxLayout(changes)
+        changes_layout.setContentsMargins(10, 12, 10, 10)
+        changes_layout.setSpacing(8)
+        self._change_summary = QLabel()
+        self._change_summary.setObjectName("documentReportMuted")
+        changes_layout.addWidget(self._change_summary)
+        self._changes = QListWidget()
+        self._changes.setObjectName("documentReportList")
+        changes_layout.addWidget(self._changes, 1)
+        self._change_detail = QPlainTextEdit()
+        self._change_detail.setObjectName("documentReportDetail")
+        self._change_detail.setReadOnly(True)
+        self._change_detail.setMaximumHeight(105)
+        changes_layout.addWidget(self._change_detail)
+        self._tabs.addTab(changes, "Changes since save")
+        root.addWidget(self._tabs, 1)
+
+        footer = QHBoxLayout()
+        self._refresh = QPushButton("Refresh")
+        self._refresh.setIcon(_canvas_icon("refresh"))
+        self._export = QPushButton("Export report")
+        self._export.setIcon(_canvas_icon("export"))
+        close = QPushButton("Close")
+        close.setObjectName("primaryAction")
+        footer.addWidget(self._refresh)
+        footer.addWidget(self._export)
+        footer.addStretch(1)
+        footer.addWidget(close)
+        root.addLayout(footer)
+
+        self.setStyleSheet("""
+            QDialog { background: #fbfaf8; color: #2d3740; }
+            QLabel#documentReportTitle { font-size: 18px; font-weight: 750; color: #27313a; }
+            QLabel#documentReportFingerprint, QLabel#documentReportMuted {
+                color: #858b90; font-size: 10px;
+            }
+            QLabel#documentReportStatus { border-radius: 11px; padding: 6px 11px;
+                font-weight: 700; }
+            QFrame#documentMetrics { background: #fffefd; border: 1px solid #e4dfd9;
+                border-radius: 12px; }
+            QLabel#documentMetricValue { color: #303941; font-size: 17px; font-weight: 750; }
+            QLabel#documentMetricCaption { color: #858b90; font-size: 9px; }
+            QTabWidget::pane { background: transparent; border: none; top: -1px; }
+            QTabBar { background: transparent; border: none; }
+            QTabBar::tab { color: #69737a; background: transparent; border: none;
+                padding: 9px 15px; margin-right: 3px; }
+            QTabBar::tab:selected { color: #e95549; font-weight: 700;
+                border-bottom: 2px solid #ff6b5f; }
+            QComboBox { background: #fffefd; border: 1px solid #ddd8d1;
+                border-radius: 8px; padding: 5px 9px; min-width: 125px; }
+            QListWidget#documentReportList { background: transparent; border: none; outline: none; }
+            QListWidget#documentReportList::item { border-bottom: 1px solid #efebe6;
+                padding: 9px 8px; }
+            QListWidget#documentReportList::item:selected { color: #d94e43;
+                background: #fff1ee; border-radius: 8px; }
+            QPlainTextEdit#documentReportDetail { color: #59636b; background: #f7f5f2;
+                border: 1px solid #e7e2dc; border-radius: 9px; padding: 7px; }
+            QPushButton { color: #4e5961; background: #fffefd; border: 1px solid #ddd8d1;
+                border-radius: 9px; padding: 8px 13px; }
+            QPushButton:hover { border-color: #ffaaa1; background: #fff7f5; }
+            QPushButton#primaryAction { color: white; background: #ff6b5f; border: none;
+                font-weight: 700; }
+            QPushButton#primaryAction:hover { background: #ef5d50; }
+        """)
+        self._severity_filter.currentIndexChanged.connect(self._populate_issues)
+        self._issues.currentItemChanged.connect(self._show_issue)
+        self._changes.currentItemChanged.connect(self._show_change)
+        self._refresh.clicked.connect(self.refresh)
+        self._export.clicked.connect(self._export_report)
+        close.clicked.connect(self.close)
+
+    def showReport(self) -> None:
+        self.refresh()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def refresh(self) -> None:
+        self._report = self.canvas.diagnoseDocument()
+        self._diff = self.canvas.documentDiff()
+        report = self._report
+        self._fingerprint.setText(f"SHA-256  {report.fingerprint[:16]}…")
+        status = {
+            "healthy": ("Healthy", "#e8f7f2", "#138a71", "#bde8dc"),
+            "warning": ("Needs attention", "#fff6e5", "#a96916", "#f4dcae"),
+            "error": ("Errors found", "#fff0ed", "#d94e43", "#ffd0c9"),
+        }[report.severity]
+        self._status.setText(status[0])
+        self._status.setStyleSheet(
+            f"background:{status[1]};color:{status[2]};border:1px solid {status[3]};"
+        )
+        for key, label in self._metric_labels.items():
+            label.setText(str(report.metrics.get(key, 0)))
+        self._populate_issues()
+        self._populate_changes()
+
+    def _populate_issues(self, _index: int = 0) -> None:
+        self._issues.clear()
+        if self._report is None:
+            return
+        severity = str(self._severity_filter.currentData())
+        visible = [
+            issue for issue in self._report.issues
+            if severity == "all" or issue.severity == severity
+        ]
+        for issue in visible:
+            target = f"  ·  {issue.target_type}:{issue.target_id}" if issue.target_id else ""
+            item = QListWidgetItem(
+                f"{issue.severity.upper()}  {issue.message}\n{issue.code}{target}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, issue.to_dict())
+            item.setForeground(QColor({"error": "#d94e43", "warning": "#a96916"}.get(issue.severity, "#52616b")))
+            self._issues.addItem(item)
+        counts = self._report.counts
+        self._issue_count.setText(
+            f"{counts['error']} errors  ·  {counts['warning']} warnings  ·  {counts['info']} info"
+        )
+        if self._issues.count():
+            self._issues.setCurrentRow(0)
+        else:
+            placeholder = QListWidgetItem("No findings in this filter")
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            self._issues.addItem(placeholder)
+            self._issue_detail.setPlainText("The document passes the selected health checks.")
+
+    def _show_issue(self, item: QListWidgetItem | None, _previous=None) -> None:
+        data = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(data, Mapping):
+            return
+        lines = [str(data.get("message", ""))]
+        if data.get("path"):
+            lines.append(f"Field: {data['path']}")
+        if data.get("suggestion"):
+            lines.append(f"Suggested action: {data['suggestion']}")
+        self._issue_detail.setPlainText("\n".join(lines))
+
+    def _populate_changes(self) -> None:
+        self._changes.clear()
+        if self._diff is None:
+            return
+        counts = self._diff.counts
+        self._change_summary.setText(
+            f"{counts['added']} added  ·  {counts['removed']} removed  ·  "
+            f"{counts['modified']} modified"
+        )
+        for change in self._diff.changes:
+            fields = ", ".join(change.fields[:5])
+            suffix = f"\n{fields}" if fields else ""
+            item = QListWidgetItem(
+                f"{change.action.upper()}  {change.target_type}:{change.target_id}{suffix}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, change.to_dict())
+            self._changes.addItem(item)
+        if self._changes.count():
+            self._changes.setCurrentRow(0)
+        else:
+            placeholder = QListWidgetItem("No changes since the last save or load")
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            self._changes.addItem(placeholder)
+            self._change_detail.setPlainText("The current document matches its clean baseline.")
+
+    def _show_change(self, item: QListWidgetItem | None, _previous=None) -> None:
+        data = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(data, Mapping):
+            return
+        action = str(data.get("action", "change")).title()
+        target = f"{data.get('targetType', 'object')}:{data.get('targetId', '')}"
+        lines = [f"{action} {target}"]
+
+        def field_value(value: Any, path: str) -> Any:
+            current = value
+            for part in path.split("."):
+                if not isinstance(current, Mapping) or part not in current:
+                    return "<missing>"
+                current = current[part]
+            return current
+
+        fields = tuple(str(field) for field in data.get("fields", ()))
+        if fields:
+            for field in fields[:20]:
+                before = field_value(data.get("before"), field)
+                after = field_value(data.get("after"), field)
+                before_text = json.dumps(before, ensure_ascii=False)
+                after_text = json.dumps(after, ensure_ascii=False)
+                lines.append(f"{field}:  {before_text}  →  {after_text}")
+            if len(fields) > 20:
+                lines.append(f"…and {len(fields) - 20} more fields")
+        else:
+            payload = data.get("after") if data.get("action") == "added" else data.get("before")
+            lines.append(json.dumps(payload, ensure_ascii=False, indent=2))
+        self._change_detail.setPlainText("\n".join(lines))
+
+    def _export_report(self) -> None:
+        filename, _selected = QFileDialog.getSaveFileName(
+            self, "Export document health report", "monkez-canva-report.json", "JSON (*.json)"
+        )
+        if filename:
+            self.canvas.exportDocumentReport(filename)
 
 
 class _CanvasEditorToolbox(QDialog):
@@ -6483,6 +6780,8 @@ class MonkezCanva(QWidget):
     dotImported = pyqtSignal(dict)
     projectTemplateSaved = pyqtSignal(str, str)
     projectTemplateInstantiated = pyqtSignal(str, str)
+    documentDiagnosticsReady = pyqtSignal(dict)
+    documentDiffReady = pyqtSignal(dict)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -6508,6 +6807,7 @@ class MonkezCanva(QWidget):
         self._packet_runtime = PacketRuntime(event_sink=self._on_packet_runtime_event)
         self._runtime_debugger: _CanvasRuntimeDebugger | None = None
         self._template_browser: _CanvasTemplateBrowser | None = None
+        self._document_report: _CanvasDocumentReport | None = None
         self._workflow_executor: WorkflowExecutor | None = None
         self._workflow_node_states: dict[str, str] = {}
         self._workflow_trace: list[dict[str, Any]] = []
@@ -6553,6 +6853,7 @@ class MonkezCanva(QWidget):
         self._view = _CanvasView(self, self._scene)
         self._animation_scheduler = CanvasAnimationScheduler(self)
         self._document_model = CanvasDocument.from_dict(self._graphics_document())
+        self._document_baseline = self._document_model.to_dict()
         self._document_subscription = self._document_model.subscribe(self._on_document_operation)
         self._undo_stack = QUndoStack(self)
         self._undo_stack.setUndoLimit(80)
@@ -6738,6 +7039,13 @@ class MonkezCanva(QWidget):
         if self._template_browser is None:
             self._template_browser = _CanvasTemplateBrowser(self)
         self._template_browser.showBrowser()
+
+    def showDocumentDiagnostics(self) -> None:
+        """Open the detachable health and changes-since-save report."""
+
+        if self._document_report is None:
+            self._document_report = _CanvasDocumentReport(self)
+        self._document_report.showReport()
 
     def showDataBindingInspector(self, element_id: str = "") -> None:
         """Open the contextual Data bindings card for one element."""
@@ -7161,6 +7469,7 @@ class MonkezCanva(QWidget):
             export_menu.addAction("Print preview…", self.showPrintPreview)
             action("Command palette…", self.showCommandPalette, icon="command")
             action("Runtime debugger…", self.showRuntimeDebugger, icon="command")
+            action("Document health...", self.showDocumentDiagnostics, icon="command")
             return menu
 
         action("Copy", self.copySelection, enabled=clipboard_objects, icon="duplicate")
@@ -11085,6 +11394,7 @@ class MonkezCanva(QWidget):
         self._undo_stack.clear()
         self._set_read_only_reason("; ".join(reason for reason in reasons if reason))
         self._render_document(document.to_dict())
+        self._document_baseline = self.toDocument()
         return self
 
     def _newer_component_reasons(self, data: dict[str, Any]) -> list[str]:
@@ -11698,6 +12008,79 @@ class MonkezCanva(QWidget):
     def toJson(self, indent: int | None = 2) -> str:
         return json.dumps(self.toDocument(), ensure_ascii=False, indent=indent)
 
+    @staticmethod
+    def _diagnostic_document_input(
+        document: CanvasDocument | Mapping[str, Any] | str | Path,
+    ) -> dict[str, Any]:
+        if isinstance(document, CanvasDocument):
+            return document.to_dict()
+        if isinstance(document, Mapping):
+            return json.loads(json.dumps(dict(document), ensure_ascii=False))
+        serialized = str(document)
+        if serialized.lstrip().startswith("{"):
+            value = json.loads(serialized)
+            if not isinstance(value, dict):
+                raise TypeError("MonkezCanva document JSON root must be an object")
+            return value
+        return load_json_with_recovery(Path(serialized)).payload
+
+    def diagnoseDocument(self, *, verify_assets: bool = True) -> DocumentDiagnosticsReport:
+        """Return structured document, component and saved-asset health diagnostics."""
+
+        asset_issues: list[Any] = list(self._asset_integrity_issues)
+        target = self.persistentPath()
+        if verify_assets and (target.is_file() or backup_path(target).is_file()):
+            try:
+                loaded = load_json_with_recovery(target)
+                asset_issues.extend(verify_asset_manifest(loaded.payload, target.parent))
+            except (OSError, TypeError, ValueError) as error:
+                asset_issues.append(f"Persistent workspace check failed: {error}")
+        unique_issues = list(
+            dict.fromkeys(
+                issue.message() if hasattr(issue, "message") else str(issue)
+                for issue in asset_issues
+            )
+        )
+        report = diagnose_document(
+            self._document_model,
+            registry=self._element_registry,
+            asset_issues=unique_issues,
+        )
+        self.documentDiagnosticsReady.emit(report.to_dict())
+        return report
+
+    def documentDiff(
+        self,
+        baseline: CanvasDocument | Mapping[str, Any] | str | Path | None = None,
+    ) -> DocumentDiff:
+        """Compare the clean save/load baseline (or supplied document) to current state."""
+
+        before = (
+            self._document_baseline
+            if baseline is None
+            else self._diagnostic_document_input(baseline)
+        )
+        result = diff_documents(before, self.toDocument())
+        self.documentDiffReady.emit(result.to_dict())
+        return result
+
+    def exportDocumentReport(self, path: str | Path) -> Path:
+        """Atomically export health and baseline diff as portable JSON."""
+
+        report = self.diagnoseDocument()
+        changes = self.documentDiff()
+        target = atomic_write_json(
+            path,
+            {
+                "format": "monkez-canva-report",
+                "version": 1,
+                "health": report.to_dict(),
+                "diff": changes.to_dict(),
+            },
+        )
+        self.diagnosticMessage.emit(f"Exported document health report: {target}")
+        return target
+
     def exportPageConfiguration(self) -> dict[str, Any]:
         """Return the current PDF/print page configuration."""
 
@@ -12167,6 +12550,7 @@ class MonkezCanva(QWidget):
         else:
             payload.pop(ASSET_MANIFEST_KEY, None)
         atomic_write_json(target, payload)
+        self._document_baseline = self.toDocument()
         self._undo_stack.setClean()
         return target
 
@@ -12243,7 +12627,10 @@ class MonkezCanva(QWidget):
         self._ensure_writable()
         target = self.persistentPath()
         target.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.loads(json.dumps(document if document is not None else self.toDocument()))
+        baseline = json.loads(
+            json.dumps(document if document is not None else self.toDocument())
+        )
+        payload = json.loads(json.dumps(baseline))
         assets = target.parent / "assets" / target.stem
         for entry in payload.get("elements", []):
             source_text = str(entry.get("source", ""))
@@ -12283,6 +12670,7 @@ class MonkezCanva(QWidget):
                 entry["uri"] = managed
         payload[ASSET_MANIFEST_KEY] = build_asset_manifest(payload, target.parent)
         atomic_write_json(target, payload)
+        self._document_baseline = baseline
         self._asset_integrity_issues = []
         self.assetIntegrityChecked.emit([])
         self._undo_stack.setClean()
@@ -12311,6 +12699,7 @@ class MonkezCanva(QWidget):
             self.recoveryLoaded.emit(str(source), str(loaded.source))
         self._prepare_loaded_assets(payload, source.parent)
         self._restore_document(payload, allow_newer=True)
+        self._document_baseline = self.toDocument()
         if source != self.persistentPath():
             if not self.isReadOnly():
                 self.savePersistent()
@@ -12471,6 +12860,7 @@ class MonkezCanva(QWidget):
         if events:
             self._last_rendered_document_revision = self._document_model.revision
         self._undo_stack.clear()
+        self._document_baseline = self.toDocument()
 
     def _render_document(self, data: dict[str, Any]) -> None:
         if data.get("format") != "monkez-canva":
@@ -12990,6 +13380,8 @@ class MonkezCanva(QWidget):
             self._runtime_debugger.close()
         if self._template_browser is not None:
             self._template_browser.close()
+        if self._document_report is not None:
+            self._document_report.close()
         self.clearDataBindingRuntime(disconnect_sources=True)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)

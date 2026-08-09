@@ -345,7 +345,13 @@ metadata and collision-safe/Undoable canvas publishing and instantiation APIs.
 search/tag browser, safe PNG thumbnail capture and fallback previews. Context,
 Ctrl+K and public APIs share one instantiation path.
 
-Next: document diff/diagnostics reports and plugin packaging/discovery policy.
+`MC-ECOSYSTEM-DIAGNOSTICS-006` completes structured document health and semantic
+diff. The Qt-free engine produces immutable severity findings, graph metrics and
+stable fingerprints; the detached report compares against the clean save/load
+baseline and exports portable JSON.
+
+Next: plugin packaging/discovery policy, signed/trusted source boundaries and
+component-plugin installation diagnostics.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,

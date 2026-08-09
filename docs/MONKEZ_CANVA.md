@@ -733,6 +733,28 @@ Mở browser từ menu chuột phải vùng trống hoặc `Ctrl+K`. Truyền
 `capture_thumbnail=True` vào `saveGroupAsProjectTemplate()` để tự render PNG
 portable vào `templates/thumbnails` mà không làm dirty document.
 
+## Document health và semantic diff
+
+`Document Health` là cửa sổ Tool độc lập, mở từ menu chuột phải canvas trống hoặc
+`Ctrl+K` với từ khóa `health`. Cửa sổ gồm Health, metrics và Changes since save;
+baseline được cập nhật sau mỗi lần save/load nên diff không phụ thuộc thứ tự record.
+
+```python
+health = canvas.diagnoseDocument()
+print(health.severity, health.counts, health.metrics)
+
+changes = canvas.documentDiff()                 # baseline save/load -> current
+external = canvas.documentDiff("review.json")  # supplied document -> current
+canvas.exportDocumentReport("reports/canvas-health.json")
+canvas.showDocumentDiagnostics()
+```
+
+Lớp Qt-free `diagnose_document()` kiểm tra document graph, component registry,
+component schema/version, port, group/resource và asset manifest. `diff_documents()`
+so sánh scene/element/connector/group/resource theo stable ID, báo field lồng nhau
+và tạo SHA-256 fingerprint ổn định ngay cả khi thứ tự record thay đổi. Report chỉ
+đọc, không tạo Undo command và không làm dirty document.
+
 ## Export hình ảnh, tài liệu và graph
 
 Floatbar có nút **Export** độc lập với Save. Canvas có thể xuất toàn scene hoặc
