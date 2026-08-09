@@ -21,6 +21,15 @@ from .models import (
     SceneModel,
 )
 from .operations import OperationEvent
+from .palette import (
+    MAX_RECENT_COMPONENTS,
+    PALETTE_FAVORITES_KEY,
+    PALETTE_RECENT_KEY,
+    PaletteEntry,
+    normalize_component_ids,
+    record_recent_component,
+    search_palette,
+)
 from .persistence import (
     ASSET_MANIFEST_KEY,
     AssetIntegrityIssue,
@@ -44,6 +53,9 @@ __all__ = [
     "CLIPBOARD_FORMAT",
     "CLIPBOARD_VERSION",
     "CANVAS_CLIPBOARD_MIME_TYPE",
+    "MAX_RECENT_COMPONENTS",
+    "PALETTE_FAVORITES_KEY",
+    "PALETTE_RECENT_KEY",
     "DOCUMENT_FORMAT",
     "DOCUMENT_VERSION",
     "DOCUMENT_JSON_SCHEMA",
@@ -57,6 +69,7 @@ __all__ = [
     "ElementRegistry",
     "GroupModel",
     "OperationEvent",
+    "PaletteEntry",
     "RecoveryLoadResult",
     "PortModel",
     "ResourceModel",
@@ -69,7 +82,10 @@ __all__ = [
     "decode_selection_payload",
     "load_json_with_recovery",
     "migrate_document",
+    "normalize_component_ids",
+    "record_recent_component",
     "remap_selection_payload",
+    "search_palette",
     "DocumentMigrationResult",
     "sha256_file",
     "verify_asset_manifest",

@@ -127,6 +127,21 @@ direct graphics gestures, never while model operations are rendered. The
 multi-selection Inspector maintains an explicit mixed state per field; sync does
 not manufacture values, and auto-apply sends only fields dirtied by the user.
 
+## Registry-driven editor discovery
+
+`monkez_canva/palette.py` is the Qt-free query layer for component discovery. It
+normalizes ordered preferences and ranks registry metadata across label, stable
+type ID, category, capabilities and plugin owner. The Qt pane only materializes
+the returned entries; registering a component therefore feeds search, categories,
+favorite controls and Ctrl+K commands without adding UI-specific branches.
+
+Favorites and a bounded 12-entry recent list are scene properties, so they follow
+portable project persistence and shared documents. Adding an element updates the
+recent list inside the same candidate document mutation; Undo/Redo remains one
+coherent user action. The command palette rebuilds on open from registry, selection,
+clipboard MIME, read-only state and history, and stores callbacks only in trusted
+runtime UI—not in JSON.
+
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading

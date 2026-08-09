@@ -159,6 +159,14 @@ Updated: 2026-08-09
 
 ## Latest verification
 
+- `MC-EDITOR-PALETTE-001` and `MC-EDITOR-COMMAND-001` provide a registry-driven
+  searchable Add tab, category/Favorites/Recent filters, portable project
+  preferences and a Ctrl+K command launcher. Command availability reflects
+  registry, selection, clipboard, history and read-only state at open time.
+  Favorites use icon-only stars; recent updates are part of the element Add
+  command. Native Windows QA at 448x710 and 520x430 confirmed clean two-column
+  tiles, unclipped search/filter controls and complete keyboard focus styling.
+
 - `MC-EDITOR-SELECTION-001` begins Phase 2 with a strict, versioned graph
   clipboard. Ctrl+C/X/V and public APIs preserve internal connectors, remap IDs,
   endpoints and waypoints, and make cut/paste/duplicate atomic in history.
@@ -239,7 +247,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 156 tests and covers all 36 public
+- The automated suite contains 160 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

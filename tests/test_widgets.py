@@ -890,6 +890,95 @@ class WidgetTests(unittest.TestCase):
         canvas.close()
         canvas.deleteLater()
 
+    def test_canva_search_palette_favorites_recent_and_commands(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(900, 620)
+        canvas.show()
+        canvas.setEditMode(True)
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(0)
+        self.app.processEvents()
+
+        self.assertEqual(13, toolbox._palette_grid.count())
+        toolbox._palette_search.setText("chart")
+        self.app.processEvents()
+        self.assertEqual(2, len([
+            toolbox._palette_grid.itemAt(index).widget()
+            for index in range(toolbox._palette_grid.count())
+            if toolbox._palette_grid.itemAt(index).widget().property("componentType")
+        ]))
+
+        canvas.undoStack().clear()
+        self.assertTrue(canvas.setPaletteFavorite("node"))
+        self.assertEqual(("node",), canvas.paletteFavorites())
+        self.assertEqual(["node"], canvas.toDocument()["scene"]["paletteFavorites"])
+        toolbox._palette_search.clear()
+        toolbox._palette_filter.setCurrentIndex(
+            toolbox._palette_filter.findData("favorites")
+        )
+        self.app.processEvents()
+        favorite_tiles = [
+            toolbox._palette_grid.itemAt(index).widget()
+            for index in range(toolbox._palette_grid.count())
+            if toolbox._palette_grid.itemAt(index).widget().property("componentType")
+        ]
+        self.assertEqual(["node"], [tile.property("componentType") for tile in favorite_tiles])
+        canvas.undo()
+        self.assertEqual((), canvas.paletteFavorites())
+        canvas.redo()
+        self.assertEqual(("node",), canvas.paletteFavorites())
+
+        canvas.undoStack().clear()
+        node_id = canvas.addPaletteElement("node")
+        self.assertEqual("node", canvas.paletteRecent()[0])
+        self.assertEqual(1, canvas.undoStack().count())
+        canvas.undo()
+        self.assertIsNone(canvas.element(node_id))
+        self.assertNotIn("node", canvas.paletteRecent())
+        canvas.redo()
+        self.assertIsNotNone(canvas.element(node_id))
+        self.assertEqual("node", canvas.paletteRecent()[0])
+
+        restored = MonkezCanva()
+        restored.loadDocument(canvas.toDocument())
+        self.assertEqual(("node",), restored.paletteFavorites())
+        self.assertEqual("node", restored.paletteRecent()[0])
+        restored.deleteLater()
+
+        canvas.showCommandPalette("Add rectangle")
+        palette = canvas._command_palette
+        self.assertTrue(palette.isVisible())
+        self.assertEqual(1, palette._list.count())
+        before = len(canvas.elements())
+        palette._activate_current()
+        self.assertEqual(before + 1, len(canvas.elements()))
+        self.assertFalse(palette.isVisible())
+        canvas.activateWindow()
+        canvas.view().viewport().setFocus()
+        self.app.processEvents()
+        QTest.keyClick(
+            canvas.view().viewport(), Qt.Key.Key_K,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        self.app.processEvents()
+        self.assertTrue(palette.isVisible())
+        palette.close()
+        toolbox.activateWindow()
+        toolbox._palette_search.setFocus()
+        self.app.processEvents()
+        QTest.keyClick(
+            toolbox._palette_search, Qt.Key.Key_K,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        self.app.processEvents()
+        self.assertTrue(palette.isVisible())
+        palette.close()
+
+        canvas.setEditMode(False)
+        canvas.clear()
+        canvas.close()
+        canvas.deleteLater()
+
     def test_canva_node_ports_drag_connection_and_click_signals(self) -> None:
         window = QDialog()
         layout = QVBoxLayout(window)

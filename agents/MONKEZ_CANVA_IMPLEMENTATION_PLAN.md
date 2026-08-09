@@ -186,6 +186,17 @@ properties and applies only explicitly edited fields in one macro command.
 Next: searchable palette/favorites/recent items and a context-aware command
 palette, followed by smart guides and configurable snap targets.
 
+### Palette and command discovery progress — 2026-08-09
+
+`MC-EDITOR-PALETTE-001` adds the Qt-free palette search/ranking layer, dynamic
+two-column component tiles, category/Favorites/Recent filters and portable scene
+preferences. Recent updates share the Add command. `MC-EDITOR-COMMAND-001` adds
+the Ctrl+K launcher with live context from registry, selection, clipboard,
+history and read-only state plus full arrow/Enter/Escape keyboard operation.
+
+Next: context-aware blank/item/connector menus, equal-size actions, smart guides
+and configurable grid/edge/center/port snapping.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

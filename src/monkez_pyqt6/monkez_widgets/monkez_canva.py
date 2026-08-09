@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from PyQt6.QtCore import (
     QByteArray,
+    QEvent,
     QMimeData,
     QSignalBlocker,
     QStandardPaths,
@@ -80,6 +81,9 @@ from monkez_pyqt6.monkez_canva import (
     ElementDefinition,
     ElementRegistry,
     OperationEvent,
+    PALETTE_FAVORITES_KEY,
+    PALETTE_RECENT_KEY,
+    PaletteEntry,
     CANVAS_CLIPBOARD_MIME_TYPE,
     atomic_write_json,
     backup_path,
@@ -87,6 +91,9 @@ from monkez_pyqt6.monkez_canva import (
     build_selection_payload,
     create_default_element_registry,
     load_json_with_recovery,
+    normalize_component_ids,
+    record_recent_component,
+    search_palette,
     decode_selection_payload,
     remap_selection_payload,
     verify_asset_manifest,
@@ -514,6 +521,24 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
             painter.drawLine(QPointF(x, 3), QPointF(x, 17))
         for y in (4, 10, 16):
             painter.drawLine(QPointF(3, y), QPointF(17, y))
+    elif name == "search":
+        painter.drawEllipse(QRectF(3, 3, 10, 10))
+        painter.drawLine(QPointF(12, 12), QPointF(17, 17))
+    elif name in ("star", "star_filled"):
+        path = QPainterPath(QPointF(10, 2.5))
+        for index in range(1, 10):
+            angle = -math.pi / 2 + index * math.pi / 5
+            radius = 7.2 if index % 2 == 0 else 3.2
+            path.lineTo(QPointF(10 + math.cos(angle) * radius, 10 + math.sin(angle) * radius))
+        path.closeSubpath()
+        if name == "star_filled":
+            painter.setBrush(QColor(color))
+        painter.drawPath(path)
+    elif name == "command":
+        painter.drawRoundedRect(QRectF(3, 3, 14, 14), 4, 4)
+        painter.drawLine(QPointF(7, 7), QPointF(10, 10))
+        painter.drawLine(QPointF(10, 10), QPointF(7, 13))
+        painter.drawLine(QPointF(11.5, 13), QPointF(14, 13))
     elif name == "background":
         painter.drawRoundedRect(QRectF(2.5, 3.5, 15, 13), 2, 2)
         painter.drawEllipse(QRectF(12, 6, 2.5, 2.5))
@@ -1428,6 +1453,13 @@ class _CanvasPaneHeader(QFrame):
         self._selection_badge.setObjectName("canvasSelectionBadge")
         self._selection_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._selection_badge)
+        commands = QToolButton()
+        commands.setObjectName("canvasPaneCommand")
+        commands.setIcon(_canvas_icon("command"))
+        commands.setIconSize(QSize(17, 17))
+        commands.setToolTip("Open command palette (Ctrl+K)")
+        commands.clicked.connect(lambda _checked=False: canvas.showCommandPalette())
+        layout.addWidget(commands)
         close = QToolButton()
         close.setObjectName("canvasPaneClose")
         close.setIcon(_canvas_icon("close"))
@@ -1505,6 +1537,221 @@ class _CanvasNumberField(QDoubleSpinBox):
             self.setMixedValue(False)
             self.lineEdit().clear()
         super().keyPressEvent(event)
+
+
+class _CanvasPaletteTile(QFrame):
+    """One compact registry-driven component entry with a favorite action."""
+
+    def __init__(
+        self,
+        definition: ElementDefinition,
+        favorite: bool,
+        add_callback: Callable[[], None],
+        favorite_callback: Callable[[], None],
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.definition = definition
+        self.setObjectName("canvasPaletteTile")
+        self.setProperty("componentType", definition.type_id)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 4, 4, 4)
+        layout.setSpacing(1)
+        add = QToolButton()
+        add.setObjectName("canvasPaletteAdd")
+        add.setText(definition.label)
+        add.setIcon(_canvas_icon(definition.icon))
+        add.setIconSize(QSize(18, 18))
+        add.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        add.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        add.setToolTip(f"Add {definition.label}\n{definition.category} · {definition.type_id}")
+        add.clicked.connect(lambda _checked=False: add_callback())
+        layout.addWidget(add, 1)
+        star = QToolButton()
+        star.setObjectName("canvasPaletteFavorite")
+        star.setIcon(_canvas_icon("star_filled" if favorite else "star", "#f59e0b"))
+        star.setIconSize(QSize(15, 15))
+        star.setFixedSize(28, 28)
+        star.setToolTip("Remove from favorites" if favorite else "Add to favorites")
+        star.clicked.connect(lambda _checked=False: favorite_callback())
+        layout.addWidget(star)
+
+
+class _CanvasCommandPalette(QDialog):
+    """Keyboard-first, context-aware command launcher for one canvas."""
+
+    def __init__(self, canvas: "MonkezCanva") -> None:
+        super().__init__(canvas.window())
+        self.canvas = canvas
+        self._command_lookup: dict[str, Callable[[], Any]] = {}
+        self.setObjectName("canvasCommandPalette")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.resize(520, 430)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        panel = QFrame()
+        panel.setObjectName("canvasCommandPanel")
+        shadow = QGraphicsDropShadowEffect(panel)
+        shadow.setBlurRadius(40)
+        shadow.setOffset(0, 12)
+        shadow.setColor(QColor(31, 36, 41, 80))
+        panel.setGraphicsEffect(shadow)
+        root.addWidget(panel)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 15, 16, 13)
+        layout.setSpacing(9)
+        title_row = QHBoxLayout()
+        title = QLabel("Command palette")
+        title.setObjectName("canvasCommandTitle")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        shortcut = QLabel("Ctrl K")
+        shortcut.setObjectName("canvasCommandShortcut")
+        title_row.addWidget(shortcut)
+        layout.addLayout(title_row)
+        self._search = QLineEdit()
+        self._search.setObjectName("canvasCommandSearch")
+        self._search.setPlaceholderText("Search actions or components…")
+        self._search.addAction(_canvas_icon("search"), QLineEdit.ActionPosition.LeadingPosition)
+        self._search.textChanged.connect(self._refresh)
+        self._search.returnPressed.connect(self._activate_current)
+        self._search.installEventFilter(self)
+        layout.addWidget(self._search)
+        self._list = QListWidget()
+        self._list.setObjectName("canvasCommandList")
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list.itemDoubleClicked.connect(lambda _item: self._activate_current())
+        layout.addWidget(self._list, 1)
+        hint = QLabel("↑ ↓ navigate   ·   Enter run   ·   Esc close")
+        hint.setObjectName("canvasCommandHint")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(hint)
+        self.setStyleSheet("""
+        QFrame#canvasCommandPanel {
+            background: #fcfbf9; border: 1px solid #d8d5d0; border-radius: 18px;
+        }
+        QLabel#canvasCommandTitle { color: #303941; font-size: 16px; font-weight: 700; }
+        QLabel#canvasCommandShortcut {
+            color: #7a7f84; background: #f1efec; border: 1px solid #e2ded8;
+            border-radius: 7px; padding: 4px 8px; font-size: 9px; font-weight: 650;
+        }
+        QLineEdit#canvasCommandSearch {
+            color: #303941; background: #fffefd; border: 1px solid #d7d3ce;
+            border-radius: 11px; padding: 8px 10px; min-height: 28px;
+            selection-background-color: #ffd8d2;
+        }
+        QLineEdit#canvasCommandSearch:focus { border-color: #ff8c80; }
+        QListWidget#canvasCommandList {
+            color: #394249; background: transparent; border: none; outline: none;
+        }
+        QListWidget#canvasCommandList::item {
+            border-radius: 9px; padding: 9px 10px; margin: 1px 0;
+        }
+        QListWidget#canvasCommandList::item:selected { color: #df5145; background: #fff0ed; }
+        QListWidget#canvasCommandList::item:hover:!selected { background: #f4f1ed; }
+        QListWidget#canvasCommandList::item:disabled { color: #b5b1ac; }
+        QLabel#canvasCommandHint { color: #96928d; font-size: 9px; }
+        """)
+
+    def showPalette(self, query: str = "") -> None:
+        self._search.setText(str(query))
+        self._refresh()
+        owner = self.canvas.window()
+        center = owner.frameGeometry().center()
+        self.move(center.x() - self.width() // 2, center.y() - self.height() // 2)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._search.setFocus()
+        self._search.selectAll()
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._search and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Down:
+                self._list.setCurrentRow(min(self._list.count() - 1, self._list.currentRow() + 1))
+                return True
+            if event.key() == Qt.Key.Key_Up:
+                self._list.setCurrentRow(max(0, self._list.currentRow() - 1))
+                return True
+            if event.key() == Qt.Key.Key_Escape:
+                self.close()
+                return True
+        return super().eventFilter(watched, event)
+
+    def _commands(self) -> list[tuple[str, str, str, str, str, bool, Callable[[], Any]]]:
+        canvas = self.canvas
+        writable = not canvas.isReadOnly()
+        selected = canvas.selectedObjectIds()
+        selected_elements = canvas.selectedElementIds()
+        clipboard = QApplication.clipboard().mimeData()
+        can_paste = bool(clipboard and clipboard.hasFormat(CANVAS_CLIPBOARD_MIME_TYPE))
+        commands: list[tuple[str, str, str, str, str, bool, Callable[[], Any]]] = []
+        for definition in canvas.elementRegistry().definitions():
+            commands.append((
+                f"add:{definition.type_id}", f"Add {definition.label}",
+                definition.category, "component add", definition.icon, writable,
+                lambda kind=definition.type_id: canvas.addPaletteElement(kind),
+            ))
+        commands.extend((
+            ("edit:copy", "Copy selection", "Edit", "clipboard", "duplicate", bool(selected), canvas.copySelection),
+            ("edit:cut", "Cut selection", "Edit", "clipboard", "delete", writable and bool(selected), canvas.cutSelection),
+            ("edit:paste", "Paste", "Edit", "clipboard", "duplicate", writable and can_paste, canvas.pasteSelection),
+            ("edit:duplicate", "Duplicate selection", "Edit", "copy", "duplicate", writable and bool(selected), canvas.duplicateSelection),
+            ("edit:delete", "Delete selection", "Edit", "remove", "delete", writable and bool(selected), canvas.deleteSelected),
+            ("edit:select-all", "Select all elements", "Edit", "selection", "rectangle", bool(canvas.elements()), canvas.selectAllElements),
+            ("history:undo", f"Undo {canvas.undoText()}".strip(), "History", "revert", "undo", writable and canvas.canUndo(), canvas.undo),
+            ("history:redo", f"Redo {canvas.redoText()}".strip(), "History", "repeat", "redo", writable and canvas.canRedo(), canvas.redo),
+            ("view:fit", "Fit all content", "View", "zoom", "fit", True, canvas.fitContent),
+            ("view:zoom-selection", "Zoom to selection", "View", "focus", "align_center", bool(selected), canvas.zoomToSelection),
+            ("view:grid", "Toggle grid", "View", "background", "grid", writable, lambda: canvas.setGridVisible(not canvas.gridVisible)),
+            ("save:project", "Save project workspace", "Save", "persistent durable", "save", writable, canvas.savePersistent),
+        ))
+        for alignment in ("left", "hcenter", "right", "top", "vcenter", "bottom"):
+            commands.append((
+                f"arrange:{alignment}", f"Align {alignment}", "Arrange", "selection",
+                f"align_{alignment}", writable and len(selected_elements) >= 2,
+                lambda value=alignment: canvas.alignSelected(value),
+            ))
+        return commands
+
+    def _refresh(self, _text: str = "") -> None:
+        query_words = tuple(word for word in self._search.text().casefold().split() if word)
+        self._list.clear()
+        self._command_lookup.clear()
+        ranked = []
+        for index, command in enumerate(self._commands()):
+            command_id, label, category, keywords, _icon, _enabled, _callback = command
+            searchable = f"{label} {category} {keywords} {command_id}".casefold()
+            if any(word not in searchable for word in query_words):
+                continue
+            query = " ".join(query_words)
+            score = 0 if query and label.casefold().startswith(query) else 1 if query_words else 2
+            ranked.append((score, index, command))
+        ranked.sort(key=lambda value: (value[0], value[1]))
+        for _score, _index, command in ranked:
+            command_id, label, category, _keywords, icon, enabled, callback = command
+            item = QListWidgetItem(_canvas_icon(icon), f"{label}    · {category}")
+            item.setData(Qt.ItemDataRole.UserRole, command_id)
+            if not enabled:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self._list.addItem(item)
+            self._command_lookup[command_id] = callback
+        if self._list.count():
+            self._list.setCurrentRow(0)
+
+    def _activate_current(self) -> None:
+        item = self._list.currentItem()
+        if item is None or not item.flags() & Qt.ItemFlag.ItemIsEnabled:
+            return
+        callback = self._command_lookup.get(str(item.data(Qt.ItemDataRole.UserRole)))
+        if callback is not None:
+            self.close()
+            callback()
 
 
 class _CanvasEditorToolbox(QDialog):
@@ -1604,11 +1851,12 @@ class _CanvasEditorToolbox(QDialog):
         QLabel#canvasSelectionBadge[hasSelection="true"] {
             color: #ef5d50; background: #fff3f0; border-color: #ffd3cc;
         }
-        QToolButton#canvasPaneClose {
+        QToolButton#canvasPaneClose, QToolButton#canvasPaneCommand {
             color: #4f5961; background: transparent; border: none;
             border-radius: 9px; min-width: 30px; min-height: 30px; padding: 3px;
         }
         QToolButton#canvasPaneClose:hover { color: #d94e43; background: #fff0ed; }
+        QToolButton#canvasPaneCommand:hover { color: #d94e43; background: #fff0ed; }
         QFrame#canvasPaneFooter { border: none; border-top: 1px solid #ebe7e2; background: transparent; }
         QLabel#canvasFooterStatus {
             color: #0f9f8f; background: transparent; font-size: 11px; font-weight: 650;
@@ -1670,6 +1918,21 @@ class _CanvasEditorToolbox(QDialog):
             background: transparent; border: none; border-radius: 8px; min-width: 31px; min-height: 31px;
         }
         QToolButton#canvasArrangeAction:hover { background: #fff0ed; }
+        QFrame#canvasPaletteTile {
+            background: #fffefd; border: 1px solid #e3dfda; border-radius: 10px;
+        }
+        QFrame#canvasPaletteTile:hover { border-color: #ffc0b8; background: #fff8f6; }
+        QToolButton#canvasPaletteAdd {
+            color: #3e474e; background: transparent; border: none; border-radius: 7px;
+            padding: 5px 3px; min-height: 27px; text-align: left; font-weight: 600;
+        }
+        QToolButton#canvasPaletteAdd:hover { color: #e95549; background: transparent; }
+        QToolButton#canvasPaletteFavorite {
+            background: transparent; border: none; border-radius: 7px; padding: 3px;
+        }
+        QToolButton#canvasPaletteFavorite:hover { background: #fff0d8; }
+        QLineEdit#canvasPaletteSearch { padding-left: 7px; }
+        QLabel#canvasPaletteCount { color: #8c8984; font-size: 9px; }
         QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
             color: #303941; background: #fffefd; border: 1px solid #d9d6d1;
             border-radius: 10px; padding: 4px 10px; min-height: 28px;
@@ -1737,44 +2000,50 @@ class _CanvasEditorToolbox(QDialog):
     def _elements_tab(self) -> QWidget:
         page = QWidget()
         page_layout = QVBoxLayout(page)
-        page_layout.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        body = QWidget()
-        body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        layout = QVBoxLayout(body)
-        layout.setContentsMargins(4, 6, 4, 4)
-        layout.setSpacing(7)
-        registry = self.canvas.elementRegistry()
-        for group_name in registry.categories():
-            group = QGroupBox(group_name)
-            grid = QGridLayout(group)
-            grid.setHorizontalSpacing(6)
-            grid.setVerticalSpacing(6)
-            for index, definition in enumerate(registry.in_category(group_name)):
-                label = definition.label
-                kind = definition.type_id
-                button = QToolButton()
-                button.setText(label)
-                button.setIcon(_canvas_icon(definition.icon))
-                button.setIconSize(QSize(17, 17))
-                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-                button.setMinimumSize(100, 34)
-                if definition.media_picker:
-                    button.clicked.connect(lambda _checked=False, value=kind: self._choose_media(value))
-                else:
-                    button.clicked.connect(lambda _checked=False, value=kind: self.canvas.addElement(value))
-                grid.addWidget(button, index // 2, index % 2)
-            layout.addWidget(group)
+        page_layout.setContentsMargins(0, 4, 0, 0)
+        page_layout.setSpacing(7)
+        search_row = QHBoxLayout()
+        search_row.setSpacing(6)
+        self._palette_search = QLineEdit()
+        self._palette_search.setObjectName("canvasPaletteSearch")
+        self._palette_search.setPlaceholderText("Search components…")
+        self._palette_search.addAction(
+            _canvas_icon("search"), QLineEdit.ActionPosition.LeadingPosition
+        )
+        search_row.addWidget(self._palette_search, 1)
+        self._palette_filter = QComboBox()
+        self._palette_filter.setMinimumWidth(126)
+        self._palette_filter.addItem("All", "all")
+        self._palette_filter.addItem("Favorites", "favorites")
+        self._palette_filter.addItem("Recent", "recent")
+        self._palette_filter.insertSeparator(3)
+        for category in self.canvas.elementRegistry().categories():
+            self._palette_filter.addItem(category, category)
+        search_row.addWidget(self._palette_filter)
+        page_layout.addLayout(search_row)
+        self._palette_count = QLabel()
+        self._palette_count.setObjectName("canvasPaletteCount")
+        page_layout.addWidget(self._palette_count)
+        self._palette_scroll = QScrollArea()
+        self._palette_scroll.setWidgetResizable(True)
+        self._palette_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._palette_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._palette_body = QWidget()
+        self._palette_body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._palette_grid = QGridLayout(self._palette_body)
+        self._palette_grid.setContentsMargins(3, 3, 3, 3)
+        self._palette_grid.setHorizontalSpacing(6)
+        self._palette_grid.setVerticalSpacing(6)
+        self._palette_grid.setColumnStretch(0, 1)
+        self._palette_grid.setColumnStretch(1, 1)
+        self._palette_scroll.setWidget(self._palette_body)
+        page_layout.addWidget(self._palette_scroll, 1)
         connect_selected = QPushButton("Connect 2 selected items")
         connect_selected.setObjectName("primaryAction")
         connect_selected.setIcon(_canvas_icon("connector", "#ffffff"))
         connect_selected.setToolTip("Create a selectable connector between exactly two selected items")
         connect_selected.clicked.connect(self.canvas.connectSelected)
-        layout.addWidget(connect_selected)
-        layout.addStretch(1)
+        page_layout.addWidget(connect_selected)
         buttons = QHBoxLayout()
         duplicate = QPushButton("Duplicate")
         duplicate.setIcon(_canvas_icon("duplicate"))
@@ -1785,14 +2054,63 @@ class _CanvasEditorToolbox(QDialog):
         delete.clicked.connect(self.canvas.deleteSelected)
         buttons.addWidget(duplicate)
         buttons.addWidget(delete)
-        layout.addLayout(buttons)
+        page_layout.addLayout(buttons)
         drop_hint = QLabel("Drag PNG, JPG, WebP or GIF files directly onto the canvas.")
         drop_hint.setWordWrap(True)
         drop_hint.setStyleSheet("color: #64748b")
-        layout.addWidget(drop_hint)
-        scroll.setWidget(body)
-        page_layout.addWidget(scroll)
+        page_layout.addWidget(drop_hint)
+        self._palette_search.textChanged.connect(self._rebuild_element_palette)
+        self._palette_filter.currentIndexChanged.connect(self._rebuild_element_palette)
+        self.canvas.palettePreferencesChanged.connect(
+            lambda _favorites, _recent: self._rebuild_element_palette()
+        )
+        self._rebuild_element_palette()
         return page
+
+    def _palette_entries(self) -> tuple[PaletteEntry, ...]:
+        return tuple(
+            PaletteEntry(
+                definition.type_id,
+                definition.label,
+                definition.category,
+                definition.icon,
+                tuple(definition.capabilities) + (definition.plugin_id,),
+            )
+            for definition in self.canvas.elementRegistry().definitions()
+        )
+
+    def _rebuild_element_palette(self, _value: Any = None) -> None:
+        if not hasattr(self, "_palette_grid"):
+            return
+        while self._palette_grid.count():
+            item = self._palette_grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        entries = search_palette(
+            self._palette_entries(),
+            self._palette_search.text(),
+            category=str(self._palette_filter.currentData() or "all"),
+            favorites=self.canvas.paletteFavorites(),
+            recent=self.canvas.paletteRecent(),
+        )
+        favorites = set(self.canvas.paletteFavorites())
+        for index, entry in enumerate(entries):
+            definition = self.canvas.elementRegistry().require(entry.type_id)
+            tile = _CanvasPaletteTile(
+                definition,
+                entry.type_id in favorites,
+                lambda kind=entry.type_id: self.canvas.addPaletteElement(kind),
+                lambda kind=entry.type_id: self.canvas.togglePaletteFavorite(kind),
+            )
+            self._palette_grid.addWidget(tile, index // 2, index % 2)
+        if not entries:
+            empty = QLabel("No matching components")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setStyleSheet("color: #96918c; padding: 28px")
+            self._palette_grid.addWidget(empty, 0, 0, 1, 2)
+        self._palette_grid.setRowStretch(max(1, (len(entries) + 1) // 2), 1)
+        label = "component" if len(entries) == 1 else "components"
+        self._palette_count.setText(f"{len(entries)} {label}")
 
     def _inspector_tab(self) -> QWidget:
         page = QWidget()
@@ -3275,6 +3593,7 @@ class MonkezCanva(QWidget):
     readOnlyChanged = pyqtSignal(bool, str)
     recoveryLoaded = pyqtSignal(str, str)
     assetIntegrityChecked = pyqtSignal(list)
+    palettePreferencesChanged = pyqtSignal(list, list)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -3286,6 +3605,8 @@ class MonkezCanva(QWidget):
         self._grid_style = 0
         self._background_image = ""
         self._background_image_mode = 0
+        self._palette_favorites: tuple[str, ...] = ()
+        self._palette_recent: tuple[str, ...] = ()
         self._message_payloads: dict[str, dict[str, Any]] = {}
         self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
@@ -3329,6 +3650,7 @@ class MonkezCanva(QWidget):
         self._quick_toolbar.hide()
         layout.addWidget(self._view)
         self._toolbox: _CanvasEditorToolbox | None = None
+        self._command_palette: _CanvasCommandPalette | None = None
         self._scene.selectionChanged.connect(self._emit_selection)
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
@@ -3383,8 +3705,23 @@ class MonkezCanva(QWidget):
                 lambda x=dx, y=dy: self.nudgeSelected(x, y)
             )
             self._editor_shortcuts.append(shortcut)
+        QApplication.instance().installEventFilter(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._emit_history_state()
+
+    def eventFilter(self, watched, event) -> bool:
+        if (
+            self._shortcut_enabled
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_K
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            and isinstance(watched, QWidget)
+        ):
+            owner = watched.window()
+            if owner in (self.window(), self._toolbox, self._command_palette):
+                self.showCommandPalette()
+                return True
+        return super().eventFilter(watched, event)
 
     def sizeHint(self) -> QSize:
         return QSize(640, 420)
@@ -3414,6 +3751,86 @@ class MonkezCanva(QWidget):
     def elementRegistry(self) -> ElementRegistry:
         """Return this canvas' component registry."""
         return self._element_registry
+
+    def paletteFavorites(self) -> tuple[str, ...]:
+        return self._palette_favorites
+
+    def paletteRecent(self) -> tuple[str, ...]:
+        return self._palette_recent
+
+    def setPaletteFavorite(self, type_id: str, favorite: bool = True) -> bool:
+        """Persist one component favorite with the portable canvas document."""
+
+        key = str(type_id).strip().lower()
+        self._element_registry.require(key)
+        favorites = list(self._palette_favorites)
+        if favorite and key not in favorites:
+            favorites.append(key)
+        elif not favorite and key in favorites:
+            favorites.remove(key)
+        else:
+            return False
+        normalized = list(normalize_component_ids(favorites))
+        return self._push_document_mutation(
+            lambda document: document.update_scene({PALETTE_FAVORITES_KEY: normalized}),
+            "Update palette favorites",
+            merge_key="palette:favorites",
+        )
+
+    def togglePaletteFavorite(self, type_id: str) -> bool:
+        key = str(type_id).strip().lower()
+        return self.setPaletteFavorite(key, key not in self._palette_favorites)
+
+    def addPaletteElement(self, type_id: str) -> str:
+        """Add a registry component, opening the appropriate media picker if needed."""
+
+        definition = self._element_registry.require(type_id)
+        if definition.media_picker:
+            pattern = (
+                "Animated GIF (*.gif)" if definition.type_id == "animated_image"
+                else "Images (*.png *.jpg *.jpeg *.bmp *.webp)"
+            )
+            path, _selected_filter = QFileDialog.getOpenFileName(
+                self.window(), f"Add {definition.label}", "", pattern
+            )
+            if not path:
+                return ""
+            return self.addMedia(
+                path, animated=definition.type_id == "animated_image"
+            )
+        return self.addElement(definition.type_id)
+
+    def showCommandPalette(self, query: str = "") -> None:
+        """Show the context-aware command launcher (Ctrl+K)."""
+
+        if not self._edit_mode:
+            self.setEditMode(True)
+        if self._command_palette is None:
+            self._command_palette = _CanvasCommandPalette(self)
+        self._command_palette.showPalette(query)
+
+    def selectAllElements(self) -> list[str]:
+        return self.selectElements(self.elements())
+
+    def zoomToSelection(self) -> bool:
+        items = [
+            self.canvasObject(object_id) for object_id in self.selectedObjectIds()
+        ]
+        items = [item for item in items if item is not None]
+        if not items:
+            return False
+        bounds = QRectF(items[0].sceneBoundingRect())
+        for item in items[1:]:
+            bounds = bounds.united(item.sceneBoundingRect())
+        self._view.fitInView(
+            bounds.adjusted(-35, -35, 35, 35), Qt.AspectRatioMode.KeepAspectRatio
+        )
+        scale = self._view.transform().m11()
+        if scale > 4.0:
+            self._view.scale(4.0 / scale, 4.0 / scale)
+        elif 0 < scale < 0.2:
+            self._view.scale(0.2 / scale, 0.2 / scale)
+        return True
 
     def registerElementDefinition(
         self,
@@ -3660,8 +4077,16 @@ class MonkezCanva(QWidget):
                 options,
             )
             prepared_record = definition.prepare_record(record)
+
+            def add_and_record_recent(document: CanvasDocument) -> None:
+                document.add_element(prepared_record)
+                recent = record_recent_component(
+                    document.scene.properties.get(PALETTE_RECENT_KEY, ()), kind
+                )
+                document.update_scene({PALETTE_RECENT_KEY: list(recent)})
+
             self._push_document_mutation(
-                lambda document: document.add_element(prepared_record),
+                add_and_record_recent,
                 f"Add {definition.label}",
             )
             return element_id
@@ -4979,6 +5404,8 @@ class MonkezCanva(QWidget):
                 "backgroundColor": self._background_color.name(QColor.NameFormat.HexArgb),
                 "backgroundImage": self._background_image,
                 "backgroundImageMode": self._background_image_mode,
+                PALETTE_FAVORITES_KEY: list(self._palette_favorites),
+                PALETTE_RECENT_KEY: list(self._palette_recent),
             },
             "elements": [item.to_dict() for item in self._elements.values()],
             "connectors": [item.to_dict() for item in self._connectors.values()],
@@ -5122,9 +5549,21 @@ class MonkezCanva(QWidget):
         self._background_pixmap = (
             QPixmap(self._background_image) if self._background_image else QPixmap()
         )
+        self._apply_palette_preferences(scene)
         self._scene.invalidate(
             self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer
         )
+
+    def _apply_palette_preferences(self, scene: dict[str, Any]) -> None:
+        favorites = normalize_component_ids(scene.get(PALETTE_FAVORITES_KEY, ()))
+        recent = normalize_component_ids(scene.get(PALETTE_RECENT_KEY, ()), limit=12)
+        changed = (
+            favorites != self._palette_favorites or recent != self._palette_recent
+        )
+        self._palette_favorites = favorites
+        self._palette_recent = recent
+        if changed:
+            self.palettePreferencesChanged.emit(list(favorites), list(recent))
 
     def _add_element_record(self, entry: dict[str, Any]) -> str:
         values = dict(entry)
@@ -5533,6 +5972,7 @@ class MonkezCanva(QWidget):
             min(len(_BACKGROUND_IMAGE_MODES) - 1, int(scene.get("backgroundImageMode", 0))),
         )
         self._background_pixmap = QPixmap(self._background_image) if self._background_image else QPixmap()
+        self._apply_palette_preferences(scene)
         self.clear()
         for entry in data.get("elements", []):
             self._add_element_record(dict(entry))
@@ -5642,6 +6082,8 @@ class MonkezCanva(QWidget):
             self._quick_toolbar.raise_()
         else:
             self._quick_toolbar.hide()
+            if self._command_palette is not None:
+                self._command_palette.hide()
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag if enabled else QGraphicsView.DragMode.ScrollHandDrag)
         if enabled:
             if self._toolbox is None:
@@ -5854,6 +6296,8 @@ class MonkezCanva(QWidget):
             self._flush_autosave()
         if self._toolbox is not None:
             self._toolbox.close()
+        if self._command_palette is not None:
+            self._command_palette.close()
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
             self._document_subscription = ""

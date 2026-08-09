@@ -140,6 +140,29 @@ giới hạn kích thước/số object, không chứa code thực thi và chỉ
 nhau; việc chỉ mở Inspector không ghi đè dữ liệu, và chỉ field vừa sửa mới được
 áp dụng đồng loạt bằng một undo command.
 
+## Search palette và command palette
+
+Tab **Add** tìm theo label, type ID, category, capability và plugin owner. Bộ lọc
+gồm All, Favorites, Recent và mọi category do registry cung cấp. Bấm biểu tượng
+ngôi sao để favorite; danh sách favorites/recent nằm trong `scene` của document
+nên tự đi cùng project khi chuyển máy. Thêm component cập nhật Recent trong cùng
+command với element, vì vậy Undo không sinh thêm bước phụ.
+
+Nhấn `Ctrl+K` hoặc nút command trên header Control Pane để mở command palette.
+Gõ để lọc component hoặc action theo ngữ cảnh; dùng `↑/↓`, `Enter`, `Esc` để thao
+tác hoàn toàn bằng bàn phím. Palette tự bật/tắt lệnh dựa trên selection, clipboard,
+read-only state và khả năng Undo/Redo. API tương ứng:
+
+```python
+canvas.setPaletteFavorite("node", True)
+canvas.paletteFavorites()
+canvas.paletteRecent()
+canvas.addPaletteElement("line_chart")
+canvas.showCommandPalette("align left")
+canvas.zoomToSelection()
+canvas.selectAllElements()
+```
+
 Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`, `connectorAdded(str)`,
 `connectorRemoved(str)`, `elementClicked(str)`, `connectorClicked(str)`,
 `objectClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và
