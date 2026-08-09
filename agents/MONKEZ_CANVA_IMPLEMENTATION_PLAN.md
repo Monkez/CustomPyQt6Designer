@@ -140,6 +140,19 @@ preserves records; late registration restores missing components in place.
 Phase 1.2 acceptance is complete. The next core milestone is Phase 1.3:
 command-based history with minimal inverse operations, macros and compression.
 
+### Command history progress — 2026-08-09
+
+Phase 1.3 is complete. Whole-document history snapshots were removed in favor of
+an 80-entry `QUndoStack`. Commands store minimal record patches, preserve record
+order, restore cascade changes atomically and use specialized rename operations
+to preserve graphics identity. Model-first mutations and graphics-origin edits
+share the stack; updates merge for 800 ms and multi-object actions use macros.
+The public API exposes stack/state/text, macro boundaries and group/resource
+commands. Save/load/session boundaries maintain an explicit clean/dirty state.
+
+Next: Phase 1.4 schema recovery (atomic writes, backup/checksum/read-only newer
+documents), followed by the shared animation scheduler.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

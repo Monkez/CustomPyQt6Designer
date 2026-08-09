@@ -10,7 +10,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from PyQt6.QtCore import (
     QSignalBlocker,
@@ -38,6 +38,7 @@ from PyQt6.QtGui import (
     QPen,
     QPixmap,
     QShortcut,
+    QUndoStack,
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -77,6 +78,11 @@ from monkez_pyqt6.monkez_canva import (
     ElementRegistry,
     OperationEvent,
     create_default_element_registry,
+)
+from monkez_pyqt6.monkez_widgets._canva_commands import (
+    CanvasDocumentCommand,
+    CanvasRenameCommand,
+    patches_from_documents,
 )
 
 
@@ -1461,9 +1467,9 @@ class _CanvasEditorToolbox(QDialog):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(8, 7, 8, 2)
         footer_layout.addStretch(1)
-        footer_icon = QLabel()
-        footer_icon.setPixmap(_canvas_icon("check", "#0f9f8f").pixmap(19, 19))
-        footer_layout.addWidget(footer_icon)
+        self._footer_icon = QLabel()
+        self._footer_icon.setPixmap(_canvas_icon("check", "#0f9f8f").pixmap(19, 19))
+        footer_layout.addWidget(self._footer_icon)
         self._footer_status = QLabel("Saved")
         self._footer_status.setObjectName("canvasFooterStatus")
         footer_layout.addWidget(self._footer_status)
@@ -1478,9 +1484,11 @@ class _CanvasEditorToolbox(QDialog):
         canvas.selectionChanged.connect(self._sync_inspector)
         canvas.selectionSetChanged.connect(lambda _element_ids: self.refreshLayers())
         canvas.autoSaved.connect(self._show_save_status)
+        canvas.documentModifiedChanged.connect(self._sync_modified_status)
         canvas.documentChanged.connect(self._sync_view_controls)
         self._sync_inspector(canvas.selectedElementId())
         self.refreshLayers()
+        self._sync_modified_status(canvas.isDocumentModified())
 
     @staticmethod
     def _pane_stylesheet() -> str:
@@ -2058,14 +2066,19 @@ class _CanvasEditorToolbox(QDialog):
         layout.addWidget(persistent)
         history = QGroupBox("History")
         history_layout = QHBoxLayout(history)
-        undo = QPushButton("Undo")
-        undo.setIcon(_canvas_icon("undo"))
-        undo.clicked.connect(self.canvas.undo)
-        redo = QPushButton("Redo")
-        redo.setIcon(_canvas_icon("redo"))
-        redo.clicked.connect(self.canvas.redo)
-        history_layout.addWidget(undo)
-        history_layout.addWidget(redo)
+        self._undo_button = QPushButton("Undo")
+        self._undo_button.setIcon(_canvas_icon("undo"))
+        self._undo_button.clicked.connect(self.canvas.undo)
+        self._redo_button = QPushButton("Redo")
+        self._redo_button.setIcon(_canvas_icon("redo"))
+        self._redo_button.clicked.connect(self.canvas.redo)
+        history_layout.addWidget(self._undo_button)
+        history_layout.addWidget(self._redo_button)
+        self.canvas.historyChanged.connect(self._sync_history_controls)
+        self._sync_history_controls(
+            self.canvas.canUndo(), self.canvas.canRedo(),
+            self.canvas.undoText(), self.canvas.redoText(),
+        )
         layout.addWidget(history)
         path = QLabel(str(self.canvas.persistentPath()))
         path.setWordWrap(True)
@@ -2073,6 +2086,14 @@ class _CanvasEditorToolbox(QDialog):
         layout.addWidget(path)
         layout.addStretch(1)
         return page
+
+    def _sync_history_controls(
+        self, can_undo: bool, can_redo: bool, undo_text: str, redo_text: str
+    ) -> None:
+        self._undo_button.setEnabled(can_undo)
+        self._redo_button.setEnabled(can_redo)
+        self._undo_button.setText(f"Undo {undo_text}" if undo_text else "Undo")
+        self._redo_button.setText(f"Redo {redo_text}" if redo_text else "Redo")
 
     def _choose_media(self, kind: str) -> None:
         pattern = "Animated GIF (*.gif)" if kind == "animated_image" else "Images (*.png *.jpg *.jpeg *.bmp *.webp)"
@@ -2597,9 +2618,20 @@ class _CanvasEditorToolbox(QDialog):
         self.refreshLayers()
 
     def _show_save_status(self, target: str) -> None:
-        self._save_status.setText(f"Saved: {target}")
-        self._footer_status.setText("Saved")
+        prefix = "Draft" if self.canvas.isDocumentModified() else "Saved"
+        self._save_status.setText(f"{prefix}: {target}")
+        self._footer_status.setText(
+            "Draft saved" if self.canvas.isDocumentModified() else "Saved"
+        )
         self._footer_status.setToolTip(str(target))
+
+    def _sync_modified_status(self, modified: bool) -> None:
+        color = "#ef6a5b" if modified else "#0f9f8f"
+        self._footer_icon.setPixmap(
+            _canvas_icon("save" if modified else "check", color).pixmap(19, 19)
+        )
+        self._footer_status.setText("Unsaved changes" if modified else "Saved")
+        self._footer_status.setStyleSheet(f"color: {color}; font-weight: 700;")
 
 
 class _CanvasQuickToolbar(QFrame):
@@ -2633,6 +2665,13 @@ class _CanvasQuickToolbar(QFrame):
         )
         save.setObjectName("quickSave")
         self._separator(layout)
+        self._undo_button = self._button("", canvas.undo, "Undo", 34, "undo")
+        self._redo_button = self._button("", canvas.redo, "Redo", 34, "redo")
+        canvas.historyChanged.connect(self._update_history_state)
+        self._update_history_state(
+            canvas.canUndo(), canvas.canRedo(), canvas.undoText(), canvas.redoText()
+        )
+        self._separator(layout)
         self._button("", canvas.zoomOut, "Zoom out", 34, "zoom_out")
         self._button("", canvas.resetZoom, "Reset zoom to 100%", 34, "actual_size")
         self._button("", canvas.zoomIn, "Zoom in", 34, "zoom_in")
@@ -2652,6 +2691,14 @@ class _CanvasQuickToolbar(QFrame):
             self._align_buttons.append(button)
         canvas.selectionSetChanged.connect(self._update_alignment_state)
         self._update_alignment_state(canvas.selectedElementIds())
+
+    def _update_history_state(
+        self, can_undo: bool, can_redo: bool, undo_text: str, redo_text: str
+    ) -> None:
+        self._undo_button.setEnabled(can_undo)
+        self._redo_button.setEnabled(can_redo)
+        self._undo_button.setToolTip(f"Undo {undo_text}" if undo_text else "Undo")
+        self._redo_button.setToolTip(f"Redo {redo_text}" if redo_text else "Redo")
 
     def _button(
         self,
@@ -2878,6 +2925,8 @@ class MonkezCanva(QWidget):
     persistentLoaded = pyqtSignal(str)
     messageSent = pyqtSignal(str, str)
     messageArrived = pyqtSignal(str, str)
+    historyChanged = pyqtSignal(bool, bool, str, str)
+    documentModifiedChanged = pyqtSignal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -2903,11 +2952,8 @@ class MonkezCanva(QWidget):
         self._auto_save_delay = 500
         self._session_document: dict[str, Any] | None = None
         self._draft_document: dict[str, Any] | None = None
-        self._history: list[dict[str, Any]] = []
-        self._history_index = -1
         self._restoring = False
         self._document_render_notification = False
-        self._suppress_next_autosave = False
         self._animations: dict[str, QPropertyAnimation] = {}
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
@@ -2919,6 +2965,10 @@ class MonkezCanva(QWidget):
         self._view = _CanvasView(self, self._scene)
         self._document_model = CanvasDocument.from_dict(self._graphics_document())
         self._document_subscription = self._document_model.subscribe(self._on_document_operation)
+        self._undo_stack = QUndoStack(self)
+        self._undo_stack.setUndoLimit(80)
+        self._undo_stack.indexChanged.connect(self._emit_history_state)
+        self._undo_stack.cleanChanged.connect(self._on_history_clean_changed)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -2950,8 +3000,14 @@ class MonkezCanva(QWidget):
         delete_shortcut = QShortcut(QKeySequence.StandardKey.Delete, self)
         delete_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         delete_shortcut.activated.connect(self.deleteSelected)
+        undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
+        undo_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        undo_shortcut.activated.connect(self.undo)
+        redo_shortcut = QShortcut(QKeySequence.StandardKey.Redo, self)
+        redo_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        redo_shortcut.activated.connect(self.redo)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._push_history(self.toDocument())
+        self._emit_history_state()
 
     def sizeHint(self) -> QSize:
         return QSize(640, 420)
@@ -3079,7 +3135,11 @@ class MonkezCanva(QWidget):
                 resolved_height,
                 options,
             )
-            self._document_model.add_element(definition.prepare_record(record))
+            prepared_record = definition.prepare_record(record)
+            self._push_document_mutation(
+                lambda document: document.add_element(prepared_record),
+                f"Add {definition.label}",
+            )
             return element_id
         item = _CanvasElement(
             element_id,
@@ -3325,8 +3385,17 @@ class MonkezCanva(QWidget):
 
     def renameElement(self, element_id: str, new_id: str) -> str:
         if not self._restoring:
-            events = self._document_model.rename_element(element_id, new_id)
-            return events[0].target_id if events else str(element_id)
+            requested = str(new_id).strip()
+            candidate = CanvasDocument.from_dict(self._document_model.to_dict())
+            events = candidate.rename_element(element_id, requested)
+            if events:
+                self._undo_stack.push(
+                    CanvasRenameCommand(
+                        self._document_model, str(element_id), requested
+                    )
+                )
+                return requested
+            return str(element_id)
         item = self._required_element(element_id)
         requested = str(new_id).strip()
         if not requested:
@@ -3370,8 +3439,11 @@ class MonkezCanva(QWidget):
                 float(current.get("height", default_height)),
                 current,
             )
-            self._document_model.update_element(
-                element_id, definition.prepare_record(normalized)
+            prepared = definition.prepare_record(normalized)
+            self._push_document_mutation(
+                lambda document: document.update_element(element_id, prepared),
+                f"Update {definition.label}",
+                merge_key=f"element:{element_id}",
             )
             return self
         item = self._required_element(element_id)
@@ -3507,10 +3579,12 @@ class MonkezCanva(QWidget):
             raise ValueError(f"Duplicate MonkezCanva object id: {connector_id}")
         options.setdefault("color", color)
         if not self._restoring:
-            self._document_model.add_connector(
-                self._connector_model_record(
-                    connector_id, source.element_id, target.element_id, options
-                )
+            record = self._connector_model_record(
+                connector_id, source.element_id, target.element_id, options
+            )
+            self._push_document_mutation(
+                lambda document: document.add_connector(record),
+                "Connect elements",
             )
             return connector_id
         connector = _CanvasConnector(self, connector_id, source, target, options)
@@ -3655,7 +3729,11 @@ class MonkezCanva(QWidget):
                 target.element_id,
                 current,
             )
-            self._document_model.update_connector(connector_id, normalized)
+            self._push_document_mutation(
+                lambda document: document.update_connector(connector_id, normalized),
+                "Update connector",
+                merge_key=f"connector:{connector_id}",
+            )
             return self
         connector = self._required_connector(connector_id)
         if any(key in values for key in ("source", "target", "sourcePort", "targetPort")):
@@ -3810,8 +3888,20 @@ class MonkezCanva(QWidget):
 
     def renameConnector(self, connector_id: str, new_id: str) -> str:
         if not self._restoring:
-            event = self._document_model.rename_connector(connector_id, new_id)
-            return event.target_id if event is not None else str(connector_id)
+            requested = str(new_id).strip()
+            candidate = CanvasDocument.from_dict(self._document_model.to_dict())
+            event = candidate.rename_connector(connector_id, requested)
+            if event is not None:
+                self._undo_stack.push(
+                    CanvasRenameCommand(
+                        self._document_model,
+                        str(connector_id),
+                        requested,
+                        connector=True,
+                    )
+                )
+                return requested
+            return str(connector_id)
         connector = self._required_connector(connector_id)
         requested = str(new_id).strip()
         if not requested:
@@ -3832,7 +3922,10 @@ class MonkezCanva(QWidget):
         if not self._restoring:
             if self._document_model.connector(connector_id) is None:
                 return False
-            self._document_model.remove_connector(connector_id)
+            self._push_document_mutation(
+                lambda document: document.remove_connector(connector_id),
+                "Delete connector",
+            )
             return True
         connector = self._connectors.pop(str(connector_id), None)
         if connector is None:
@@ -3910,17 +4003,28 @@ class MonkezCanva(QWidget):
         return animation
 
     def deleteSelected(self) -> None:
-        for item in list(self._scene.selectedItems()):
-            if isinstance(item, _CanvasElement):
-                self.removeElement(item.element_id)
-            elif isinstance(item, _CanvasConnector):
-                self.removeConnector(item.connector_id)
+        selected = list(self._scene.selectedItems())
+        use_macro = not self._restoring and len(selected) > 1
+        if use_macro:
+            self.beginCommandMacro(f"Delete {len(selected)} objects")
+        try:
+            for item in selected:
+                if isinstance(item, _CanvasElement):
+                    self.removeElement(item.element_id)
+                elif isinstance(item, _CanvasConnector):
+                    self.removeConnector(item.connector_id)
+        finally:
+            if use_macro:
+                self.endCommandMacro()
 
     def removeElement(self, element_id: str) -> bool:
         if not self._restoring:
             if self._document_model.element(element_id) is None:
                 return False
-            self._document_model.remove_element(element_id)
+            self._push_document_mutation(
+                lambda document: document.remove_element(element_id),
+                "Delete element",
+            )
             return True
         item = self._elements.pop(str(element_id), None)
         if item is None:
@@ -3940,8 +4044,16 @@ class MonkezCanva(QWidget):
         return True
 
     def clear(self) -> None:
-        for element_id in list(self._elements):
-            self.removeElement(element_id)
+        element_ids = list(self._elements)
+        use_macro = not self._restoring and len(element_ids) > 1
+        if use_macro:
+            self.beginCommandMacro("Clear canvas")
+        try:
+            for element_id in element_ids:
+                self.removeElement(element_id)
+        finally:
+            if use_macro:
+                self.endCommandMacro()
         self._message_payloads.clear()
 
     def documentModel(self) -> CanvasDocument:
@@ -3951,6 +4063,134 @@ class MonkezCanva(QWidget):
     def canvasDocument(self) -> CanvasDocument:
         """Readable alias for :meth:`documentModel`."""
         return self.documentModel()
+
+    def addGroup(
+        self,
+        members,
+        group_id: str | None = None,
+        **properties,
+    ) -> str:
+        group_id = str(group_id or uuid.uuid4().hex[:10])
+        record = {
+            "id": group_id,
+            "members": [str(member) for member in members],
+            **self._model_values(properties),
+        }
+        self._push_document_mutation(
+            lambda document: document.add_group(record), "Group objects"
+        )
+        return group_id
+
+    def groupSelected(self, group_id: str | None = None, **properties) -> str:
+        members = self.selectedElementIds()
+        if not members:
+            return ""
+        return self.addGroup(members, group_id, **properties)
+
+    def updateGroup(self, group_id: str, **changes) -> "MonkezCanva":
+        values = self._model_values(changes)
+        self._push_document_mutation(
+            lambda document: document.update_group(group_id, values),
+            "Update group",
+            merge_key=f"group:{group_id}",
+        )
+        return self
+
+    def removeGroup(self, group_id: str) -> bool:
+        if self._document_model.group(group_id) is None:
+            return False
+        self._push_document_mutation(
+            lambda document: document.remove_group(group_id), "Ungroup objects"
+        )
+        return True
+
+    def addResource(
+        self, kind: str, uri: str, resource_id: str | None = None, **properties
+    ) -> str:
+        resource_id = str(resource_id or uuid.uuid4().hex[:10])
+        record = {
+            "id": resource_id,
+            "kind": str(kind),
+            "uri": str(uri),
+            **self._model_values(properties),
+        }
+        self._push_document_mutation(
+            lambda document: document.add_resource(record), "Add resource"
+        )
+        return resource_id
+
+    def updateResource(self, resource_id: str, **changes) -> "MonkezCanva":
+        values = self._model_values(changes)
+        self._push_document_mutation(
+            lambda document: document.update_resource(resource_id, values),
+            "Update resource",
+            merge_key=f"resource:{resource_id}",
+        )
+        return self
+
+    def removeResource(self, resource_id: str) -> bool:
+        if self._document_model.resource(resource_id) is None:
+            return False
+        self._push_document_mutation(
+            lambda document: document.remove_resource(resource_id), "Remove resource"
+        )
+        return True
+
+    def undoStack(self) -> QUndoStack:
+        return self._undo_stack
+
+    def canUndo(self) -> bool:
+        return self._undo_stack.canUndo()
+
+    def canRedo(self) -> bool:
+        return self._undo_stack.canRedo()
+
+    def undoText(self) -> str:
+        return self._undo_stack.undoText()
+
+    def redoText(self) -> str:
+        return self._undo_stack.redoText()
+
+    def isDocumentModified(self) -> bool:
+        return not self._undo_stack.isClean()
+
+    def beginCommandMacro(self, text: str) -> None:
+        self._undo_stack.beginMacro(str(text))
+
+    def endCommandMacro(self) -> None:
+        self._undo_stack.endMacro()
+
+    def _emit_history_state(self, _index: int = 0) -> None:
+        self.historyChanged.emit(
+            self.canUndo(), self.canRedo(), self.undoText(), self.redoText()
+        )
+
+    def _on_history_clean_changed(self, clean: bool) -> None:
+        self.documentModifiedChanged.emit(not clean)
+
+    def _push_document_mutation(
+        self,
+        mutation: Callable[[CanvasDocument], Any],
+        text: str,
+        *,
+        merge_key: str = "",
+    ) -> bool:
+        before = self._document_model.to_dict()
+        candidate = CanvasDocument.from_dict(before)
+        mutation(candidate)
+        after = candidate.to_dict()
+        patches = patches_from_documents(before, after)
+        if not patches:
+            return False
+        self._undo_stack.push(
+            CanvasDocumentCommand(
+                self._document_model,
+                patches,
+                text,
+                merge_key=merge_key,
+            )
+        )
+        return True
 
     def setDocumentModel(self, document: CanvasDocument) -> "MonkezCanva":
         """Attach a canonical document; the same instance may back many views."""
@@ -3965,6 +4205,7 @@ class MonkezCanva(QWidget):
         self._document_model = document
         self._document_subscription = document.subscribe(self._on_document_operation)
         self._last_rendered_document_revision = document.revision
+        self._undo_stack.clear()
         self._render_document(document.to_dict())
         return self
 
@@ -4146,9 +4387,34 @@ class MonkezCanva(QWidget):
     def _sync_document_from_graphics(self) -> tuple[OperationEvent, ...]:
         if self._restoring or self._document_model is None:
             return ()
-        events = self._document_model.reconcile(self._graphics_document(), origin=self)
+        before = self._document_model.to_dict()
+        after = self._graphics_document()
+        events = self._document_model.reconcile(after, origin=self)
         if events:
             self._last_rendered_document_revision = self._document_model.revision
+            patches = patches_from_documents(before, self._document_model.to_dict())
+            merge_key = ""
+            text = "Edit canvas"
+            if len(patches) == 1:
+                patch = patches[0]
+                if patch.collection == "elements":
+                    merge_key = f"element:{patch.record_id}"
+                    text = "Edit element"
+                elif patch.collection == "connectors":
+                    merge_key = f"connector:{patch.record_id}"
+                    text = "Edit connector"
+                elif patch.collection == "scene":
+                    merge_key = "scene"
+                    text = "Edit canvas view"
+            self._undo_stack.push(
+                CanvasDocumentCommand(
+                    self._document_model,
+                    patches,
+                    text,
+                    merge_key=merge_key,
+                    already_applied=True,
+                )
+            )
         return events
 
     def _on_document_operation(self, event: OperationEvent) -> None:
@@ -4162,6 +4428,7 @@ class MonkezCanva(QWidget):
         self._restoring = True
         try:
             self._apply_document_operation(event)
+            self._sync_graphics_record_order()
             self._last_rendered_document_revision = max(
                 self._last_rendered_document_revision, event.revision
             )
@@ -4173,6 +4440,20 @@ class MonkezCanva(QWidget):
                 self.documentChanged.emit()
             finally:
                 self._document_render_notification = False
+
+    def _sync_graphics_record_order(self) -> None:
+        element_order = [model.id for model in self._document_model.elements]
+        connector_order = [model.id for model in self._document_model.connectors]
+        self._elements = {
+            element_id: self._elements[element_id]
+            for element_id in element_order
+            if element_id in self._elements
+        }
+        self._connectors = {
+            connector_id: self._connectors[connector_id]
+            for connector_id in connector_order
+            if connector_id in self._connectors
+        }
 
     def _apply_document_operation(self, event: OperationEvent) -> None:
         """Apply one model operation without rebuilding unrelated graphics items."""
@@ -4318,6 +4599,7 @@ class MonkezCanva(QWidget):
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.toJson(), encoding="utf-8")
+        self._undo_stack.setClean()
         return target
 
     def persistentPath(self) -> Path:
@@ -4418,6 +4700,7 @@ class MonkezCanva(QWidget):
             if managed:
                 scene["backgroundImage"] = managed
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._undo_stack.setClean()
         self.persistentSaved.emit(str(target))
         self.autoSaved.emit(str(target))
         return target
@@ -4486,14 +4769,8 @@ class MonkezCanva(QWidget):
             return
         if not self._document_render_notification:
             self._sync_document_from_graphics()
-        if self._suppress_next_autosave:
-            self._suppress_next_autosave = False
-            return
-        # Capture history synchronously so Undo never depends on whether the
-        # debounced persistence timer happened to fire before the next edit.
         document = json.loads(json.dumps(self._document_model.to_dict()))
         self._draft_document = document
-        self._push_history(document)
         self._autosave_timer.start(self._auto_save_delay)
 
     def _flush_autosave(self) -> None:
@@ -4505,32 +4782,18 @@ class MonkezCanva(QWidget):
         if self._auto_save_enabled and self._persistent_key:
             self.savePersistent(document)
 
-    def _push_history(self, document: dict[str, Any]) -> None:
-        encoded = json.dumps(document, sort_keys=True)
-        if self._history and json.dumps(self._history[self._history_index], sort_keys=True) == encoded:
-            return
-        if self._history_index < len(self._history) - 1:
-            self._history = self._history[: self._history_index + 1]
-        self._history.append(document)
-        self._history = self._history[-80:]
-        self._history_index = len(self._history) - 1
-
     def undo(self) -> bool:
         self._flush_autosave()
-        if self._history_index <= 0:
+        if not self._undo_stack.canUndo():
             return False
-        self._history_index -= 1
-        self._suppress_next_autosave = True
-        self._restore_document(self._history[self._history_index])
+        self._undo_stack.undo()
         self.autoSaved.emit("undo")
         return True
 
     def redo(self) -> bool:
-        if self._history_index >= len(self._history) - 1:
+        if not self._undo_stack.canRedo():
             return False
-        self._history_index += 1
-        self._suppress_next_autosave = True
-        self._restore_document(self._history[self._history_index])
+        self._undo_stack.redo()
         self.autoSaved.emit("redo")
         return True
 
@@ -4548,10 +4811,10 @@ class MonkezCanva(QWidget):
 
     def _restore_document(self, data: dict[str, Any]) -> None:
         model = CanvasDocument.from_dict(data)
-        events = self._document_model.reconcile(model.to_dict(), origin=self)
+        events = self._document_model.reconcile(model.to_dict())
         if events:
             self._last_rendered_document_revision = self._document_model.revision
-        self._render_document(self._document_model.to_dict())
+        self._undo_stack.clear()
 
     def _render_document(self, data: dict[str, Any]) -> None:
         if data.get("format") != "monkez-canva":

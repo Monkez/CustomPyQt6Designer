@@ -94,11 +94,21 @@ and connector add/update/remove/rename APIs commit to the model first. A direct
 graphics interaction still reconciles rendered state back into immutable records
 and emits record-level events through `documentOperation`.
 
-This is the first extraction boundary, not the final command architecture. The
-current compatibility adapter still reconciles gestures and several compound
-legacy mutations. Phase 1.3 must replace that remaining adapter path with minimal
-`QUndoCommand` operations so graphics items only consume model changes and never
-originate canonical snapshots.
+## Command history
+
+`MonkezCanva` owns a bounded `QUndoStack`. `_canva_commands.py` computes minimal
+before/after patches for only the changed scene or records, then applies them by
+building a candidate from current canonical state and reconciling atomically.
+Commands never retain a whole-document snapshot. Element/connector rename uses
+an explicit command so item identity survives undo and redo.
+
+Model-first API calls push commands before mutation. Legacy graphics gestures
+reconcile once, then push an `already_applied` command. Consecutive changes to the
+same record merge for 800 ms, covering drag, resize and Inspector typing. Compound
+selection operations use `beginCommandMacro()`/`endCommandMacro()`. External
+changes made directly to a shared `CanvasDocument` intentionally do not enter a
+particular view's local history. Persistent/document save marks the stack clean;
+autosave draft does not pretend durable changes were saved.
 
 ## Persistence and trust boundary
 
@@ -141,9 +151,9 @@ are fit, fill and non-aspect-preserving scale.
 
 ## Roadmap
 
-1. Public element registry using schema + renderer/editor factories.
-2. Complete model-driven gesture mutations and command-based Undo.
-3. Clipboard, keyboard nudging and true mixed-value property editing.
+1. Complete schema recovery and shared animation scheduler.
+2. Clipboard, keyboard nudging and true mixed-value property editing.
+3. Typed ports, advanced routing and group/subflow rendering.
 4. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
 5. Declarative data bindings and throttled live chart updates.
 6. Optional `QGraphicsProxyWidget` adapter with explicit ownership.

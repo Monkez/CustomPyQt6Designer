@@ -353,6 +353,31 @@ canvas.savePersistent()
 canvas.loadPersistent()
 ```
 
+### Undo/Redo dạng command
+
+```python
+canvas.addNode("Source", element_id="source")
+canvas.updateElement("source", x=120, y=80)
+
+if canvas.canUndo():
+    print(canvas.undoText())
+    canvas.undo()
+    canvas.redo()
+
+canvas.beginCommandMacro("Move pipeline")
+try:
+    canvas.updateElement("source", x=200)
+    canvas.updateElement("target", x=500)
+finally:
+    canvas.endCommandMacro()
+```
+
+History dùng `QUndoStack` tối đa 80 command. Mỗi command chỉ giữ record thay đổi,
+không giữ snapshot toàn document. Kéo, resize và nhập Inspector liên tục trên cùng
+object được nén trong 800 ms. `Ctrl+Z`/`Ctrl+Y`, Save pane và floating toolbar dùng
+cùng stack. `isDocumentModified()` chỉ trở về `False` sau lưu document/persistent;
+autosave draft không đánh dấu nhầm là đã lưu dài hạn.
+
 Project root được tự dò từ working directory hoặc vị trí entry script thông qua
 `.git`, `pyproject.toml`, `setup.py` hay `requirements.txt`. Có thể override bằng
 `setProjectDirectory()` hoặc biến môi trường `MONKEZ_CANVA_PROJECT_DIR`. Khi

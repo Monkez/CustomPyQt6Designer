@@ -66,6 +66,13 @@ Replace whole-document history snapshots with `QUndoStack` commands for add,
 delete, move, resize, property change, port change, grouping and connection.
 Continuous drags and typing are compressed; multi-object actions use macros.
 
+Completed (2026-08-09): the editor uses `QUndoStack` with minimal scene/record
+patches, explicit identity-preserving rename commands, an 80-command bound,
+800 ms update compression and macros for multi-object delete/clear plus public
+macro APIs. Add/delete/move/resize/property/port/group/resource/connection edits
+are reversible. Undo/Redo labels, enabled state, shortcuts and dirty/clean save
+state are exposed to the pane and floating toolbar.
+
 ### 1.4 Schema, migrations and recovery
 
 Add JSON Schema, versioned migrations, atomic writes, recovery backup, asset

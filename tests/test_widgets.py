@@ -241,6 +241,213 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(transform, canvas.view().transform())
         canvas.deleteLater()
 
+    def test_canva_command_history_is_minimal_mergeable_and_reversible(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addNode("Initial", element_id="node")
+        node_item = canvas.element("node")
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertTrue(canvas._quick_toolbar._undo_button.isEnabled())
+        self.assertFalse(canvas._quick_toolbar._redo_button.isEnabled())
+
+        canvas.updateElement("node", text="Typing 1")
+        canvas.updateElement("node", text="Typing 2")
+        canvas.updateElement("node", text="Typing 3")
+
+        self.assertEqual(2, canvas.undoStack().count())
+        command = canvas.undoStack().command(1)
+        self.assertEqual(1, len(command.patches))
+        self.assertEqual("elements", command.patches[0].collection)
+        self.assertTrue(canvas.canUndo())
+        self.assertEqual("Update Node", canvas.undoText())
+        self.assertTrue(canvas.undo())
+        self.assertIs(node_item, canvas.element("node"))
+        self.assertEqual("Initial", canvas.element("node").text)
+        self.assertTrue(canvas._quick_toolbar._redo_button.isEnabled())
+        self.assertTrue(canvas.redo())
+        self.assertEqual("Typing 3", canvas.element("node").text)
+        canvas.deleteLater()
+
+    def test_canva_delete_command_restores_cascade_records_atomically(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addNode("Source", element_id="source")
+        canvas.addNode("Target", element_id="target")
+        canvas.connectElements("source", "target", connector_id="edge")
+        canvas.documentModel().add_group(
+            {"id": "pipeline", "members": ["source", "target"]}
+        )
+        canvas.undoStack().clear()
+
+        self.assertTrue(canvas.removeElement("source"))
+        self.assertIsNone(canvas.element("source"))
+        self.assertIsNone(canvas.connector("edge"))
+        self.assertEqual(("target",), canvas.documentModel().group("pipeline").members)
+        command = canvas.undoStack().command(0)
+        self.assertEqual(
+            {("elements", "source"), ("connectors", "edge"), ("groups", "pipeline")},
+            {(patch.collection, patch.record_id) for patch in command.patches},
+        )
+
+        self.assertTrue(canvas.undo())
+        self.assertIsNotNone(canvas.element("source"))
+        self.assertIsNotNone(canvas.connector("edge"))
+        self.assertEqual(
+            ("source", "target"), canvas.documentModel().group("pipeline").members
+        )
+        self.assertTrue(canvas.redo())
+        self.assertIsNone(canvas.element("source"))
+        canvas.deleteLater()
+
+    def test_canva_command_macro_and_external_model_history_boundary(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addNode("A", element_id="a")
+        canvas.addNode("B", element_id="b")
+        canvas.undoStack().clear()
+        canvas.beginCommandMacro("Move pair")
+        canvas.updateElement("a", x=40)
+        canvas.updateElement("b", x=240)
+        canvas.endCommandMacro()
+
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertEqual("Move pair", canvas.undoText())
+        self.assertTrue(canvas.undo())
+        self.assertEqual(0, canvas.element("a").pos().x())
+        self.assertEqual(0, canvas.element("b").pos().x())
+        canvas.undoStack().clear()
+        canvas.documentModel().update_element("a", {"text": "External"})
+        self.assertEqual(0, canvas.undoStack().count())
+        self.assertEqual("External", canvas.element("a").text)
+        canvas.deleteLater()
+
+    def test_canva_graphics_origin_edit_and_multi_delete_are_commands(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addText("Before", element_id="one")
+        canvas.addText("Two", x=200, element_id="two")
+        canvas.undoStack().clear()
+
+        canvas.setElementText("one", "After")
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertTrue(canvas.undo())
+        self.assertEqual("Before", canvas.element("one").text)
+        self.assertTrue(canvas.redo())
+        self.assertEqual("After", canvas.element("one").text)
+
+        canvas.undoStack().clear()
+        canvas.element("one").setPos(40, 20)
+        canvas.element("one").setPos(80, 40)
+        canvas.element("one").setPos(120, 60)
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertTrue(canvas.undo())
+        self.assertEqual(QPointF(0, 0), canvas.element("one").pos())
+
+        canvas.setEditMode(True)
+        canvas.selectElements(["one", "two"])
+        canvas.undoStack().clear()
+        canvas.deleteSelected()
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertEqual("Delete 2 objects", canvas.undoText())
+        self.assertEqual([], canvas.elements())
+        self.assertTrue(canvas.undo())
+        self.assertEqual(["one", "two"], canvas.elements())
+        canvas.deleteLater()
+
+    def test_canva_group_and_resource_apis_participate_in_command_history(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addNode("A", element_id="a")
+        canvas.addNode("B", element_id="b")
+        canvas.undoStack().clear()
+
+        group_id = canvas.addGroup(["a", "b"], "pair", label="Pair")
+        resource_id = canvas.addResource(
+            "image", "assets/icon.png", "icon", checksum="abc"
+        )
+        self.assertEqual("pair", group_id)
+        self.assertEqual("icon", resource_id)
+        self.assertEqual(("a", "b"), canvas.documentModel().group("pair").members)
+        self.assertEqual("abc", canvas.documentModel().resource("icon").properties["checksum"])
+        self.assertEqual(2, canvas.undoStack().count())
+
+        canvas.updateGroup("pair", label="Updated pair")
+        canvas.updateResource("icon", uri="assets/new.png")
+        self.assertEqual("Updated pair", canvas.documentModel().group("pair").properties["label"])
+        self.assertEqual("assets/new.png", canvas.documentModel().resource("icon").uri)
+        self.assertTrue(canvas.undo())
+        self.assertEqual("assets/icon.png", canvas.documentModel().resource("icon").uri)
+        self.assertTrue(canvas.undo())
+        self.assertEqual("Pair", canvas.documentModel().group("pair").properties["label"])
+        self.assertTrue(canvas.removeGroup("pair"))
+        self.assertTrue(canvas.undo())
+        self.assertIsNotNone(canvas.documentModel().group("pair"))
+        canvas.deleteLater()
+
+    def test_canva_rename_commands_preserve_identity_through_undo_redo(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addNode("A", element_id="a")
+        canvas.addNode("B", element_id="b")
+        canvas.connectElements("a", "b", connector_id="edge")
+        element_item = canvas.element("a")
+        connector_item = canvas.connector("edge")
+        canvas.undoStack().clear()
+
+        self.assertEqual("source", canvas.renameElement("a", "source"))
+        self.assertIs(element_item, canvas.element("source"))
+        self.assertEqual("signal", canvas.renameConnector("edge", "signal"))
+        self.assertIs(connector_item, canvas.connector("signal"))
+        self.assertTrue(canvas.undo())
+        self.assertIs(connector_item, canvas.connector("edge"))
+        self.assertTrue(canvas.undo())
+        self.assertIs(element_item, canvas.element("a"))
+        self.assertTrue(canvas.redo())
+        self.assertIs(element_item, canvas.element("source"))
+        canvas.deleteLater()
+
+    def test_canva_port_resize_and_alignment_edits_are_reversible_commands(self) -> None:
+        canvas = MonkezCanva()
+        canvas.addNode("A", x=0, y=0, element_id="a")
+        canvas.addNode("B", x=240, y=120, element_id="b")
+        original_ports = canvas.nodePorts("a")
+        canvas.undoStack().clear()
+
+        canvas.setNodePorts(
+            "a",
+            [
+                {"id": "input", "mode": "input", "side": "left"},
+                {"id": "signal", "mode": "output", "side": "right"},
+            ],
+        )
+        canvas.updateElement("a", width=260, height=140)
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertTrue(canvas.undo())
+        self.assertEqual(180, canvas.element("a")._rect.width())
+        self.assertEqual(original_ports, canvas.nodePorts("a"))
+
+        canvas.setEditMode(True)
+        canvas.selectElements(["a", "b"])
+        canvas.undoStack().clear()
+        self.assertTrue(canvas.alignSelected("left"))
+        self.assertEqual(1, canvas.undoStack().count())
+        self.assertTrue(canvas.undo())
+        self.assertNotEqual(
+            canvas.element("a").sceneBoundingRect().left(),
+            canvas.element("b").sceneBoundingRect().left(),
+        )
+        canvas.deleteLater()
+
+    def test_canva_save_marks_command_stack_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            canvas = MonkezCanva()
+            modified = []
+            canvas.documentModifiedChanged.connect(modified.append)
+            canvas.addText("Dirty", element_id="dirty")
+            self.assertTrue(canvas.isDocumentModified())
+            canvas.saveDocument(Path(directory) / "canvas.json")
+            self.assertFalse(canvas.isDocumentModified())
+            self.assertIn(False, modified)
+            canvas.updateElement("dirty", text="Dirty again")
+            self.assertTrue(canvas.isDocumentModified())
+            self.assertTrue(canvas.undo())
+            self.assertFalse(canvas.isDocumentModified())
+            canvas.deleteLater()
+
     def test_canva_registry_adds_custom_items_and_missing_placeholders(self) -> None:
         canvas = MonkezCanva()
         canvas.registerElementDefinition(

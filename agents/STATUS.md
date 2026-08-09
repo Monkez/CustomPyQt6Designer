@@ -159,6 +159,14 @@ Updated: 2026-08-09
 
 ## Latest verification
 
+- `MC-CORE-HISTORY-001` replaces whole-document snapshots with bounded
+  `QUndoStack` commands containing only changed record pairs. It covers model and
+  graphics-origin edits, cascade delete, port/geometry/property edits,
+  connection, grouping/resources, macro actions and identity-preserving rename.
+  Continuous changes merge for 800 ms; toolbar/pane controls expose command text
+  and enabled state, while durable save controls clean/dirty status.
+  Windows visual QA confirmed the floating Undo/Redo icons, contextual command
+  labels, disabled Redo state and coral `Draft saved` footer at 448x710.
 - `MC-CORE-REGISTRY-001` foundation adds public component definitions and an
   ordered per-canvas registry. The Elements pane and element size/default lookup
   are metadata-driven; custom types can be registered without editing the pane,
@@ -202,7 +210,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 137 passing tests and covers all 36 public
+- The automated suite contains 145 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.
