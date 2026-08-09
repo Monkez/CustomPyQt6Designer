@@ -18,6 +18,7 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QGraphicsItem,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -2698,6 +2699,66 @@ class WidgetTests(unittest.TestCase):
         self.assertIn("Add component", [entry.text() for entry in blank_menu.actions()])
         canvas.setEditMode(False)
         canvas.deleteLater()
+
+    def test_canva_outline_lock_hide_isolate_bookmarks_and_minimap(self) -> None:
+        window = QWidget()
+        layout = QVBoxLayout(window)
+        canvas = MonkezCanva()
+        layout.addWidget(canvas)
+        first = canvas.addNode("Source", -240, -60, element_id="source")
+        second = canvas.addNode("Target", 260, 90, element_id="target")
+        edge = canvas.connectElements(first, second, connector_id="signal")
+        window.resize(1000, 640)
+        window.show()
+        canvas.setEditMode(True)
+        self.app.processEvents()
+
+        canvas.selectElements((first,))
+        self.assertTrue(canvas.lockSelected())
+        self.assertTrue(canvas.objectState(first)["locked"])
+        self.assertFalse(
+            canvas.element(first).flags()
+            & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+        )
+        self.assertIn("locked", canvas.toDocument()["elements"][0])
+        canvas.undo()
+        self.assertFalse(canvas.objectState(first)["locked"])
+
+        self.assertTrue(canvas.setObjectHidden(first))
+        self.assertFalse(canvas.element(first).isVisible())
+        self.assertFalse(canvas.connector(edge).isVisible())
+        self.assertTrue(canvas.element(second).isVisible())
+        self.assertTrue(canvas.showAllObjects())
+        self.assertTrue(canvas.element(first).isVisible())
+        self.assertTrue(canvas.connector(edge).isVisible())
+
+        canvas.selectElements((first,))
+        self.assertTrue(canvas.isolateSelection())
+        self.assertEqual([first], canvas.isolatedObjectIds())
+        self.assertFalse(canvas.element(second).isVisible())
+        self.assertFalse(canvas.connector(edge).isVisible())
+        self.assertTrue(canvas.clearIsolation())
+        self.assertTrue(canvas.element(second).isVisible())
+
+        bookmark = canvas.addViewportBookmark("Main flow")
+        self.assertTrue(canvas.goToViewportBookmark(bookmark))
+        self.assertEqual("Main flow", canvas.viewportBookmarks()[0]["label"])
+        self.assertEqual("Main flow", canvas.toDocument()["scene"]["viewportBookmarks"][0]["label"])
+        self.assertTrue(canvas._minimap.isVisible())
+        canvas.setMinimapVisible(False)
+        self.assertFalse(canvas._minimap.isVisible())
+        self.assertFalse(canvas.toDocument()["scene"]["minimapVisible"])
+
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(2)
+        toolbox._layer_search.setText("source")
+        toolbox.refreshLayers()
+        self.assertEqual(1, toolbox._layers.count())
+        self.assertIn("source", toolbox._layers.item(0).text().casefold())
+
+        canvas.setEditMode(False)
+        window.close()
+        window.deleteLater()
 
 
 if __name__ == "__main__":

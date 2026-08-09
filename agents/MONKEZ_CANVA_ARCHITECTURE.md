@@ -155,6 +155,19 @@ inspect the same availability rules used by the visible menu. Blank right-click
 opens it only when pointer movement stays below the pan threshold. Equal-size
 operations update canonical element records through one document command.
 
+## Outline, visibility and viewport navigation
+
+Element and connector records persist explicit `locked` and `hidden` booleans.
+The graphics projection derives selectable/movable/visible flags centrally in
+`_sync_object_states()`; connectors also follow endpoint visibility. Isolation
+is deliberately view-local (`_isolated_ids`) and never overwrites document
+visibility. Batch state changes are one patch-based undo command.
+
+Viewport bookmarks live in the scene as bounded JSON records containing stable
+ID, label, center and zoom. The minimap is a canvas child overlay, not a layout
+row or scene item, so canvas transforms never move it. It renders a lightweight
+overview and viewport rectangle and maps click/drag positions back to scene space.
+
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading

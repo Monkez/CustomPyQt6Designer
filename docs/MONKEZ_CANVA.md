@@ -182,6 +182,27 @@ canvas.setSmartGuidesVisible(True)
 canvas.matchSelectedSize("both")  # width | height | both
 ```
 
+## Document Outline, lock/hide/isolate và minimap
+
+Tab **Layers** hiện là Document Outline: tìm theo ID, loại hoặc nhãn; mỗi dòng
+hiển thị rõ trạng thái visible, locked hay hidden. Toolbar bên dưới cho phép
+lock/unlock, hide/show, isolate, show all và zoom tới selection. Lock và hidden
+là thuộc tính document, hỗ trợ Undo/Redo và được lưu theo project. Isolation chỉ
+là bộ lọc viewport tạm thời nên không làm thay đổi trạng thái hidden đã lưu.
+
+Minimap nổi ở góc phải dưới canvas, không chiếm layout và không di chuyển theo
+viewport. Click hoặc kéo trên minimap để điều hướng. Tab **View > Navigator** cho
+phép ẩn/hiện minimap và lưu tối đa 32 viewport bookmark cùng tâm và mức zoom.
+
+```python
+canvas.setObjectLocked("pump", True)
+canvas.setObjectsHidden(("debug-label", "debug-edge"), True)
+canvas.isolateSelection()
+canvas.clearIsolation()
+bookmark_id = canvas.addViewportBookmark("Main process")
+canvas.goToViewportBookmark(bookmark_id)
+```
+
 Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`, `connectorAdded(str)`,
 `connectorRemoved(str)`, `elementClicked(str)`, `connectorClicked(str)`,
 `objectClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và

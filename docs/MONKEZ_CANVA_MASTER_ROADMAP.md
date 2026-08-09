@@ -113,14 +113,18 @@ Completed slice (2026-08-09): context-aware blank/item/connector menus while
 preserving right-drag viewport pan; equal width/height/both actions; portable
 grid/edge/center/port snap settings; and foreground smart alignment guides.
 
+Completed slice (2026-08-09): floating interactive minimap, searchable document
+outline, portable viewport bookmarks, document-backed lock/hide state and
+non-destructive viewport isolation. All state-changing actions use Undo/Redo.
+
 - searchable palette with categories, favorites and recent items — complete;
-- command palette — complete; context-aware canvas menus remain;
+- command palette and context-aware canvas menus — complete;
 - copy, cut, paste and duplicate with internal connector preservation — complete;
-- keyboard nudge — complete; equal-size and smart alignment guides remain;
-- configurable snap targets: grid, center, edge, port and nearby object;
+- keyboard nudge, equal-size actions and smart alignment guides — complete;
+- configurable snap targets: grid, center, edge and port — complete;
 - mixed-value multi-selection Inspector — common-property slice complete;
-- minimap, document outline, viewport bookmarks and zoom-to-selection;
-- lock, hide and isolate item/group;
+- minimap, document outline, viewport bookmarks and zoom-to-selection — complete;
+- lock, hide and isolate item — complete; group state remains;
 - editable connector waypoints, rounded orthogonal corners and reroute points;
 - edge labels, self-loops, parallel edges, crossing bridges and buses;
 - group/frame, swimlane, collapsible group and reusable subflow;

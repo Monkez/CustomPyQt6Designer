@@ -116,19 +116,22 @@ from monkez_pyqt6.monkez_widgets._canva_animation import (
     CanvasAnimationScheduler,
     ScheduledPropertyAnimation,
 )
+from monkez_pyqt6.monkez_widgets._canva_minimap import CanvasMinimap
 
 
 _GRID_STYLES = ("lines", "dots", "cross")
 _BACKGROUND_IMAGE_MODES = ("fit", "fill", "scale")
 _LINE_EFFECTS = ("flow", "pulse", "glow", "particles", "packet")
 _PORT_KINDS = ("node", "splitter")
+_VIEWPORT_BOOKMARKS_KEY = "viewportBookmarks"
+_MINIMAP_VISIBLE_KEY = "minimapVisible"
 _ELEMENT_STANDARD_PROPERTIES = {
     "id", "type", "x", "y", "width", "height", "text", "color", "background",
     "textColor", "data", "metadata", "source", "lineWidth", "lineStyle",
     "arrowStart", "arrowEnd", "animated", "animationEffect", "flowColor",
     "flowSpeed", "flowDirection", "flowSpacing", "effectIntensity", "packetLoop",
     "packetDuration", "packetInterval", "packetIcon", "points", "ports", "opacity",
-    "rotation", "z",
+    "rotation", "z", "locked", "hidden",
 }
 
 
@@ -307,6 +310,22 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
     elif name == "lock":
         painter.drawRoundedRect(QRectF(4, 8, 12, 9), 2, 2)
         painter.drawArc(QRectF(6, 2.5, 8, 11), 0, 180 * 16)
+    elif name in ("eye", "eye_off"):
+        eye = QPainterPath(QPointF(2, 10))
+        eye.cubicTo(6, 4, 14, 4, 18, 10)
+        eye.cubicTo(14, 16, 6, 16, 2, 10)
+        painter.drawPath(eye)
+        painter.drawEllipse(QRectF(8, 8, 4, 4))
+        if name == "eye_off":
+            painter.drawLine(QPointF(3, 3), QPointF(17, 17))
+    elif name == "focus":
+        painter.drawEllipse(QRectF(6, 6, 8, 8))
+        for start, end in (
+            ((3, 7), (3, 3)), ((3, 3), (7, 3)), ((13, 3), (17, 3)),
+            ((17, 3), (17, 7)), ((3, 13), (3, 17)), ((3, 17), (7, 17)),
+            ((13, 17), (17, 17)), ((17, 17), (17, 13)),
+        ):
+            painter.drawLine(QPointF(*start), QPointF(*end))
         painter.drawEllipse(QRectF(9, 11, 2, 2))
     elif name in ("zoom_in", "zoom_out"):
         painter.drawEllipse(QRectF(3, 3, 10, 10))
@@ -680,6 +699,8 @@ class _CanvasElement(QGraphicsObject):
         self.text_color = _color(options.get("textColor", "#0f172a"), "#0f172a")
         self.data = list(options.get("data", [32, 68, 46, 82, 58]))
         self.metadata = dict(options.get("metadata", {}))
+        self.locked = bool(options.get("locked", False))
+        self.hidden = bool(options.get("hidden", False))
         self.custom_properties = {
             key: value for key, value in options.items()
             if key not in _ELEMENT_STANDARD_PROPERTIES
@@ -1206,6 +1227,8 @@ class _CanvasElement(QGraphicsObject):
             "opacity": self.opacity(),
             "rotation": self.rotation(),
             "z": self.zValue(),
+            "locked": self.locked,
+            "hidden": self.hidden,
         }
         result.update(self.custom_properties)
         return result
@@ -1256,6 +1279,8 @@ class _CanvasConnector(QGraphicsObject):
         self._last_packet_at = 0.0
         self.waypoints = [QPointF(float(point[0]), float(point[1])) for point in options.get("waypoints", [])]
         self.metadata = dict(options.get("metadata", {}))
+        self.locked = bool(options.get("locked", False))
+        self.hidden = bool(options.get("hidden", False))
         self._highlight = QColor()
         self._path = QPainterPath()
         self._flow_phase = 0.0
@@ -1458,6 +1483,8 @@ class _CanvasConnector(QGraphicsObject):
             "metadata": dict(self.metadata),
             "opacity": self.opacity(),
             "z": self.zValue(),
+            "locked": self.locked,
+            "hidden": self.hidden,
         }
 
 
@@ -1741,8 +1768,18 @@ class _CanvasCommandPalette(QDialog):
             ("view:fit", "Fit all content", "View", "zoom", "fit", True, canvas.fitContent),
             ("view:zoom-selection", "Zoom to selection", "View", "focus", "align_center", bool(selected), canvas.zoomToSelection),
             ("view:grid", "Toggle grid", "View", "background", "grid", writable, lambda: canvas.setGridVisible(not canvas.gridVisible)),
+            ("view:minimap", "Toggle minimap", "View", "overview navigator", "focus", writable, lambda: canvas.setMinimapVisible(not canvas.minimapVisible())),
             ("save:project", "Save project workspace", "Save", "persistent durable", "save", writable, canvas.savePersistent),
         ))
+        if selected:
+            all_locked = all(canvas.objectState(object_id)["locked"] for object_id in selected)
+            commands.extend((
+                ("object:lock", "Unlock selection" if all_locked else "Lock selection", "Object", "protect movement", "lock", writable, lambda: canvas.lockSelected(not all_locked)),
+                ("object:hide", "Hide selection", "Object", "visibility", "eye_off", writable, canvas.hideSelected),
+                ("object:isolate", "Isolate selection", "Object", "focus visibility", "focus", True, canvas.isolateSelection),
+            ))
+        if canvas.isolatedObjectIds():
+            commands.append(("object:clear-isolate", "Clear isolation", "Object", "visibility", "eye", True, canvas.clearIsolation))
         for alignment in ("left", "hcenter", "right", "top", "vcenter", "bottom"):
             commands.append((
                 f"arrange:{alignment}", f"Align {alignment}", "Arrange", "selection",
@@ -2461,14 +2498,36 @@ class _CanvasEditorToolbox(QDialog):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(7)
+        self._layer_search = QLineEdit()
+        self._layer_search.setPlaceholderText("Search objects by ID, type or label…")
+        self._layer_search.addAction(
+            _canvas_icon("search"), QLineEdit.ActionPosition.LeadingPosition
+        )
+        self._layer_search.textChanged.connect(self.refreshLayers)
+        layout.addWidget(self._layer_search)
         self._layers = QListWidget()
         self._layers.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._layers.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._layers.setWordWrap(True)
         self._layers.itemSelectionChanged.connect(self._select_layers)
+        self._layers.itemDoubleClicked.connect(lambda _item: self.canvas.zoomToSelection())
         layout.addWidget(self._layers, 1)
-        refresh = QPushButton("Refresh item list")
-        refresh.setIcon(_canvas_icon("refresh"))
-        refresh.clicked.connect(self.refreshLayers)
-        layout.addWidget(refresh)
+        actions = QHBoxLayout()
+        for icon, tooltip, callback in (
+            ("lock", "Lock or unlock selected objects", self._toggle_layer_lock),
+            ("eye_off", "Hide or show selected objects", self._toggle_layer_visibility),
+            ("focus", "Isolate selected objects", self._isolate_layers),
+            ("eye", "Show all and clear isolation", self._show_all_layers),
+            ("fit", "Zoom to selected objects", self.canvas.zoomToSelection),
+        ):
+            button = QToolButton()
+            button.setIcon(_canvas_icon(icon))
+            button.setToolTip(tooltip)
+            button.setFixedSize(34, 32)
+            button.clicked.connect(lambda _checked=False, action=callback: action())
+            actions.addWidget(button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
         return page
 
     def _view_tab(self) -> QWidget:
@@ -2555,6 +2614,26 @@ class _CanvasEditorToolbox(QDialog):
         self._snap_distance_field.valueChanged.connect(self.canvas.setSnapDistance)
         snapping_layout.addWidget(self._snap_distance_field, 2, 1)
         layout.addWidget(snapping)
+
+        navigator = QGroupBox("Navigator")
+        navigator_layout = QGridLayout(navigator)
+        self._minimap_check = QCheckBox("Show minimap")
+        self._minimap_check.toggled.connect(self.canvas.setMinimapVisible)
+        navigator_layout.addWidget(self._minimap_check, 0, 0, 1, 2)
+        self._bookmark_combo = QComboBox()
+        self._bookmark_combo.setPlaceholderText("No saved views")
+        navigator_layout.addWidget(self._bookmark_combo, 1, 0, 1, 2)
+        for column, (label, icon, callback) in enumerate((
+            ("Add", "star", self._add_viewport_bookmark),
+            ("Go", "focus", self._go_viewport_bookmark),
+            ("Remove", "delete", self._remove_viewport_bookmark),
+        )):
+            button = QPushButton(label)
+            button.setIcon(_canvas_icon(icon))
+            button.clicked.connect(callback)
+            navigator_layout.addWidget(button, 2, column)
+        layout.addWidget(navigator)
+        self.canvas.viewportBookmarksChanged.connect(self._sync_viewport_bookmarks)
 
         background = QGroupBox("Canvas background")
         background_layout = QGridLayout(background)
@@ -2740,6 +2819,7 @@ class _CanvasEditorToolbox(QDialog):
             self._background_mode_combo,
             self._smart_guides_check,
             self._snap_distance_field,
+            self._minimap_check,
             *self._snap_checks.values(),
         )
         blockers = [QSignalBlocker(widget) for widget in widgets]
@@ -2752,12 +2832,39 @@ class _CanvasEditorToolbox(QDialog):
             check.setChecked(target in enabled_targets)
         self._smart_guides_check.setChecked(self.canvas.smartGuidesVisible())
         self._snap_distance_field.setValue(self.canvas.snapDistance())
+        self._minimap_check.setChecked(self.canvas.minimapVisible())
+        self._sync_viewport_bookmarks()
         del blockers
 
     def _update_snap_targets(self, _checked: bool = False) -> None:
         self.canvas.setSnapTargets(
             target for target, check in self._snap_checks.items() if check.isChecked()
         )
+
+    def _sync_viewport_bookmarks(self, _bookmarks=None) -> None:
+        current = self._bookmark_combo.currentData()
+        blocker = QSignalBlocker(self._bookmark_combo)
+        self._bookmark_combo.clear()
+        for bookmark in self.canvas.viewportBookmarks():
+            self._bookmark_combo.addItem(bookmark["label"], bookmark["id"])
+        index = self._bookmark_combo.findData(current)
+        self._bookmark_combo.setCurrentIndex(index if index >= 0 else (0 if self._bookmark_combo.count() else -1))
+        del blocker
+
+    def _add_viewport_bookmark(self) -> None:
+        bookmark_id = self.canvas.addViewportBookmark()
+        self._sync_viewport_bookmarks()
+        self._bookmark_combo.setCurrentIndex(self._bookmark_combo.findData(bookmark_id))
+
+    def _go_viewport_bookmark(self) -> None:
+        bookmark_id = self._bookmark_combo.currentData()
+        if bookmark_id:
+            self.canvas.goToViewportBookmark(str(bookmark_id))
+
+    def _remove_viewport_bookmark(self) -> None:
+        bookmark_id = self._bookmark_combo.currentData()
+        if bookmark_id:
+            self.canvas.removeViewportBookmark(str(bookmark_id))
 
     def _browse_selected_media(self) -> None:
         item = self.canvas.element(self.canvas.selectedElementId())
@@ -3309,11 +3416,24 @@ class _CanvasEditorToolbox(QDialog):
         selected = set(self.canvas.selectedObjectIds())
         blocker = QSignalBlocker(self._layers)
         self._layers.clear()
+        query = self._layer_search.text().casefold().strip()
         objects = [*self.canvas._elements.values(), *self.canvas._connectors.values()]
         for item in sorted(objects, key=lambda value: value.zValue(), reverse=True):
             description = getattr(item, "text", "")
-            label = QListWidgetItem(f"{item.element_id}  ·  {item.kind}  ·  {description}")
+            if query and query not in f"{item.element_id} {item.kind} {description}".casefold():
+                continue
+            state = "Hidden" if item.hidden else "Locked" if item.locked else "Visible"
+            primary = description or item.element_id
+            secondary = f"{item.kind} · {item.element_id}" if description else item.kind
+            label = QListWidgetItem(
+                _canvas_icon("eye_off" if item.hidden else "lock" if item.locked else "eye"),
+                f"{primary}\n{secondary}",
+            )
+            label.setSizeHint(QSize(0, 44))
             label.setData(Qt.ItemDataRole.UserRole, item.element_id)
+            label.setToolTip(f"ID: {item.element_id}\nType: {item.kind}\nState: {state}")
+            if item.hidden:
+                label.setForeground(QColor("#9aa1ab"))
             self._layers.addItem(label)
             if item.element_id in selected:
                 label.setSelected(True)
@@ -3329,6 +3449,36 @@ class _CanvasEditorToolbox(QDialog):
             self.canvas.selectElements(element_ids)
         finally:
             self._syncing_layers = False
+
+    def _selected_layer_ids(self) -> list[str]:
+        return [
+            str(item.data(Qt.ItemDataRole.UserRole))
+            for item in self._layers.selectedItems()
+        ]
+
+    def _toggle_layer_lock(self) -> None:
+        ids = self._selected_layer_ids()
+        if ids:
+            locked = not all(self.canvas.objectState(object_id)["locked"] for object_id in ids)
+            self.canvas.setObjectsLocked(ids, locked)
+            self.refreshLayers()
+
+    def _toggle_layer_visibility(self) -> None:
+        ids = self._selected_layer_ids()
+        if ids:
+            hidden = not all(self.canvas.objectState(object_id)["hidden"] for object_id in ids)
+            self.canvas.setObjectsHidden(ids, hidden)
+            self.refreshLayers()
+
+    def _isolate_layers(self) -> None:
+        ids = self._selected_layer_ids()
+        self.canvas.selectElements(ids)
+        if self.canvas.isolateSelection():
+            self.refreshLayers()
+
+    def _show_all_layers(self) -> None:
+        self.canvas.clearIsolation()
+        self.canvas.showAllObjects()
         self.refreshLayers()
 
     def _show_save_status(self, target: str) -> None:
@@ -3508,6 +3658,8 @@ class _CanvasView(QGraphicsView):
         super().resizeEvent(event)
         if hasattr(self.canvas, "_quick_toolbar"):
             self.canvas._place_quick_toolbar()
+        if hasattr(self.canvas, "_minimap"):
+            self.canvas._place_minimap()
 
     def wheelEvent(self, event) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -3518,6 +3670,8 @@ class _CanvasView(QGraphicsView):
                 applied = target / current
                 self.scale(applied, applied)
             event.accept()
+            if hasattr(self.canvas, "_minimap"):
+                self.canvas._minimap.update()
             return
         super().wheelEvent(event)
 
@@ -3704,6 +3858,8 @@ class MonkezCanva(QWidget):
     recoveryLoaded = pyqtSignal(str, str)
     assetIntegrityChecked = pyqtSignal(list)
     palettePreferencesChanged = pyqtSignal(list, list)
+    viewportBookmarksChanged = pyqtSignal(list)
+    objectStateChanged = pyqtSignal(str, bool, bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -3720,6 +3876,9 @@ class MonkezCanva(QWidget):
         self._background_image_mode = 0
         self._palette_favorites: tuple[str, ...] = ()
         self._palette_recent: tuple[str, ...] = ()
+        self._viewport_bookmarks: tuple[dict[str, Any], ...] = ()
+        self._minimap_visible = True
+        self._isolated_ids: set[str] = set()
         self._message_payloads: dict[str, dict[str, Any]] = {}
         self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
@@ -3762,6 +3921,11 @@ class MonkezCanva(QWidget):
         self._quick_toolbar = _CanvasQuickToolbar(self)
         self._quick_toolbar.hide()
         layout.addWidget(self._view)
+        self._minimap = CanvasMinimap(self)
+        self._minimap.hide()
+        self.documentChanged.connect(self._update_minimap)
+        self._view.horizontalScrollBar().valueChanged.connect(self._update_minimap)
+        self._view.verticalScrollBar().valueChanged.connect(self._update_minimap)
         self._toolbox: _CanvasEditorToolbox | None = None
         self._command_palette: _CanvasCommandPalette | None = None
         self._scene.selectionChanged.connect(self._emit_selection)
@@ -4010,6 +4174,124 @@ class MonkezCanva(QWidget):
         )
         return selected
 
+    def objectState(self, object_id: str) -> dict[str, bool]:
+        item = self.canvasObject(object_id)
+        if item is None:
+            raise KeyError(f"Unknown MonkezCanva object: {object_id}")
+        return {"locked": bool(item.locked), "hidden": bool(item.hidden)}
+
+    def setObjectsLocked(self, object_ids, locked: bool = True) -> bool:
+        ids = tuple(dict.fromkeys(str(object_id) for object_id in object_ids))
+        value = bool(locked)
+
+        def mutate(document: CanvasDocument) -> None:
+            for object_id in ids:
+                if document.element(object_id) is not None:
+                    document.update_element(object_id, {"locked": value})
+                elif document.connector(object_id) is not None:
+                    document.update_connector(object_id, {"locked": value})
+
+        changed = self._push_document_mutation(
+            mutate, f"{'Lock' if value else 'Unlock'} {len(ids)} object{'s' if len(ids) != 1 else ''}"
+        )
+        if changed:
+            for object_id in ids:
+                state = self.objectState(object_id)
+                self.objectStateChanged.emit(object_id, state["locked"], state["hidden"])
+        return changed
+
+    def setObjectLocked(self, object_id: str, locked: bool = True) -> bool:
+        return self.setObjectsLocked((object_id,), locked)
+
+    def setObjectsHidden(self, object_ids, hidden: bool = True) -> bool:
+        ids = tuple(dict.fromkeys(str(object_id) for object_id in object_ids))
+        value = bool(hidden)
+
+        def mutate(document: CanvasDocument) -> None:
+            for object_id in ids:
+                if document.element(object_id) is not None:
+                    document.update_element(object_id, {"hidden": value})
+                elif document.connector(object_id) is not None:
+                    document.update_connector(object_id, {"hidden": value})
+
+        changed = self._push_document_mutation(
+            mutate, f"{'Hide' if value else 'Show'} {len(ids)} object{'s' if len(ids) != 1 else ''}"
+        )
+        if changed:
+            for object_id in ids:
+                state = self.objectState(object_id)
+                self.objectStateChanged.emit(object_id, state["locked"], state["hidden"])
+        return changed
+
+    def setObjectHidden(self, object_id: str, hidden: bool = True) -> bool:
+        return self.setObjectsHidden((object_id,), hidden)
+
+    def lockSelected(self, locked: bool = True) -> bool:
+        return self.setObjectsLocked(self.selectedObjectIds(), locked)
+
+    def hideSelected(self) -> bool:
+        return self.setObjectsHidden(self.selectedObjectIds(), True)
+
+    def showAllObjects(self) -> bool:
+        ids = [
+            object_id for object_id in (*self._elements, *self._connectors)
+            if self.canvasObject(object_id).hidden
+        ]
+        return self.setObjectsHidden(ids, False) if ids else False
+
+    def isolateSelection(self) -> bool:
+        selected = set(self.selectedObjectIds())
+        if not selected:
+            return False
+        for connector_id, connector in self._connectors.items():
+            if connector.source.element_id in selected and connector.target.element_id in selected:
+                selected.add(connector_id)
+        self._isolated_ids = selected
+        self._sync_object_states()
+        self.diagnosticMessage.emit(f"Isolated {len(selected)} canvas objects")
+        return True
+
+    def clearIsolation(self) -> bool:
+        if not self._isolated_ids:
+            return False
+        self._isolated_ids.clear()
+        self._sync_object_states()
+        self.diagnosticMessage.emit("Canvas isolation cleared")
+        return True
+
+    def isolatedObjectIds(self) -> list[str]:
+        return list(self._isolated_ids)
+
+    def _sync_object_states(self) -> None:
+        writable_edit = self._edit_mode and not self.isReadOnly()
+        isolated = self._isolated_ids
+        for element_id, item in self._elements.items():
+            visible = not item.hidden and (not isolated or element_id in isolated)
+            item.setVisible(visible)
+            item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, writable_edit and visible)
+            item.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
+                writable_edit and visible and not item.locked,
+            )
+            if not visible:
+                item.setSelected(False)
+        for connector_id, connector in self._connectors.items():
+            visible = (
+                not connector.hidden
+                and connector.source.isVisible()
+                and connector.target.isVisible()
+                and (not isolated or connector_id in isolated)
+            )
+            connector.setVisible(visible)
+            connector.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
+                writable_edit and visible,
+            )
+            if not visible:
+                connector.setSelected(False)
+        if hasattr(self, "_minimap"):
+            self._minimap.update()
+
     def createContextMenu(self, object_id: str = "") -> QMenu:
         """Build a context-aware menu without displaying it (also useful to hosts/tests)."""
         menu = QMenu(self)
@@ -4038,6 +4320,8 @@ class MonkezCanva(QWidget):
             action("Select all", self.selectAllElements, enabled=bool(self._elements))
             action("Fit all content", self.fitContent, icon="fit")
             action("Toggle grid", lambda: self.setGridVisible(not self.gridVisible), enabled=writable, icon="grid")
+            action("Show all objects", self.showAllObjects, enabled=writable, icon="eye")
+            action("Clear isolation", self.clearIsolation, enabled=bool(self._isolated_ids), icon="focus")
             action("Command palette…", self.showCommandPalette, icon="command")
             return menu
 
@@ -4045,6 +4329,14 @@ class MonkezCanva(QWidget):
         action("Cut", self.cutSelection, enabled=writable and bool(selected), icon="delete")
         action("Duplicate", self.duplicateSelection, enabled=writable and bool(selected), icon="duplicate")
         action("Delete", self.deleteSelected, enabled=writable and bool(selected), icon="delete")
+        all_locked = bool(selected) and all(self.objectState(item_id)["locked"] for item_id in selected)
+        action(
+            "Unlock selection" if all_locked else "Lock selection",
+            lambda: self.lockSelected(not all_locked),
+            enabled=writable and bool(selected), icon="lock",
+        )
+        action("Hide selection", self.hideSelected, enabled=writable and bool(selected), icon="eye_off")
+        action("Isolate selection", self.isolateSelection, enabled=bool(selected), icon="focus")
         if len(selected_elements) >= 2:
             menu.addSeparator()
             align_menu = menu.addMenu("Align")
@@ -4284,6 +4576,7 @@ class MonkezCanva(QWidget):
         item.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(item)
         self._elements[element_id] = item
+        self._sync_object_states()
         if self._edit_mode:
             self._scene.clearSelection()
             item.setSelected(True)
@@ -4617,6 +4910,10 @@ class MonkezCanva(QWidget):
             )
             return self
         item = self._required_element(element_id)
+        object_state_changed = (
+            "locked" in values and bool(values["locked"]) != item.locked
+            or "hidden" in values and bool(values["hidden"]) != item.hidden
+        )
         if "x" in values or "y" in values:
             item.setPos(float(values.get("x", item.pos().x())), float(values.get("y", item.pos().y())))
         if "width" in values or "height" in values:
@@ -4638,6 +4935,10 @@ class MonkezCanva(QWidget):
             item.setZValue(float(values["z"]))
         if "metadata" in values:
             item.metadata = dict(values["metadata"])
+        if "locked" in values:
+            item.locked = bool(values["locked"])
+        if "hidden" in values:
+            item.hidden = bool(values["hidden"])
         if "data" in values:
             item.data = list(values["data"])
         if "lineWidth" in values:
@@ -4685,6 +4986,8 @@ class MonkezCanva(QWidget):
         )
         item._sync_line_animation()
         item.changed.emit(item.element_id)
+        if object_state_changed:
+            self._sync_object_states()
         self.documentChanged.emit()
         return self
 
@@ -4749,6 +5052,7 @@ class MonkezCanva(QWidget):
         connector.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(connector)
         self._connectors[connector_id] = connector
+        self._sync_object_states()
         self.connectorAdded.emit(connector_id)
         self.documentChanged.emit()
         return connector_id
@@ -4895,6 +5199,10 @@ class MonkezCanva(QWidget):
             )
             return self
         connector = self._required_connector(connector_id)
+        object_state_changed = (
+            "locked" in values and bool(values["locked"]) != connector.locked
+            or "hidden" in values and bool(values["hidden"]) != connector.hidden
+        )
         if any(key in values for key in ("source", "target", "sourcePort", "targetPort")):
             self.reconnectConnector(
                 connector_id,
@@ -4955,9 +5263,15 @@ class MonkezCanva(QWidget):
             connector.setZValue(float(values["z"]))
         if "metadata" in values:
             connector.metadata = dict(values["metadata"])
+        if "locked" in values:
+            connector.locked = bool(values["locked"])
+        if "hidden" in values:
+            connector.hidden = bool(values["hidden"])
         connector.updatePath()
         connector._sync_animation()
         connector.changed.emit(connector.connector_id)
+        if object_state_changed:
+            self._sync_object_states()
         return self
 
     def animateConnector(
@@ -5353,11 +5667,7 @@ class MonkezCanva(QWidget):
         if normalized == self._read_only_reason:
             return
         self._read_only_reason = normalized
-        writable_edit = self._edit_mode and not normalized
-        for item in self._elements.values():
-            item.setEditable(writable_edit)
-        for connector in self._connectors.values():
-            connector.setEditable(writable_edit)
+        self._sync_object_states()
         self.readOnlyChanged.emit(bool(normalized), normalized)
         if normalized:
             self.diagnosticMessage.emit(f"Read-only document: {normalized}")
@@ -5555,6 +5865,8 @@ class MonkezCanva(QWidget):
             "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
             "rotation": float(values.get("rotation", 0.0)),
             "z": float(values.get("z", 0.0)),
+            "locked": bool(values.get("locked", False)),
+            "hidden": bool(values.get("hidden", False)),
         }
         record.update(
             {
@@ -5602,6 +5914,8 @@ class MonkezCanva(QWidget):
             "metadata": dict(values.get("metadata", {})),
             "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
             "z": float(values.get("z", -1.0)),
+            "locked": bool(values.get("locked", False)),
+            "hidden": bool(values.get("hidden", False)),
         }
 
     def _graphics_document(self) -> dict[str, Any]:
@@ -5624,6 +5938,8 @@ class MonkezCanva(QWidget):
                 "backgroundImageMode": self._background_image_mode,
                 PALETTE_FAVORITES_KEY: list(self._palette_favorites),
                 PALETTE_RECENT_KEY: list(self._palette_recent),
+                _VIEWPORT_BOOKMARKS_KEY: self.viewportBookmarks(),
+                _MINIMAP_VISIBLE_KEY: self._minimap_visible,
             },
             "elements": [item.to_dict() for item in self._elements.values()],
             "connectors": [item.to_dict() for item in self._connectors.values()],
@@ -5777,6 +6093,7 @@ class MonkezCanva(QWidget):
             QPixmap(self._background_image) if self._background_image else QPixmap()
         )
         self._apply_palette_preferences(scene)
+        self._apply_navigation_preferences(scene)
         self._scene.invalidate(
             self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer
         )
@@ -5791,6 +6108,35 @@ class MonkezCanva(QWidget):
         self._palette_recent = recent
         if changed:
             self.palettePreferencesChanged.emit(list(favorites), list(recent))
+
+    def _apply_navigation_preferences(self, scene: dict[str, Any]) -> None:
+        bookmarks: list[dict[str, Any]] = []
+        used: set[str] = set()
+        for index, raw in enumerate(scene.get(_VIEWPORT_BOOKMARKS_KEY, ())):
+            if not isinstance(raw, dict):
+                continue
+            bookmark_id = str(raw.get("id", f"view-{index + 1}")).strip()
+            if not bookmark_id or bookmark_id in used:
+                continue
+            used.add(bookmark_id)
+            bookmarks.append({
+                "id": bookmark_id,
+                "label": str(raw.get("label", f"View {index + 1}")),
+                "x": float(raw.get("x", 0.0)),
+                "y": float(raw.get("y", 0.0)),
+                "zoom": max(0.2, min(4.0, float(raw.get("zoom", 1.0)))),
+            })
+            if len(bookmarks) >= 32:
+                break
+        normalized = tuple(bookmarks)
+        changed = normalized != self._viewport_bookmarks
+        self._viewport_bookmarks = normalized
+        self._minimap_visible = bool(scene.get(_MINIMAP_VISIBLE_KEY, self._minimap_visible))
+        if hasattr(self, "_minimap"):
+            self._minimap.setVisible(self._edit_mode and self._minimap_visible)
+            self._place_minimap()
+        if changed:
+            self.viewportBookmarksChanged.emit(self.viewportBookmarks())
 
     def _add_element_record(self, entry: dict[str, Any]) -> str:
         values = dict(entry)
@@ -6209,6 +6555,7 @@ class MonkezCanva(QWidget):
         )
         self._background_pixmap = QPixmap(self._background_image) if self._background_image else QPixmap()
         self._apply_palette_preferences(scene)
+        self._apply_navigation_preferences(scene)
         self.clear()
         for entry in data.get("elements", []):
             self._add_element_record(dict(entry))
@@ -6278,6 +6625,72 @@ class MonkezCanva(QWidget):
         center = self._view.mapToScene(self._view.viewport().rect().center())
         self._view.centerOn(center + QPointF(float(dx), float(dy)))
 
+    def viewportBookmarks(self) -> list[dict[str, Any]]:
+        return [dict(bookmark) for bookmark in self._viewport_bookmarks]
+
+    def addViewportBookmark(self, label: str = "") -> str:
+        center = self._view.mapToScene(self._view.viewport().rect().center())
+        bookmark_id = uuid.uuid4().hex[:10]
+        bookmark = {
+            "id": bookmark_id,
+            "label": str(label).strip() or f"View {len(self._viewport_bookmarks) + 1}",
+            "x": center.x(),
+            "y": center.y(),
+            "zoom": self._view.transform().m11(),
+        }
+        bookmarks = [*self.viewportBookmarks(), bookmark]
+        self._push_document_mutation(
+            lambda document: document.update_scene({_VIEWPORT_BOOKMARKS_KEY: bookmarks}),
+            "Add viewport bookmark",
+        )
+        return bookmark_id
+
+    def removeViewportBookmark(self, bookmark_id: str) -> bool:
+        key = str(bookmark_id)
+        bookmarks = [item for item in self.viewportBookmarks() if item["id"] != key]
+        if len(bookmarks) == len(self._viewport_bookmarks):
+            return False
+        return self._push_document_mutation(
+            lambda document: document.update_scene({_VIEWPORT_BOOKMARKS_KEY: bookmarks}),
+            "Remove viewport bookmark",
+        )
+
+    def goToViewportBookmark(self, bookmark_id: str) -> bool:
+        key = str(bookmark_id)
+        bookmark = next(
+            (item for item in self._viewport_bookmarks if item["id"] == key or item["label"] == key),
+            None,
+        )
+        if bookmark is None:
+            return False
+        self._set_zoom(float(bookmark["zoom"]))
+        self._view.centerOn(float(bookmark["x"]), float(bookmark["y"]))
+        self._minimap.update()
+        return True
+
+    def minimapVisible(self) -> bool:
+        return self._minimap_visible
+
+    def setMinimapVisible(self, visible: bool) -> None:
+        normalized = bool(visible)
+        if normalized == self._minimap_visible:
+            return
+        self._push_document_mutation(
+            lambda document: document.update_scene({_MINIMAP_VISIBLE_KEY: normalized}),
+            "Toggle minimap",
+        )
+
+    def _place_minimap(self) -> None:
+        minimap = self._minimap
+        view_rect = self._view.geometry()
+        minimap.move(
+            view_rect.right() - minimap.width() - 14,
+            view_rect.bottom() - minimap.height() - 14,
+        )
+
+    def _update_minimap(self, *_args) -> None:
+        self._minimap.update()
+
     def centerOnSelection(self) -> bool:
         item = self.canvasObject(self.selectedElementId())
         if item is None:
@@ -6307,17 +6720,17 @@ class MonkezCanva(QWidget):
         if enabled == self._edit_mode:
             return
         self._edit_mode = enabled
-        writable_edit = enabled and not self.isReadOnly()
-        for item in self._elements.values():
-            item.setEditable(writable_edit)
-        for connector in self._connectors.values():
-            connector.setEditable(writable_edit)
+        self._sync_object_states()
         if enabled:
             self._place_quick_toolbar()
             self._quick_toolbar.show()
             self._quick_toolbar.raise_()
+            self._place_minimap()
+            self._minimap.setVisible(self._minimap_visible)
+            self._minimap.raise_()
         else:
             self._quick_toolbar.hide()
+            self._minimap.hide()
             if self._command_palette is not None:
                 self._command_palette.hide()
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag if enabled else QGraphicsView.DragMode.ScrollHandDrag)

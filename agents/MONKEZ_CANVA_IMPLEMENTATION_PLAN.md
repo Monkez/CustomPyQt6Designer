@@ -209,6 +209,17 @@ The View tab is scroll-safe and uses compact icon navigation controls.
 Next: minimap, document outline, viewport bookmarks, lock/hide/isolate and
 editable connector waypoint handles.
 
+### Scene navigation progress — 2026-08-09
+
+`MC-EDITOR-OUTLINE-001` upgrades Layers into a searchable document outline with
+state icons and compact lock/hide/isolate/show/zoom actions. Lock and hidden are
+portable element/connector properties committed atomically; isolate remains a
+non-destructive view filter. `MC-EDITOR-MINIMAP-001` adds a floating interactive
+overview plus portable center/zoom bookmarks and View-tab controls.
+
+Next: editable connector waypoints, rounded orthogonal corners, reroute handles,
+edge labels, parallel-edge separation and crossing bridges.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

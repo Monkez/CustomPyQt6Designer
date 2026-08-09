@@ -173,6 +173,11 @@ Updated: 2026-08-09
   Right-click without movement opens the canvas menu; right-drag continues to
   pan. The View pane is scroll-safe with compact icon viewport controls.
 
+- `MC-EDITOR-OUTLINE-001` and `MC-EDITOR-MINIMAP-001` add a searchable scene
+  outline, portable lock/hidden state, temporary isolation, a floating clickable
+  minimap and portable viewport bookmarks. State changes are undoable and
+  connectors automatically follow hidden endpoints.
+
 - `MC-EDITOR-SELECTION-001` begins Phase 2 with a strict, versioned graph
   clipboard. Ctrl+C/X/V and public APIs preserve internal connectors, remap IDs,
   endpoints and waypoints, and make cut/paste/duplicate atomic in history.
@@ -253,7 +258,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 165 tests and covers all 36 public
+- The automated suite contains 166 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.
