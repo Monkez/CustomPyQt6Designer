@@ -76,6 +76,9 @@ class CanvasAnimationScheduler(QObject):
         delta = max(0.0, min(0.25, now - self._last_tick))
         self._last_tick = now
         self._tick_count += 1
+        runtime_tick = getattr(self.canvas, "_runtime_tick", None)
+        if runtime_tick is not None:
+            runtime_tick(now)
         visible = self._is_visible()
         visible_rect = None
         if visible:

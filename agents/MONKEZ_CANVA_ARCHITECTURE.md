@@ -70,12 +70,26 @@ timer: direct choices apply immediately, while typing is briefly debounced and
 invalid partial JSON is rejected through diagnostics instead of escaping the slot.
 
 Line and connector animation share `_paint_path_effect()` with flow, pulse, glow,
-particles and packet modes. Packet instances have stable message IDs and monotonic
-travel timing. `MonkezCanva` tracks pending terminal branches; arrival at a splitter
-fans the same logical message into all unvisited output connectors, and emits one
-final `messageArrived` only after the branch count reaches zero. This defines the
-blocking boundary for `send_a_message(..., wait_to_end=True)` while a nested Qt
-event loop keeps painting and timers responsive.
+particles and packet modes. Visual packet instances keep only ID, pixmap, duration
+and monotonic start time. The authoritative transient lifecycle lives in the
+Qt-free `packet_runtime.py`: `PacketRuntime` owns `MessageTicket` state, branch
+selection, priority order, hop TTL, wall-clock timeout, breakpoints and a bounded
+sequence trace. Payload and runtime metadata never cross into `CanvasDocument`.
+
+`MonkezCanva` maps segment start/arrival to graphics packets and runtime events.
+Splitter propagation asks the runtime for `all`, `first` or `round_robin` branches;
+completion emits one final `messageArrived` only after selected branches reach
+zero pending segments. `send_a_message()` remains the string-ID compatibility API,
+`sendMessageTicket()` is non-blocking, and `sendMessageAsync()` awaits the same
+ticket in a Qt/asyncio-integrated host. Blocking compatibility uses a nested Qt
+event loop that exits for every terminal state, including timeout/cancellation.
+
+Breakpoint arrivals are queued by the Qt adapter, not the pure runtime. Pause
+shifts visual packet start times by each scheduler delta, so paint progress freezes
+without creating per-packet timers. Step consumes one queued arrival; Resume drains
+the queue with breakpoint bypass and returns tickets to in-flight state. The
+detached `_CanvasRuntimeDebugger` is only a signal/API client and owns no runtime
+truth, allowing applications to replace it with their own debugger safely.
 
 Selection is an ordered ID set exposed by `selectedElementIds()` and
 `selectionSetChanged(list)`. Alignment is one document mutation even though it

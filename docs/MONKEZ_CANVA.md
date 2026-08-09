@@ -333,6 +333,9 @@ canvas.updateConnector(
 message_id = canvas.send_a_message(
     "network-edge", icon="assets/alert.png", speed=1.5,
     travel_time=1.2, wait_to_end=True,
+    payload={"alarm": "overheat", "temperature": 96.2},
+    metadata={"topic": "plant/alarm"},
+    priority=10, ttl=16, timeout=5, branch_policy="all",
 )
 ```
 
@@ -341,12 +344,55 @@ message_id)` phát ở mỗi đoạn packet bắt đầu đi qua; `messageArrive
 message_id)` phát một lần khi packet tới toàn bộ đích cuối. `sendMessage()` là
 alias kiểu Qt của `send_a_message()`.
 
+### MessageTicket và Runtime Debugger
+
+`sendMessageTicket()` là API non-blocking chính của packet runtime v2. Nó trả về
+`MessageTicket` sống với state `queued`, `in_flight`, `paused`, `completed`,
+`cancelled`, `failed` hoặc `timed_out`. Payload, metadata, priority, TTL theo số
+hop, timeout, branch policy, route đã đi và lỗi đều là transient runtime state;
+chúng không làm document dirty và không được ghi vào JSON dự án.
+
+```python
+ticket = canvas.sendMessageTicket(
+    "network-edge",
+    message_id="alarm-1042",
+    payload={"value": 96.2},
+    metadata={"topic": "plant/alarm", "correlationId": "job-77"},
+    priority=10,
+    ttl=16,
+    timeout=5.0,
+    branch_policy="first",  # all | first | round_robin
+)
+
+canvas.setRuntimeBreakpoint("network-edge", True)
+canvas.pauseRuntime()
+canvas.stepRuntime()         # xử lý đúng một packet arrival đang chờ
+canvas.resumeRuntime()
+canvas.cancelMessage(ticket.message_id)
+
+state = canvas.messageTicket(ticket.message_id).snapshot()
+trace = canvas.runtimeTrace(ticket.message_id)
+canvas.showRuntimeDebugger()
+
+# Dùng với qasync hoặc host đã tích hợp Qt/asyncio:
+finished = await canvas.sendMessageAsync("network-edge", payload={"value": 42})
+```
+
+Mở debugger bằng `Ctrl+K` và tìm **Runtime debugger**, hoặc từ menu chuột phải
+connector. Cửa sổ tách rời có danh sách ticket theo priority, trạng thái, hop và
+elapsed time; tab Timeline hiển thị trace có sequence; phần detail hiển thị route,
+payload, metadata và lỗi. Toolbar hỗ trợ Pause/Resume, Step, breakpoint trên object
+đang chọn, Cancel và dọn ticket đã hoàn tất. Signal `messageTicketChanged(str,
+dict)`, `runtimeTraceEvent(dict)`, `runtimePausedChanged(bool)` và
+`runtimeBreakpointsChanged(list)` dùng để xây debugger riêng trong ứng dụng host.
+
 ### Splitter
 
 Splitter là junction có một input và 2–12 output, có ID và port như node. Packet
-tới input được nhân sang mọi connector nối từ output chưa đi qua; hiệu ứng không
+tới input được chuyển theo `branch_policy`: `all` nhân sang mọi output, `first`
+chọn nhánh ổn định đầu tiên, còn `round_robin` luân phiên một nhánh. Hiệu ứng không
 bị ngắt khi graph phân nhánh. `wait_to_end=True` chỉ trả về sau khi tất cả nhánh
-con hoàn tất.
+được chọn hoàn tất.
 
 ```python
 splitter = canvas.addSplitter(300, 120, output_count=3, element_id="fan-out")

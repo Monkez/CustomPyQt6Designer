@@ -172,6 +172,15 @@ Add `MessageTicket`, non-blocking and async APIs, payload metadata, priority, TT
 timeouts, cancellation, trace, failures, replay, bandwidth/latency metrics and
 branch policies. Provide pause, resume, step, breakpoint and packet Inspector.
 
+Completed foundation (2026-08-09): `MC-RUNTIME-PACKET-001` introduces the Qt-free
+`PacketRuntime`, live `MessageTicket`, bounded ordered trace and deterministic
+`all`/`first`/`round_robin` branch policies. Canvas APIs cover non-blocking and
+async waits, payload/metadata, priority, hop TTL, timeout, cancellation, pause,
+resume, single-step and object breakpoints. A detached debugger provides message
+and timeline views without persisting runtime state. Replay, bandwidth/latency
+aggregation and explicit failure-edge routing remain for the workflow executor
+milestone.
+
 ### Data binding
 
 Bind element properties to Qt signals/properties, callables, model indexes and

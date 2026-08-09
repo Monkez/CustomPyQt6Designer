@@ -259,7 +259,23 @@ collision passes. The widget adapter resolves smart document, selection,
 connected-component or group scope, preserves locked nodes, fits eligible groups
 and commits all changed geometry through one history command.
 
-Next: workflow runtime components and packet runtime v2/debugging.
+Packet runtime v2/debugging is implemented in the following milestone; workflow
+execution follows it.
+
+### Packet runtime v2 foundation — 2026-08-09
+
+`MC-RUNTIME-PACKET-001` adds a Qt-free packet lifecycle boundary in
+`packet_runtime.py`. `MessageTicket` carries transient payload, metadata, priority,
+TTL, timeout, branch policy, status, pending count, route and failure details.
+`PacketRuntime` validates transitions, retains a bounded ordered trace, supports
+breakpoints and deterministically selects splitter branches. The Qt adapter owns
+only graphics packets and deferred breakpoint arrivals; pause/step/resume/cancel
+operate through public canvas APIs. A separate Tool-window debugger subscribes to
+ticket/trace signals and can be replaced by host UI without coupling to internals.
+
+The 1,000-concurrent-ticket headless scenario is part of the unit suite. Next:
+workflow component definitions/executor, replay, aggregate link metrics and
+failure-edge routing.
 
 ## Backlog tracking
 

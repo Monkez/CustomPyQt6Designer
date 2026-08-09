@@ -57,6 +57,18 @@ def main() -> int:
     canvas.layoutApplied.connect(
         lambda metrics: logger.info("layoutApplied -> %s", metrics)
     )
+    canvas.messageTicketChanged.connect(
+        lambda message_id, state: logger.info(
+            "messageTicketChanged -> %s [%s] hops=%s pending=%s",
+            message_id, state["status"], state["hopCount"], state["pendingSegments"],
+        )
+    )
+    canvas.runtimeTraceEvent.connect(
+        lambda event: logger.info(
+            "runtimeTrace -> #%s %s %s @ %s",
+            event["sequence"], event["event"], event["messageId"], event["objectId"],
+        )
+    )
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 
@@ -179,10 +191,25 @@ def main() -> int:
     window.resize(1180, 680)
     window.show()
     QTimer.singleShot(0, canvas.fitContent)
+    if "decision-to-splitter" in canvas.connectors():
+        QTimer.singleShot(
+            900,
+            lambda: canvas.sendMessageTicket(
+                "decision-to-splitter",
+                message_id="demo-runtime-packet",
+                payload={"decision": "reject", "confidence": 0.92},
+                metadata={"topic": "vision.result", "demo": True},
+                priority=8,
+                ttl=8,
+                timeout=8,
+                branch_policy="all",
+            ),
+        )
     logger.info("Demo window shown: %sx%s", window.width(), window.height())
     logger.info("Shortcut option 1: press Ctrl+D, release Ctrl, then press E")
     logger.info("Shortcut option 2: hold Ctrl, press D, then press E")
     logger.info("When successful, logs will show 'Editor shortcut received' and toolbox state")
+    logger.info("Open the packet debugger with Ctrl+K, then search 'runtime debugger'")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)
     return result

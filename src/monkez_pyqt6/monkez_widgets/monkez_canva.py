@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import math
 import os
 import sys
@@ -86,7 +87,10 @@ from monkez_pyqt6.monkez_canva import (
     LayoutNode,
     LayoutOptions,
     LayoutResult,
+    MessageTicket,
     OperationEvent,
+    PacketRuntime,
+    RuntimeTraceEvent,
     PortCompatibility,
     PALETTE_FAVORITES_KEY,
     PALETTE_RECENT_KEY,
@@ -299,6 +303,23 @@ def _paint_packets(painter: QPainter, path: QPainterPath, packets: list[dict[str
         painter.restore()
 
 
+def _paint_breakpoint_badge(painter: QPainter, center: QPointF) -> None:
+    """Paint one high-contrast pause badge for a transient runtime breakpoint."""
+    painter.save()
+    painter.setPen(QPen(QColor("#ffffff"), 2.2))
+    painter.setBrush(QColor("#ef4444"))
+    painter.drawEllipse(center, 7, 7)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#ffffff"))
+    painter.drawRoundedRect(
+        QRectF(center.x() - 3.4, center.y() - 3.5, 2.2, 7), 0.7, 0.7
+    )
+    painter.drawRoundedRect(
+        QRectF(center.x() + 1.2, center.y() - 3.5, 2.2, 7), 0.7, 0.7
+    )
+    painter.restore()
+
+
 def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
     """Create small dependency-free vector icons with one coherent stroke style."""
     pixmap = QPixmap(20, 20)
@@ -469,6 +490,10 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
         painter.drawRoundedRect(QRectF(2, 5, 16, 11), 2, 2)
         painter.drawLine(QPointF(2, 6), QPointF(10, 12))
         painter.drawLine(QPointF(18, 6), QPointF(10, 12))
+    elif name == "pause":
+        painter.setBrush(QColor(color))
+        painter.drawRoundedRect(QRectF(5, 4, 3.5, 12), 1, 1)
+        painter.drawRoundedRect(QRectF(11.5, 4, 3.5, 12), 1, 1)
     elif name in ("image", "gif"):
         painter.drawRoundedRect(QRectF(3, 4, 14, 12), 2, 2)
         painter.drawEllipse(QRectF(11.5, 6, 2.5, 2.5))
@@ -928,6 +953,8 @@ class _CanvasElement(QGraphicsObject):
             painter.setPen(QPen(QColor("#2563eb"), 1.5))
             for point in (rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()):
                 painter.drawRect(QRectF(point.x() - 4, point.y() - 4, 8, 8))
+        if self.canvas._has_runtime_breakpoint(self.element_id):
+            _paint_breakpoint_badge(painter, rect.topRight() + QPointF(-7, 7))
 
     def _paint_centered_text(self, painter: QPainter, rect: QRectF) -> None:
         painter.setPen(self.text_color)
@@ -1110,7 +1137,11 @@ class _CanvasElement(QGraphicsObject):
             self._line_phase -= (
                 self.flow_speed * self.flow_direction * max(0.0, delta / 0.04)
             )
-        self._advance_packets(now, allow_loop=allow_loop)
+        if self.canvas.runtimePaused() and self._packets:
+            for packet in self._packets:
+                packet["started"] += max(0.0, delta)
+        else:
+            self._advance_packets(now, allow_loop=allow_loop)
         if repaint:
             self.update(self.boundingRect())
 
@@ -1835,6 +1866,10 @@ class _CanvasConnector(QGraphicsObject):
             painter.drawRoundedRect(QRectF(text_rect), 6, 6)
             painter.setPen(QColor("#334155"))
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self.label)
+        if self.canvas._has_runtime_breakpoint(self.connector_id):
+            _paint_breakpoint_badge(
+                painter, self._path.pointAtPercent(0.5) + QPointF(0, -16)
+            )
 
     def _paint_crossing_bridges(self, painter: QPainter, pen: QPen) -> None:
         for point, angle in self._crossing_bridges():
@@ -1943,7 +1978,11 @@ class _CanvasConnector(QGraphicsObject):
             self._flow_phase -= (
                 self.flow_speed * self.flow_direction * max(0.0, delta / 0.04)
             )
-        self._advance_packets(now, allow_loop=allow_loop)
+        if self.canvas.runtimePaused() and self._packets:
+            for packet in self._packets:
+                packet["started"] += max(0.0, delta)
+        else:
+            self._advance_packets(now, allow_loop=allow_loop)
         if repaint:
             self.update(self.boundingRect())
 
@@ -1961,15 +2000,12 @@ class _CanvasConnector(QGraphicsObject):
         if allow_loop and self.animation_effect == "packet" and self.packet_loop:
             if now - self._last_packet_at >= self.packet_interval:
                 self._last_packet_at = now
-                message_id = uuid.uuid4().hex[:10]
-                self.canvas._message_payloads[message_id] = {
-                    "icon": self.packet_icon,
-                    "duration": self.packet_duration,
-                    "pending": 1,
-                    "visited": {self.connector_id},
-                }
-                self.sendPacket(message_id)
-                self.canvas.messageSent.emit(self.connector_id, message_id)
+                self.canvas.sendMessageTicket(
+                    self.connector_id,
+                    icon=self.packet_icon,
+                    travel_time=self.packet_duration,
+                    metadata={"_decorativeLoop": True},
+                )
         arrived = [packet for packet in self._packets if now - packet["started"] >= packet["duration"]]
         arrived_ids = {id(packet) for packet in arrived}
         self._packets = [packet for packet in self._packets if id(packet) not in arrived_ids]
@@ -2345,6 +2381,9 @@ class _CanvasCommandPalette(QDialog):
             ("view:zoom-selection", "Zoom to selection", "View", "focus", "align_center", bool(selected), canvas.zoomToSelection),
             ("view:grid", "Toggle grid", "View", "background", "grid", writable, lambda: canvas.setGridVisible(not canvas.gridVisible)),
             ("view:minimap", "Toggle minimap", "View", "overview navigator", "focus", writable, lambda: canvas.setMinimapVisible(not canvas.minimapVisible())),
+            ("runtime:debugger", "Open runtime debugger", "Runtime", "messages packets timeline trace", "command", True, canvas.showRuntimeDebugger),
+            ("runtime:pause", "Resume packet runtime" if canvas.runtimePaused() else "Pause packet runtime", "Runtime", "debug execution", "pause", bool(canvas.messageTickets(False)), canvas.resumeRuntime if canvas.runtimePaused() else canvas.pauseRuntime),
+            ("runtime:step", "Step next packet", "Runtime", "debug breakpoint", "arrow_right", canvas.runtimePaused() and bool(canvas.messageTickets(False)), canvas.stepRuntime),
             ("save:project", "Save project workspace", "Save", "persistent durable", "save", writable, canvas.savePersistent),
             ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
         ))
@@ -4679,6 +4718,233 @@ class _CanvasEditorToolbox(QDialog):
             self._sync_modified_status(self.canvas.isDocumentModified())
 
 
+class _CanvasRuntimeDebugger(QDialog):
+    """Detached runtime console for tickets, trace, stepping and breakpoints."""
+
+    def __init__(self, canvas: "MonkezCanva") -> None:
+        super().__init__(canvas.window())
+        self.canvas = canvas
+        self.setWindowTitle("MonkezCanva Runtime Debugger")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.resize(620, 560)
+        self.setMinimumSize(520, 440)
+        self.setStyleSheet(
+            "QDialog { background: #f7f8fa; color: #30363d; }"
+            "QFrame#runtimeHeader, QFrame#runtimeDetails { background: #ffffff; "
+            "border: 1px solid #e5e1dd; border-radius: 12px; }"
+            "QLabel#runtimeTitle { font-size: 17px; font-weight: 700; }"
+            "QLabel#runtimeState { color: #0f9f8f; font-weight: 700; padding: 4px 10px; "
+            "background: #eaf8f5; border-radius: 10px; }"
+            "QToolButton, QPushButton { min-height: 30px; border: 1px solid #ddd8d3; "
+            "border-radius: 8px; background: #ffffff; padding: 3px 9px; }"
+            "QToolButton:hover, QPushButton:hover { border-color: #ef6a5b; background: #fff5f3; }"
+            "QListWidget { background: #ffffff; border: 1px solid #e5e1dd; "
+            "border-radius: 10px; padding: 5px; outline: none; }"
+            "QListWidget::item { min-height: 28px; border-radius: 6px; padding: 3px 6px; }"
+            "QListWidget::item:selected { background: #fff0ed; color: #d94e43; }"
+            "QTabWidget::pane { border: none; }"
+            "QTabBar::tab { padding: 7px 16px; margin-right: 3px; border-radius: 8px; }"
+            "QTabBar::tab:selected { background: #ffffff; color: #ef5f50; font-weight: 700; }"
+        )
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(9)
+
+        header = QFrame()
+        header.setObjectName("runtimeHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 9, 10, 9)
+        icon = QLabel()
+        icon.setPixmap(_canvas_icon("command", "#ef6a5b").pixmap(24, 24))
+        header_layout.addWidget(icon)
+        title = QLabel("Runtime Debugger")
+        title.setObjectName("runtimeTitle")
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
+        self._state = QLabel("Running")
+        self._state.setObjectName("runtimeState")
+        header_layout.addWidget(self._state)
+        close = QToolButton()
+        close.setIcon(_canvas_icon("close"))
+        close.setToolTip("Close debugger")
+        close.clicked.connect(self.close)
+        header_layout.addWidget(close)
+        root.addWidget(header)
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(6)
+        self._pause = QPushButton("Pause")
+        self._pause.setIcon(_canvas_icon("pause"))
+        self._pause.clicked.connect(self._toggle_pause)
+        toolbar.addWidget(self._pause)
+        step = QPushButton("Step")
+        step.setIcon(_canvas_icon("arrow_right"))
+        step.clicked.connect(canvas.stepRuntime)
+        toolbar.addWidget(step)
+        breakpoint = QPushButton("Breakpoint")
+        breakpoint.setIcon(_canvas_icon("focus"))
+        breakpoint.setToolTip("Toggle breakpoint on the selected canvas object")
+        breakpoint.clicked.connect(self._toggle_breakpoint)
+        toolbar.addWidget(breakpoint)
+        cancel = QPushButton("Cancel ticket")
+        cancel.setIcon(_canvas_icon("delete"))
+        cancel.clicked.connect(self._cancel_selected)
+        toolbar.addWidget(cancel)
+        toolbar.addStretch(1)
+        clear = QToolButton()
+        clear.setIcon(_canvas_icon("refresh"))
+        clear.setToolTip("Remove completed tickets from the list")
+        clear.clicked.connect(self._clear_completed)
+        toolbar.addWidget(clear)
+        root.addLayout(toolbar)
+
+        self._tabs = QTabWidget()
+        self._messages = QListWidget()
+        self._messages.currentItemChanged.connect(self._sync_details)
+        self._trace = QListWidget()
+        self._tabs.addTab(self._messages, "Messages")
+        self._tabs.addTab(self._trace, "Timeline")
+        root.addWidget(self._tabs, 1)
+
+        details = QFrame()
+        details.setObjectName("runtimeDetails")
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(12, 9, 12, 9)
+        self._details = QLabel("Select a message ticket to inspect it.")
+        self._details.setWordWrap(True)
+        self._details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        details_layout.addWidget(self._details)
+        root.addWidget(details)
+
+        canvas.messageTicketChanged.connect(
+            lambda _message_id, _snapshot: self._refresh_messages()
+        )
+        canvas.runtimeTraceEvent.connect(lambda _event: self._refresh_trace())
+        canvas.runtimePausedChanged.connect(self._sync_pause_state)
+        canvas.runtimeBreakpointsChanged.connect(
+            lambda _breakpoints: self._refresh_trace()
+        )
+        self._sync_pause_state(canvas.runtimePaused())
+        self._refresh_messages()
+        self._refresh_trace()
+
+    def showEvent(self, event) -> None:
+        self._refresh_messages()
+        self._refresh_trace()
+        super().showEvent(event)
+
+    def _refresh_messages(self) -> None:
+        current = self._selected_message_id()
+        self._messages.clear()
+        selected_row = -1
+        colors = {
+            "in_flight": "#2563eb", "paused": "#d97706", "completed": "#0f9f8f",
+            "failed": "#dc2626", "timed_out": "#dc2626", "cancelled": "#64748b",
+            "queued": "#7c3aed",
+        }
+        for row, ticket in enumerate(self.canvas.messageTickets()):
+            message_id = str(ticket["messageId"])
+            status = str(ticket["status"])
+            label = (
+                f"{message_id}    {status.replace('_', ' ')}    "
+                f"P{ticket['priority']} · {ticket['hopCount']} hops · "
+                f"{ticket['elapsed'] * 1000:.0f} ms"
+            )
+            item = QListWidgetItem(
+                _canvas_icon("node", colors.get(status, "#64748b")), label
+            )
+            item.setData(Qt.ItemDataRole.UserRole, message_id)
+            self._messages.addItem(item)
+            if message_id == current:
+                selected_row = row
+        if selected_row >= 0:
+            self._messages.setCurrentRow(selected_row)
+        elif self._messages.count():
+            self._messages.setCurrentRow(0)
+        else:
+            self._details.setText("No messages yet. Send a packet from code or Inspector.")
+
+    def _refresh_trace(self) -> None:
+        self._trace.clear()
+        for event in reversed(self.canvas.runtimeTrace(limit=400)):
+            detail = event.get("detail") or {}
+            suffix = ""
+            if detail:
+                suffix = " · " + ", ".join(
+                    f"{key}={value}" for key, value in list(detail.items())[:3]
+                )
+            self._trace.addItem(
+                f"#{event['sequence']:04d}  {event['event']}  "
+                f"{event['messageId']}  {event['objectId']}{suffix}"
+            )
+
+    def _selected_message_id(self) -> str:
+        item = self._messages.currentItem()
+        return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+
+    def _sync_details(self, current: QListWidgetItem | None, _previous=None) -> None:
+        if current is None:
+            return
+        ticket = self.canvas.messageTicket(
+            str(current.data(Qt.ItemDataRole.UserRole))
+        )
+        if ticket is None:
+            return
+        snapshot = ticket.snapshot()
+        payload = repr(snapshot["payload"])
+        metadata = repr(snapshot["metadata"])
+        self._details.setText(
+            f"<b>{snapshot['messageId']}</b> · {snapshot['status']} · "
+            f"priority {snapshot['priority']} · TTL {snapshot['ttl']}<br>"
+            f"Route: {' → '.join(snapshot['visited']) or 'waiting'}<br>"
+            f"Payload: {payload}<br>Metadata: {metadata}"
+            + (f"<br><span style='color:#dc2626'>{snapshot['error']}</span>"
+               if snapshot["error"] else "")
+        )
+
+    def _toggle_pause(self) -> None:
+        if self.canvas.runtimePaused():
+            self.canvas.resumeRuntime()
+        else:
+            self.canvas.pauseRuntime()
+
+    def _sync_pause_state(self, paused: bool) -> None:
+        self._state.setText("Paused" if paused else "Running")
+        self._state.setStyleSheet(
+            "color: #d97706; background: #fff7e6;"
+            if paused else "color: #0f9f8f; background: #eaf8f5;"
+        )
+        self._pause.setText("Resume" if paused else "Pause")
+        self._pause.setIcon(_canvas_icon("arrow_right" if paused else "pause"))
+
+    def _toggle_breakpoint(self) -> None:
+        selected = self.canvas.selectedObjectIds()
+        if not selected:
+            ticket = self.canvas.messageTicket(self._selected_message_id())
+            selected = [ticket.entry_id] if ticket is not None else []
+        if not selected:
+            self.canvas.diagnosticMessage.emit(
+                "Select a canvas object before toggling a runtime breakpoint"
+            )
+            return
+        existing = set(self.canvas.runtimeBreakpoints())
+        for object_id in selected:
+            self.canvas.setRuntimeBreakpoint(object_id, object_id not in existing)
+        self._refresh_trace()
+
+    def _cancel_selected(self) -> None:
+        message_id = self._selected_message_id()
+        if message_id:
+            self.canvas.cancelMessage(message_id)
+
+    def _clear_completed(self) -> None:
+        self.canvas.clearRuntimeHistory()
+        self._refresh_messages()
+
+
 class _CanvasQuickToolbar(QFrame):
     """Compact in-canvas actions shown only while runtime editing is active."""
 
@@ -5111,6 +5377,10 @@ class MonkezCanva(QWidget):
     groupRemoved = pyqtSignal(str)
     portRuntimeValueChanged = pyqtSignal(str, str, object)
     layoutApplied = pyqtSignal(dict)
+    messageTicketChanged = pyqtSignal(str, dict)
+    runtimeTraceEvent = pyqtSignal(dict)
+    runtimePausedChanged = pyqtSignal(bool)
+    runtimeBreakpointsChanged = pyqtSignal(list)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -5131,6 +5401,9 @@ class MonkezCanva(QWidget):
         self._minimap_visible = True
         self._isolated_ids: set[str] = set()
         self._message_payloads: dict[str, dict[str, Any]] = {}
+        self._runtime_pending_arrivals: list[tuple[str, str]] = []
+        self._packet_runtime = PacketRuntime(event_sink=self._on_packet_runtime_event)
+        self._runtime_debugger: _CanvasRuntimeDebugger | None = None
         self._port_runtime_values: dict[tuple[str, str], Any] = {}
         self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
@@ -5644,6 +5917,7 @@ class MonkezCanva(QWidget):
             action("Show all objects", self.showAllObjects, enabled=writable, icon="eye")
             action("Clear isolation", self.clearIsolation, enabled=bool(self._isolated_ids), icon="focus")
             action("Command palette…", self.showCommandPalette, icon="command")
+            action("Runtime debugger…", self.showRuntimeDebugger, icon="command")
             return menu
 
         action("Copy", self.copySelection, enabled=clipboard_objects, icon="duplicate")
@@ -5726,6 +6000,14 @@ class MonkezCanva(QWidget):
                     )
                 )
             action("Send test message", lambda: self.send_a_message(object_id), enabled=writable)
+            action(
+                "Remove runtime breakpoint" if object_id in self.runtimeBreakpoints() else "Add runtime breakpoint",
+                lambda: self.setRuntimeBreakpoint(
+                    object_id, object_id not in self.runtimeBreakpoints()
+                ),
+                icon="focus",
+            )
+            action("Open runtime debugger…", self.showRuntimeDebugger, icon="command")
         elif object_id in self._groups:
             group = self._groups[object_id]
             action(
@@ -6664,6 +6946,7 @@ class MonkezCanva(QWidget):
         for key in tuple(self._port_runtime_values):
             if key[0] == element_id:
                 self._port_runtime_values[(requested, key[1])] = self._port_runtime_values.pop(key)
+        self._rename_runtime_breakpoint(element_id, requested)
         self.itemIdChanged.emit(element_id, requested)
         self.documentChanged.emit()
         return requested
@@ -7248,6 +7531,13 @@ class MonkezCanva(QWidget):
         travel_time: float | None = None,
         wait_to_end: bool = False,
         message_id: str | None = None,
+        payload: Any = None,
+        metadata: dict[str, Any] | None = None,
+        priority: int = 0,
+        ttl: int = 64,
+        timeout: float | None = None,
+        branch_policy: str = "all",
+        break_on_arrival: bool = False,
     ) -> str:
         """Send one addressable packet over a line or connector.
 
@@ -7255,44 +7545,150 @@ class MonkezCanva(QWidget):
         Multiple calls intentionally create concurrent packets. When a packet
         reaches a splitter it is copied to every unvisited outgoing branch.
         """
-        item = self.canvasObject(str(line_id))
-        if item is None or (not isinstance(item, _CanvasConnector) and item.kind != "line"):
-            raise TypeError(f"Object {line_id!r} is not a line or connector")
-        speed = max(0.01, float(speed))
-        duration = max(0.1, float(travel_time if travel_time is not None else item.packet_duration) / speed)
-        message_id = str(message_id or uuid.uuid4().hex[:10])
-        if message_id in self._message_payloads:
-            raise ValueError(f"Message id is already in flight: {message_id}")
-        self._message_payloads[message_id] = {
-            "icon": item.packet_icon if icon is None else icon,
-            "duration": duration,
-            "pending": 1,
-            "visited": {str(line_id)},
-        }
+        ticket = self.sendMessageTicket(
+            line_id,
+            icon=icon,
+            speed=speed,
+            travel_time=travel_time,
+            message_id=message_id,
+            payload=payload,
+            metadata=metadata,
+            priority=priority,
+            ttl=ttl,
+            timeout=timeout,
+            branch_policy=branch_policy,
+            break_on_arrival=break_on_arrival,
+        )
         loop = QEventLoop(self) if wait_to_end else None
         if loop is not None:
-            def stop_when_arrived(_object_id: str, arrived_id: str) -> None:
-                if arrived_id == message_id:
+            def stop_when_done(changed_id: str, snapshot: dict[str, Any]) -> None:
+                if changed_id == ticket.message_id and snapshot.get("status") in (
+                    "completed", "cancelled", "failed", "timed_out",
+                ):
                     loop.quit()
-            self.messageArrived.connect(stop_when_arrived)
-        item.sendPacket(message_id, icon, duration)
-        self.messageSent.emit(str(line_id), message_id)
-        if loop is not None:
-            loop.exec()
-            self.messageArrived.disconnect(stop_when_arrived)
-        return message_id
+            self.messageTicketChanged.connect(stop_when_done)
+            if ticket.done:
+                loop.quit()
+            else:
+                loop.exec()
+            self.messageTicketChanged.disconnect(stop_when_done)
+        return ticket.message_id
+
+    def sendMessageTicket(
+        self,
+        line_id: str,
+        *,
+        icon: Any = None,
+        speed: float = 1.0,
+        travel_time: float | None = None,
+        message_id: str | None = None,
+        payload: Any = None,
+        metadata: dict[str, Any] | None = None,
+        priority: int = 0,
+        ttl: int = 64,
+        timeout: float | None = None,
+        branch_policy: str = "all",
+        break_on_arrival: bool = False,
+    ) -> MessageTicket:
+        """Start a non-blocking packet and return its live runtime ticket."""
+
+        item = self.canvasObject(str(line_id))
+        if item is None or (
+            not isinstance(item, _CanvasConnector) and item.kind != "line"
+        ):
+            raise TypeError(f"Object {line_id!r} is not a line or connector")
+        speed = max(0.01, float(speed))
+        duration = max(
+            0.1,
+            float(travel_time if travel_time is not None else item.packet_duration)
+            / speed,
+        )
+        resolved_id = str(message_id or uuid.uuid4().hex[:10])
+        ticket = self._packet_runtime.create(
+            resolved_id,
+            str(line_id),
+            payload=payload,
+            metadata=metadata,
+            priority=priority,
+            ttl=ttl,
+            timeout=timeout,
+            branch_policy=branch_policy,
+            break_on_arrival=break_on_arrival,
+        )
+        resolved_icon = item.packet_icon if icon is None else icon
+        self._message_payloads[resolved_id] = {
+            "icon": resolved_icon,
+            "duration": duration,
+            "visited": {str(line_id)},
+        }
+        started = self._packet_runtime.start_segment(resolved_id, str(line_id))
+        if started.done:
+            self._message_payloads.pop(resolved_id, None)
+            return started
+        item.sendPacket(resolved_id, resolved_icon, duration)
+        self.messageSent.emit(str(line_id), resolved_id)
+        return ticket
+
+    async def waitForMessage(
+        self,
+        message_id: str,
+        timeout: float | None = None,
+        poll_interval: float = 0.01,
+    ) -> MessageTicket:
+        """Await a ticket in hosts that integrate Qt with an asyncio event loop."""
+
+        started = time.monotonic()
+        while True:
+            ticket = self._packet_runtime.ticket(message_id)
+            if ticket is None:
+                raise KeyError(f"Unknown message ticket: {message_id}")
+            if ticket.done:
+                return ticket
+            if timeout is not None and time.monotonic() - started >= float(timeout):
+                raise TimeoutError(f"Timed out waiting for message {message_id}")
+            await asyncio.sleep(max(0.001, float(poll_interval)))
+
+    async def sendMessageAsync(self, line_id: str, **options) -> MessageTicket:
+        """Start and asynchronously wait for a packet ticket to finish."""
+
+        wait_timeout = options.pop("wait_timeout", None)
+        ticket = self.sendMessageTicket(line_id, **options)
+        return await self.waitForMessage(ticket.message_id, wait_timeout)
 
     def sendMessage(self, line_id: str, **options) -> str:
         """Qt-style alias for :meth:`send_a_message`."""
         return self.send_a_message(line_id, **options)
 
     def _on_packet_arrived(self, object_id: str, message_id: str) -> None:
+        self._process_packet_arrival(object_id, message_id)
+
+    def _process_packet_arrival(
+        self, object_id: str, message_id: str, *, bypass_breakpoint: bool = False
+    ) -> None:
         payload = self._message_payloads.get(message_id)
         if payload is None:
             self.messageArrived.emit(object_id, message_id)
             return
-        payload["pending"] -= 1
+        ticket = self._packet_runtime.ticket(message_id)
+        if ticket is None or ticket.done:
+            self._message_payloads.pop(message_id, None)
+            return
         connector = self._connectors.get(object_id)
+        breakpoint_id = object_id
+        if (
+            connector is not None
+            and connector.target.element_id in self._packet_runtime.breakpoints()
+        ):
+            breakpoint_id = connector.target.element_id
+        if (
+            not bypass_breakpoint
+            and self._packet_runtime.should_break(breakpoint_id, message_id)
+        ):
+            self._runtime_pending_arrivals.append((object_id, message_id))
+            self._packet_runtime.breakpoint_hit(breakpoint_id, message_id)
+            self.runtimePausedChanged.emit(True)
+            return
+        self._packet_runtime.arrive_segment(message_id, object_id)
         outgoing: list[_CanvasConnector] = []
         if connector is not None and connector.target.kind == "splitter":
             outgoing = [
@@ -7301,15 +7697,196 @@ class MonkezCanva(QWidget):
                 and candidate.connector_id not in payload["visited"]
                 and (not candidate.source_port or (candidate.source.port(candidate.source_port) or {}).get("mode") in ("output", "free"))
             ]
-        if outgoing:
-            payload["pending"] += len(outgoing)
-            for branch in outgoing:
+        selected_branches = self._packet_runtime.select_branches(
+            message_id, (branch.connector_id for branch in outgoing)
+        ) if outgoing else ()
+        if selected_branches:
+            by_id = {branch.connector_id: branch for branch in outgoing}
+            for branch_id in selected_branches:
+                branch = by_id[branch_id]
                 payload["visited"].add(branch.connector_id)
-                branch.sendPacket(message_id, payload["icon"], payload["duration"])
+                started = self._packet_runtime.start_segment(
+                    message_id, branch.connector_id
+                )
+                if started.done:
+                    self._finish_message_visuals(message_id)
+                    return
+                branch.sendPacket(
+                    message_id, payload["icon"], payload["duration"]
+                )
                 self.messageSent.emit(branch.connector_id, message_id)
-        if payload["pending"] <= 0:
+        if ticket.pending_segments <= 0:
             self._message_payloads.pop(message_id, None)
+            self._packet_runtime.complete(message_id, object_id)
             self.messageArrived.emit(object_id, message_id)
+            if ticket.metadata.get("_decorativeLoop"):
+                self._packet_runtime.discard(message_id)
+                self.messageTicketChanged.emit(
+                    message_id, {"messageId": message_id, "status": "discarded"}
+                )
+
+    def _on_packet_runtime_event(
+        self, trace: RuntimeTraceEvent, ticket: MessageTicket
+    ) -> None:
+        self.runtimeTraceEvent.emit(trace.to_dict())
+        self.messageTicketChanged.emit(
+            ticket.message_id, ticket.snapshot(trace.timestamp)
+        )
+
+    def messageTicket(self, message_id: str) -> MessageTicket | None:
+        return self._packet_runtime.ticket(message_id)
+
+    def messageTickets(self, include_completed: bool = True) -> list[dict[str, Any]]:
+        return [
+            ticket.snapshot()
+            for ticket in self._packet_runtime.tickets(
+                include_completed=include_completed
+            )
+        ]
+
+    def runtimeTrace(
+        self, message_id: str = "", event: str = "", limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        return [
+            trace.to_dict()
+            for trace in self._packet_runtime.trace(
+                message_id=message_id, event=event, limit=limit
+            )
+        ]
+
+    def runtimePaused(self) -> bool:
+        return self._packet_runtime.paused
+
+    def pauseRuntime(self, reason: str = "Paused by user") -> bool:
+        changed = self._packet_runtime.pause(reason)
+        if changed:
+            self.runtimePausedChanged.emit(True)
+            self.diagnosticMessage.emit(f"Packet runtime paused: {reason}")
+        return changed
+
+    def resumeRuntime(self) -> bool:
+        pending = list(self._runtime_pending_arrivals)
+        self._runtime_pending_arrivals.clear()
+        for object_id, message_id in pending:
+            ticket = self._packet_runtime.ticket(message_id)
+            if ticket is not None and not ticket.done:
+                self._process_packet_arrival(
+                    object_id, message_id, bypass_breakpoint=True
+                )
+        changed = self._packet_runtime.resume()
+        if changed:
+            self.runtimePausedChanged.emit(False)
+            self.diagnosticMessage.emit("Packet runtime resumed")
+        return changed
+
+    def stepRuntime(self) -> bool:
+        if not self.runtimePaused():
+            self.pauseRuntime("Single-step")
+        while self._runtime_pending_arrivals:
+            object_id, message_id = self._runtime_pending_arrivals.pop(0)
+            ticket = self._packet_runtime.ticket(message_id)
+            if ticket is None or ticket.done:
+                continue
+            self._process_packet_arrival(
+                object_id, message_id, bypass_breakpoint=True
+            )
+            self.diagnosticMessage.emit(
+                f"Packet runtime stepped: {message_id} at {object_id}"
+            )
+            return True
+        candidates = []
+        now = time.monotonic()
+        for item in (*self._elements.values(), *self._connectors.values()):
+            for packet in item._packets:
+                remaining = packet["duration"] - (now - packet["started"])
+                candidates.append((remaining, item, packet))
+        if not candidates:
+            return False
+        _remaining, item, packet = min(candidates, key=lambda value: value[0])
+        item._packets.remove(packet)
+        self._process_packet_arrival(
+            item.connector_id if isinstance(item, _CanvasConnector) else item.element_id,
+            packet["id"],
+            bypass_breakpoint=True,
+        )
+        item.update()
+        return True
+
+    def setRuntimeBreakpoint(self, object_id: str, enabled: bool = True) -> bool:
+        item = self.canvasObject(object_id)
+        if item is None:
+            raise KeyError(f"Unknown MonkezCanva object: {object_id}")
+        changed = self._packet_runtime.set_breakpoint(object_id, enabled)
+        if changed:
+            item.update()
+            self.runtimeBreakpointsChanged.emit(
+                list(self._packet_runtime.breakpoints())
+            )
+        return changed
+
+    def _drop_runtime_breakpoint(self, object_id: str) -> None:
+        if self._packet_runtime.set_breakpoint(object_id, False):
+            self.runtimeBreakpointsChanged.emit(
+                list(self._packet_runtime.breakpoints())
+            )
+
+    def _rename_runtime_breakpoint(self, old_id: str, new_id: str) -> None:
+        if old_id not in self._packet_runtime.breakpoints():
+            return
+        self._packet_runtime.set_breakpoint(old_id, False)
+        self._packet_runtime.set_breakpoint(new_id, True)
+        self.runtimeBreakpointsChanged.emit(
+            list(self._packet_runtime.breakpoints())
+        )
+
+    def runtimeBreakpoints(self) -> list[str]:
+        return list(self._packet_runtime.breakpoints())
+
+    def _has_runtime_breakpoint(self, object_id: str) -> bool:
+        return self._packet_runtime.has_breakpoint(object_id)
+
+    def cancelMessage(self, message_id: str, reason: str = "Cancelled by user") -> bool:
+        ticket = self._packet_runtime.ticket(message_id)
+        if ticket is None or ticket.done:
+            return False
+        self._packet_runtime.cancel(message_id, reason)
+        self._finish_message_visuals(message_id)
+        self.diagnosticMessage.emit(f"Message cancelled: {message_id}")
+        return True
+
+    def _finish_message_visuals(self, message_id: str) -> None:
+        self._message_payloads.pop(message_id, None)
+        self._runtime_pending_arrivals = [
+            pending for pending in self._runtime_pending_arrivals
+            if pending[1] != message_id
+        ]
+        for item in (*self._elements.values(), *self._connectors.values()):
+            before = len(item._packets)
+            item._packets = [
+                packet for packet in item._packets if packet["id"] != message_id
+            ]
+            if len(item._packets) != before:
+                if isinstance(item, _CanvasConnector):
+                    item._sync_animation()
+                else:
+                    item._sync_line_animation()
+
+    def _runtime_tick(self, now: float) -> None:
+        for ticket in self._packet_runtime.expire(now):
+            self._finish_message_visuals(ticket.message_id)
+
+    def clearRuntimeHistory(self) -> int:
+        count = self._packet_runtime.clear_completed()
+        if count:
+            self.diagnosticMessage.emit(f"Cleared {count} completed message tickets")
+        return count
+
+    def showRuntimeDebugger(self) -> None:
+        if self._runtime_debugger is None:
+            self._runtime_debugger = _CanvasRuntimeDebugger(self)
+        self._runtime_debugger.show()
+        self._runtime_debugger.raise_()
+        self._runtime_debugger.activateWindow()
 
     def renameConnector(self, connector_id: str, new_id: str) -> str:
         if not self._restoring:
@@ -7340,6 +7917,7 @@ class MonkezCanva(QWidget):
         connector.connector_id = requested
         connector.element_id = requested
         self._connectors[requested] = connector
+        self._rename_runtime_breakpoint(connector_id, requested)
         self.itemIdChanged.emit(connector_id, requested)
         self.documentChanged.emit()
         return requested
@@ -7356,6 +7934,7 @@ class MonkezCanva(QWidget):
         connector = self._connectors.pop(str(connector_id), None)
         if connector is None:
             return False
+        self._drop_runtime_breakpoint(str(connector_id))
         connector.release()
         endpoints = {connector.source.element_id, connector.target.element_id}
         self._scene.removeItem(connector)
@@ -7479,6 +8058,7 @@ class MonkezCanva(QWidget):
         item = self._elements.pop(str(element_id), None)
         if item is None:
             return False
+        self._drop_runtime_breakpoint(str(element_id))
         for key in tuple(self._port_runtime_values):
             if key[0] == str(element_id):
                 self._port_runtime_values.pop(key, None)
@@ -7489,6 +8069,7 @@ class MonkezCanva(QWidget):
         attached = [key for key, connector in self._connectors.items() if item in (connector.source, connector.target)]
         for key in attached:
             connector = self._connectors.pop(key)
+            self._drop_runtime_breakpoint(key)
             connector.release()
             self._scene.removeItem(connector)
             connector.deleteLater()
@@ -7518,6 +8099,10 @@ class MonkezCanva(QWidget):
             if use_macro:
                 self.endCommandMacro()
         self._message_payloads.clear()
+        self._runtime_pending_arrivals.clear()
+        self._packet_runtime.clear()
+        self.runtimePausedChanged.emit(False)
+        self.runtimeBreakpointsChanged.emit([])
         self._port_runtime_values.clear()
 
     def documentModel(self) -> CanvasDocument:
@@ -9458,6 +10043,8 @@ class MonkezCanva(QWidget):
             self._toolbox.close()
         if self._command_palette is not None:
             self._command_palette.close()
+        if self._runtime_debugger is not None:
+            self._runtime_debugger.close()
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
             self._document_subscription = ""

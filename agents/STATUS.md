@@ -297,7 +297,16 @@ Updated: 2026-08-09
   group fitting commits as one undoable mutation. Offscreen QA at 438x720 confirms
   the compact conditional Force control and a five-node layered result without
   toolbar drift or canvas clipping.
-- The automated suite contains 191 tests and covers all 36 public
+- `MC-RUNTIME-PACKET-001` establishes packet runtime v2. Qt-free `MessageTicket`
+  state covers transient payload/metadata, priority, hop TTL, timeout, terminal
+  failure/cancel states, deterministic splitter policies and bounded ordered
+  trace. Canvas APIs add non-blocking/async waits, pause/resume/step, object
+  breakpoints, cancellation and runtime signals while keeping old
+  `send_a_message()` behavior. A detached Runtime Debugger exposes ticket list,
+  timeline, details and controls; breakpoint badges render directly on canvas.
+  Headless coverage includes 1,000 concurrent tickets and offscreen QA captures
+  two paused messages plus a frozen packet at a splitter graph.
+- The automated suite contains 197 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

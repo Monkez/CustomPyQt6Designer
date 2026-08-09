@@ -24,6 +24,8 @@ echo [TIP] Drag from a port to see typed compatibility: green, purple conversion
 echo [TIP] Inspect Camera/Detector ports to edit type, unit, limits and runtime status
 echo [TIP] Open View ^> Auto layout, or Ctrl+K and search "layout"
 echo [TIP] Select several nodes before arranging to limit the layout scope
+echo [TIP] Ctrl+K, search "runtime debugger" to inspect packet tickets and timeline
+echo [TIP] Select a connector, then use Debugger ^> Breakpoint, Pause, Step and Resume
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

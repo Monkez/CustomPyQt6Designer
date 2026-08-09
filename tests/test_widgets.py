@@ -727,6 +727,94 @@ class WidgetTests(unittest.TestCase):
         canvas.clear()
         canvas.deleteLater()
 
+    def test_canva_packet_runtime_v2_breakpoint_step_trace_and_debugger(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(800, 500)
+        source = canvas.addNode("Source", 0, 0, element_id="source")
+        splitter = canvas.addSplitter(220, 0, output_count=2, element_id="splitter")
+        target_a = canvas.addNode("A", 440, -100, element_id="target-a")
+        target_b = canvas.addNode("B", 440, 100, element_id="target-b")
+        incoming = canvas.connectElements(
+            source, splitter, connector_id="incoming",
+            sourcePort="out", targetPort="in", packetDuration=0.1,
+        )
+        canvas.connectElements(
+            splitter, target_a, connector_id="branch-a",
+            sourcePort="out-1", targetPort="in", packetDuration=0.1,
+        )
+        canvas.connectElements(
+            splitter, target_b, connector_id="branch-b",
+            sourcePort="out-2", targetPort="in", packetDuration=0.1,
+        )
+        sent = []
+        canvas.messageSent.connect(lambda edge, message: sent.append((edge, message)))
+        canvas.show()
+        self.app.processEvents()
+        canvas.setRuntimeBreakpoint(incoming)
+
+        ticket = canvas.sendMessageTicket(
+            incoming,
+            message_id="trace-1",
+            payload={"value": 42},
+            metadata={"topic": "sensor"},
+            priority=8,
+            ttl=5,
+            timeout=2,
+            branch_policy="first",
+            travel_time=0.1,
+        )
+        QTest.qWait(150)
+
+        self.assertTrue(canvas.runtimePaused())
+        self.assertEqual("paused", ticket.status)
+        self.assertEqual({"value": 42}, canvas.messageTicket("trace-1").payload)
+        self.assertTrue(canvas.stepRuntime())
+        self.assertEqual(1, ticket.pending_segments)
+        self.assertEqual(
+            {"incoming", "branch-a"}, {edge for edge, message in sent if message == "trace-1"}
+        )
+        canvas.setRuntimeBreakpoint(incoming, False)
+        self.assertTrue(canvas.resumeRuntime())
+        QTest.qWait(150)
+        self.assertEqual("completed", ticket.status)
+        self.assertEqual(2, ticket.hop_count)
+        self.assertIn("completed", [event["event"] for event in canvas.runtimeTrace("trace-1")])
+        self.assertNotIn("payload", canvas.toDocument())
+
+        canvas.showRuntimeDebugger()
+        self.app.processEvents()
+        debugger = canvas._runtime_debugger
+        self.assertTrue(debugger.isVisible())
+        self.assertGreaterEqual(debugger._messages.count(), 1)
+        self.assertGreaterEqual(debugger._trace.count(), 1)
+
+        cancelled = canvas.sendMessageTicket(
+            incoming, message_id="cancel-1", travel_time=1.0
+        )
+        self.assertTrue(canvas.cancelMessage(cancelled.message_id))
+        self.assertEqual("cancelled", cancelled.status)
+        timed_out = canvas.sendMessageTicket(
+            incoming, message_id="timeout-1", travel_time=1.0, timeout=0.08
+        )
+        QTest.qWait(130)
+        self.assertEqual("timed_out", timed_out.status)
+        blocking_timeout = canvas.send_a_message(
+            incoming,
+            message_id="blocking-timeout",
+            travel_time=1.0,
+            timeout=0.08,
+            wait_to_end=True,
+        )
+        self.assertEqual(
+            "timed_out", canvas.messageTicket(blocking_timeout).status
+        )
+        self.assertFalse(canvas._message_payloads)
+        self.assertGreaterEqual(canvas.clearRuntimeHistory(), 4)
+        debugger.close()
+        canvas.clear()
+        canvas.close()
+        canvas.deleteLater()
+
     def test_canva_shared_animation_clock_pauses_and_culls_repaints(self) -> None:
         canvas = MonkezCanva()
         canvas.resize(640, 420)
