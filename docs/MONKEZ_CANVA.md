@@ -498,8 +498,10 @@ canvas.feedDataSource(
 
 Target hỗ trợ: `text`, `data`, `color`, `background`, `textColor`, `flowColor`,
 `opacity`, `rotation`, `scale`, `x`, `y`, `width`, `height`, `highlight`,
-`animation` và `port.<port-id>`. Một element chỉ có tối đa một binding trên mỗi
-target để kết quả không phụ thuộc thứ tự ngầm.
+`animation`, `port.<port-id>` và `property.<schema-name>`. Target `property.*`
+được kiểm tra bằng schema của component, phù hợp để cập nhật live gauge, tank,
+sensor, KPI hoặc thuộc tính mở rộng khác. Một element chỉ có tối đa một binding
+trên mỗi target để kết quả không phụ thuộc thứ tự ngầm.
 
 Transform pipeline không chạy `eval` hoặc Python expression. Các operation an toàn
 gồm `get`, `scale`, `offset`, `clamp`, `round`, `map`, `coalesce`, `bool`, `not`,
@@ -537,6 +539,65 @@ target, JSON transforms, format, debounce/throttle/stale, stale/error fallback v
 enabled state. Binding đang chọn tự apply khi sửa. Runtime Debugger có tab Bindings
 hiển thị live value, state, last input/apply và lỗi. Chuột phải element hoặc Ctrl+K
 → **Open data bindings** mở thẳng card này.
+
+## Component packs
+
+Ba pack native là opt-in nên không làm palette mặc định trở nên quá dày. Catalog
+và schema nằm trong lõi thuần Python; renderer cùng Inspector chỉ được gắn ở Qt
+adapter khi ứng dụng bật pack.
+
+```python
+canvas.enableComponentPack("dashboard")
+canvas.enableComponentPack("industrial")
+canvas.enableComponentPack("software")  # alias: flowchart
+
+gauge = canvas.addPackComponent(
+    "dash_gauge", 0, 0, element_id="cpu-gauge",
+    text="CPU load", value=64, unit="%",
+)
+tank = canvas.addPackComponent(
+    "ind_tank", 260, 0, element_id="process-tank", value=68, unit="%",
+)
+service = canvas.addPackComponent(
+    "soft_service", 520, 0, element_id="metrics-api", technology="FastAPI",
+)
+
+canvas.addDataBinding(
+    gauge, "property.value", "host.metrics",
+    transforms={"op": "get", "path": "cpu"},
+)
+```
+
+Catalog hiện có 43 component:
+
+- **Dashboard (15):** KPI card, sparkline, gauge, progress ring, pie, donut,
+  scatter, area, histogram, heatmap, timeline, event log, data table, status
+  light và alarm banner;
+- **Industrial (12):** tank, pump, valve, motor, fan, pipe, sensor, PLC,
+  circuit breaker, battery, transformer và conveyor;
+- **Software & Flowchart (16):** database, server, cloud, API, queue, topic,
+  cache, file, service, container, process, decision, document, terminator,
+  annotation và sticky note.
+
+Mỗi item có renderer vector native, ID ổn định, schema/version/plugin owner và
+card **Component properties** tự sinh theo đúng loại. Industrial và Software
+components khai báo typed ports phù hợp; ví dụ tank dùng cổng `fluid`, API dùng
+`dict`, sensor phát `number`, decision có `yes`/`no`. Mọi sửa đổi Inspector tự
+apply, đi qua Undo/Redo và persistence như element chuẩn.
+
+```python
+canvas.componentPacks()
+canvas.componentPackDefinitions("dashboard")
+canvas.enabledComponentPacks()
+canvas.enableAllComponentPacks()
+canvas.componentPackEnabled("industrial")
+canvas.disableComponentPack("industrial")
+```
+
+Disable chỉ tháo renderer/Inspector khỏi registry, không xóa record trong
+document. Khi project được mở trên máy chưa bật pack, item xuất hiện dưới dạng
+missing-component an toàn và phục hồi đúng ID/dữ liệu ngay khi pack được bật.
+Menu chuột phải vùng trống và Ctrl+K đều có action bật/tắt từng pack.
 
 ## Node có nhiều port
 

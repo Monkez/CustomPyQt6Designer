@@ -330,7 +330,15 @@ Updated: 2026-08-09
   adapters through one shared timer with explicit disconnect cleanup. Each element
   has a polished Data bindings Inspector card; Runtime Debugger adds a Bindings tab.
   Offscreen QA at 438×720 confirms the full editor fits without horizontal clipping.
-- The automated suite contains 211 tests and covers all 36 public
+- `MC-PACK-NATIVE-001` completes Phase 4 with 43 opt-in native components: 15
+  Dashboard, 12 Industrial and 16 Software/Flowchart items. Qt-free immutable
+  catalogs remain outside the default palette; enabling a pack attaches vector
+  renderers, compact schema-driven property controls and typed ports. Blank-canvas
+  menus, Ctrl+K and public APIs share the same pack state. Pack-specific properties
+  support transient validated bindings such as `property.value`; disabling or a
+  missing runtime preserves document records and stable IDs. Composite offscreen
+  QA covers 12 representative items plus the selected Tank Inspector at 1638×760.
+- The automated suite contains 215 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

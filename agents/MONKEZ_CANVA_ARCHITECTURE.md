@@ -366,6 +366,30 @@ canonical target edit. Geometry bindings explicitly update attached/auto-routed
 connectors. Port targets reuse typed-port runtime validation. Highlight/animation
 are trigger targets and do not have persistent baselines.
 
+## Native component-pack boundary
+
+`monkez_canva/component_packs.py` is the Qt-free catalog and ownership boundary.
+It publishes immutable `ComponentPack` records for `monkez.dashboard`,
+`monkez.industrial` and `monkez.software`; none are part of the default registry.
+Definitions contain only JSON defaults/schema, typed ports, capabilities and a
+stable plugin/version identity. Documents never name renderer classes or modules.
+
+When a host calls `enableComponentPack()`, the Qt adapter clones each definition
+with shared native renderer and schema-driven Inspector factories from
+`_canva_pack_renderers.py` and `_canva_pack_inspector.py`. Conflict checking is
+preflighted for the whole pack. A `__missing__` placeholder is replaceable, while
+an unrelated plugin owner is never silently overwritten. Disable unloads factories
+but preserves canonical records; enabling later reconciles the same graphics IDs.
+
+Pack-specific live values use `property.<schema-name>` bindings. The adapter
+validates each runtime value through the registered `ElementDefinition`, stores a
+transient baseline, repaints the item and restores the canonical value on unbind.
+The document/Undo/autosave stream therefore never receives the live projection.
+
+Registry defaults must be applied before generic port fallbacks. This invariant
+ensures workflow and pack definitions retain their declared typed ports; fallback
+`in`/`out` ports are created only for definitions that omit a port schema.
+
 ## Roadmap
 
 1. Clipboard, keyboard nudging and true mixed-value property editing.

@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from collections import defaultdict, deque
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -86,6 +87,8 @@ from monkez_pyqt6.monkez_canva import (
     BindingEvent,
     BindingSpec,
     BindingUpdate,
+    COMPONENT_PACKS,
+    ComponentPack,
     DataBindingEngine,
     ElementDefinition,
     ElementRegistry,
@@ -111,6 +114,7 @@ from monkez_pyqt6.monkez_canva import (
     backup_path,
     build_asset_manifest,
     binding_specs_from_document,
+    component_pack,
     build_selection_payload,
     create_default_element_registry,
     load_json_with_recovery,
@@ -150,6 +154,12 @@ from monkez_pyqt6.monkez_widgets._canva_commands import (
 from monkez_pyqt6.monkez_widgets._canva_animation import (
     CanvasAnimationScheduler,
     ScheduledPropertyAnimation,
+)
+from monkez_pyqt6.monkez_widgets._canva_pack_inspector import (
+    create_component_pack_inspector,
+)
+from monkez_pyqt6.monkez_widgets._canva_pack_renderers import (
+    paint_component_pack_item,
 )
 from monkez_pyqt6.monkez_widgets._canva_minimap import CanvasMinimap
 
@@ -2476,6 +2486,21 @@ class _CanvasCommandPalette(QDialog):
                 f"add:{definition.type_id}", f"Add {definition.label}",
                 definition.category, "component add", definition.icon, writable,
                 lambda kind=definition.type_id: canvas.addPaletteElement(kind),
+            ))
+        for pack in canvas.componentPacks():
+            enabled = canvas.componentPackEnabled(pack.pack_id)
+            commands.append((
+                f"pack:{'disable' if enabled else 'enable'}:{pack.pack_id}",
+                f"{'Disable' if enabled else 'Enable'} {pack.label} component pack",
+                "Component packs",
+                f"components palette {pack.label} {pack.pack_id}",
+                "grid",
+                True,
+                (
+                    lambda pack_id=pack.pack_id: canvas.disableComponentPack(pack_id)
+                    if canvas.componentPackEnabled(pack_id)
+                    else canvas.enableComponentPack(pack_id)
+                ),
             ))
         commands.extend((
             ("edit:copy", "Copy selection", "Edit", "clipboard", "duplicate", clipboard_objects, canvas.copySelection),
@@ -4817,6 +4842,13 @@ class _CanvasEditorToolbox(QDialog):
             "highlight", "animation",
         ]
         targets.extend(f"port.{port['id']}" for port in item.ports)
+        if item.definition is not None:
+            targets.extend(
+                f"property.{name}"
+                for name in item.definition.schema.get("properties", {})
+                if name not in _ELEMENT_STANDARD_PROPERTIES
+                and name not in ("packVisual", "ports", "bindings")
+            )
         blocker = QSignalBlocker(self._binding_target_combo)
         self._binding_target_combo.clear()
         self._binding_target_combo.addItems(targets)
@@ -6094,6 +6126,7 @@ class MonkezCanva(QWidget):
     dataBindingStateChanged = pyqtSignal(str, dict)
     dataBindingBatchApplied = pyqtSignal(list)
     dataSourceBound = pyqtSignal(str)
+    componentPackChanged = pyqtSignal(str, bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -6646,6 +6679,19 @@ class MonkezCanva(QWidget):
                 enabled=not self.workflowComponentsEnabled(),
                 icon="node",
             )
+            pack_menu = menu.addMenu(_canvas_icon("grid"), "Component packs")
+            for pack in self.componentPacks():
+                enabled = self.componentPackEnabled(pack.pack_id)
+                entry = pack_menu.addAction(
+                    f"{'Disable' if enabled else 'Enable'} {pack.label}"
+                )
+                entry.triggered.connect(
+                    lambda _checked=False, pack_id=pack.pack_id: (
+                        self.disableComponentPack(pack_id)
+                        if self.componentPackEnabled(pack_id)
+                        else self.enableComponentPack(pack_id)
+                    )
+                )
             add_menu = menu.addMenu(_canvas_icon("rectangle"), "Add component")
             for definition in self._element_registry.definitions():
                 entry = add_menu.addAction(_canvas_icon(definition.icon), definition.label)
@@ -6963,6 +7009,10 @@ class MonkezCanva(QWidget):
         elif kind == "polyline":
             kind = "line"
         definition = self._element_registry.definition(kind)
+        if definition is None:
+            raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
+        for key, value in definition.defaults.items():
+            options.setdefault(key, value)
         if kind == "splitter" and not options.get("ports"):
             options["ports"] = _splitter_ports()
         elif (
@@ -6970,11 +7020,7 @@ class MonkezCanva(QWidget):
             or definition is not None and "ports" in definition.capabilities
         ) and "ports" not in options:
             options["ports"] = _normalize_node_ports(None)
-        if definition is None:
-            raise ValueError(f"Unsupported MonkezCanva element type: {kind}")
         default_width, default_height = definition.default_size
-        for key, value in definition.defaults.items():
-            options.setdefault(key, value)
         element_id = str(element_id or uuid.uuid4().hex[:10])
         if element_id in self._elements or element_id in self._connectors:
             raise ValueError(f"Duplicate MonkezCanva object id: {element_id}")
@@ -7193,6 +7239,22 @@ class MonkezCanva(QWidget):
                     f"Unknown binding port {spec.target.removeprefix('port.')!r} "
                     f"on {item.element_id!r}"
                 )
+            if spec.target.startswith("property."):
+                property_name = spec.target.removeprefix("property.")
+                definition = item.definition
+                properties = (
+                    {} if definition is None
+                    else definition.schema.get("properties", {})
+                )
+                if (
+                    definition is None
+                    or property_name not in properties
+                    or property_name in _ELEMENT_STANDARD_PROPERTIES
+                ):
+                    raise KeyError(
+                        f"Unknown bindable property {property_name!r} "
+                        f"on {item.element_id!r}"
+                    )
             normalized.append(spec.to_record())
         existing_ids = {
             spec.binding_id
@@ -7539,6 +7601,13 @@ class MonkezCanva(QWidget):
                 self._port_runtime_values.get(runtime_key),
             )
             return
+        if target.startswith("property."):
+            property_name = target.removeprefix("property.")
+            self._binding_baselines[key] = (
+                property_name in item.custom_properties,
+                item.custom_properties.get(property_name),
+            )
+            return
         values = {
             "text": item.text,
             "data": list(item.data),
@@ -7574,6 +7643,15 @@ class MonkezCanva(QWidget):
                 self.portRuntimeValueChanged.emit(
                     element_id, port_id, previous if existed else None
                 )
+                item.update()
+                continue
+            if target.startswith("property."):
+                property_name = target.removeprefix("property.")
+                existed, previous = value
+                if existed:
+                    item.custom_properties[property_name] = previous
+                else:
+                    item.custom_properties.pop(property_name, None)
                 item.update()
                 continue
             self._apply_binding_target(item, target, value, runtime_action=False)
@@ -7644,6 +7722,25 @@ class MonkezCanva(QWidget):
             port_id = target.removeprefix("port.")
             self.setPortRuntimeValue(item.element_id, port_id, value)
             return
+        elif target.startswith("property."):
+            property_name = target.removeprefix("property.")
+            definition = self._element_registry.require(item.kind)
+            properties = definition.schema.get("properties", {})
+            if (
+                property_name not in properties
+                or property_name in _ELEMENT_STANDARD_PROPERTIES
+            ):
+                raise KeyError(
+                    f"Unknown bindable property {property_name!r} "
+                    f"on {item.element_id!r}"
+                )
+            model = self._document_model.element(item.element_id)
+            if model is None:
+                raise KeyError(f"Unknown MonkezCanva element: {item.element_id}")
+            record = model.to_dict()
+            record[property_name] = value
+            prepared = definition.prepare_record(record)
+            item.custom_properties[property_name] = prepared[property_name]
         elif target == "highlight":
             if runtime_action and value:
                 options = value if isinstance(value, Mapping) else {}
@@ -9210,6 +9307,154 @@ class MonkezCanva(QWidget):
         self._runtime_debugger.raise_()
         self._runtime_debugger.activateWindow()
 
+    def componentPacks(self) -> tuple[ComponentPack, ...]:
+        """Return the built-in opt-in pack catalog without enabling it."""
+
+        return COMPONENT_PACKS
+
+    def componentPackDefinitions(
+        self, pack_id: str
+    ) -> tuple[ElementDefinition, ...]:
+        return component_pack(pack_id).definitions
+
+    def componentPackEnabled(self, pack_id: str) -> bool:
+        pack = component_pack(pack_id)
+        return all(
+            (definition := self._element_registry.definition(record.type_id))
+            is not None
+            and definition.plugin_id == pack.pack_id
+            for record in pack.definitions
+        )
+
+    def enabledComponentPacks(self) -> tuple[str, ...]:
+        return tuple(
+            pack.pack_id for pack in self.componentPacks()
+            if self.componentPackEnabled(pack.pack_id)
+        )
+
+    def _detach_toolbox_for_registry_change(self) -> bool:
+        was_visible = self._toolbox is not None and self._toolbox.isVisible()
+        if self._toolbox is not None:
+            self._toolbox.close()
+            self._toolbox.deleteLater()
+            self._toolbox = None
+        return was_visible
+
+    def _restore_toolbox_after_registry_change(self, was_visible: bool) -> None:
+        if was_visible:
+            self._ensure_toolbox()
+            self._toolbox.show()
+            self._place_toolbox_on_screen()
+
+    @staticmethod
+    def _native_pack_definition(definition: ElementDefinition) -> ElementDefinition:
+        return replace(
+            definition,
+            renderer_factory=paint_component_pack_item,
+            inspector_factory=create_component_pack_inspector,
+        )
+
+    def enableComponentPack(
+        self, pack_id: str, replace_existing: bool = False
+    ) -> tuple[str, ...]:
+        """Enable one native component pack without changing the saved document."""
+
+        pack = component_pack(pack_id)
+        if not replace_existing:
+            conflicts = [
+                (record.type_id, existing.plugin_id)
+                for record in pack.definitions
+                if (existing := self._element_registry.definition(record.type_id))
+                is not None
+                and existing.plugin_id not in (pack.pack_id, "__missing__")
+            ]
+            if conflicts:
+                type_id, owner = conflicts[0]
+                raise ValueError(
+                    "Component pack conflicts with registered type: "
+                    f"{type_id} ({owner})"
+                )
+        toolbox_visible = self._detach_toolbox_for_registry_change()
+        registered = []
+        try:
+            for base_definition in pack.definitions:
+                definition = self._native_pack_definition(base_definition)
+                existing = self._element_registry.definition(definition.type_id)
+                if existing is not None and not replace_existing:
+                    if (
+                        existing.plugin_id == pack.pack_id
+                        and existing.renderer_factory is paint_component_pack_item
+                        and existing.inspector_factory is create_component_pack_inspector
+                    ):
+                        continue
+                self._element_registry.register(
+                    definition, replace_existing=existing is not None
+                )
+                self._reconcile_registry_records(definition.type_id)
+                registered.append(definition.type_id)
+        finally:
+            self._restore_toolbox_after_registry_change(toolbox_visible)
+        self.componentPackChanged.emit(pack.pack_id, True)
+        self.diagnosticMessage.emit(
+            f"{pack.label} component pack enabled: {len(registered)} new definitions"
+        )
+        return tuple(registered)
+
+    def enableAllComponentPacks(self) -> tuple[str, ...]:
+        conflicts = [
+            (record.type_id, existing.plugin_id)
+            for pack in self.componentPacks()
+            for record in pack.definitions
+            if (existing := self._element_registry.definition(record.type_id))
+            is not None
+            and existing.plugin_id not in (pack.pack_id, "__missing__")
+        ]
+        if conflicts:
+            type_id, owner = conflicts[0]
+            raise ValueError(
+                f"Component pack conflicts with registered type: {type_id} ({owner})"
+            )
+        registered = []
+        for pack in self.componentPacks():
+            registered.extend(self.enableComponentPack(pack.pack_id))
+        return tuple(registered)
+
+    def disableComponentPack(self, pack_id: str) -> tuple[str, ...]:
+        """Unload one pack's factories while preserving every document record."""
+
+        pack = component_pack(pack_id)
+        toolbox_visible = self._detach_toolbox_for_registry_change()
+        try:
+            removed = self.unregisterElementPlugin(pack.pack_id)
+        finally:
+            self._restore_toolbox_after_registry_change(toolbox_visible)
+        self.componentPackChanged.emit(pack.pack_id, False)
+        self.diagnosticMessage.emit(
+            f"{pack.label} component pack disabled: {len(removed)} definitions"
+        )
+        return removed
+
+    def addPackComponent(
+        self,
+        kind: str,
+        x: float | None = None,
+        y: float | None = None,
+        **options,
+    ) -> str:
+        type_id = str(kind).strip().lower().replace("-", "_")
+        pack = next(
+            (
+                candidate for candidate in self.componentPacks()
+                if any(record.type_id == type_id for record in candidate.definitions)
+            ),
+            None,
+        )
+        if pack is None:
+            raise KeyError(f"Unknown MonkezCanva pack component: {kind}")
+        if not self.componentPackEnabled(pack.pack_id):
+            self.enableComponentPack(pack.pack_id)
+        return self.addElement(type_id, x, y, **options)
+
     def enableWorkflowComponents(
         self, replace_existing: bool = False
     ) -> tuple[str, ...]:
@@ -10303,6 +10548,15 @@ class MonkezCanva(QWidget):
     def _reconcile_registry_records(self, type_id: str) -> None:
         if self._document_model is None:
             return
+        if self._document_model.is_read_only:
+            for item in self._elements.values():
+                if item.kind == str(type_id).lower():
+                    item.definition = self._element_registry.require(type_id)
+                    item.update()
+            self._set_read_only_reason(
+                "; ".join(self._compatibility_reasons(self._document_model))
+            )
+            return
         data = self._document_model.to_dict()
         changed = False
         for index, entry in enumerate(data.get("elements", [])):
@@ -10332,7 +10586,7 @@ class MonkezCanva(QWidget):
                 return value.name(QColor.NameFormat.HexArgb)
             if isinstance(value, Path):
                 return str(value)
-            if isinstance(value, dict):
+            if isinstance(value, Mapping):
                 return {str(key): convert(item) for key, item in value.items()}
             if isinstance(value, (list, tuple)):
                 return [convert(item) for item in value]
@@ -10650,18 +10904,19 @@ class MonkezCanva(QWidget):
     def _reapply_bound_element_targets(
         self, element_id: str, changes: Mapping[str, Any]
     ) -> None:
-        target_fields = set(changes).intersection(
-            {
-                "text", "data", "color", "background", "textColor", "flowColor",
-                "opacity", "rotation", "x", "y", "width", "height", "ports",
-            }
-        )
+        target_fields = set(changes)
         if not target_fields:
             return
         for spec in self._binding_engine.specs():
             if spec.element_id != str(element_id):
                 continue
-            property_name = "ports" if spec.target.startswith("port.") else spec.target
+            property_name = (
+                "ports"
+                if spec.target.startswith("port.")
+                else spec.target.removeprefix("property.")
+                if spec.target.startswith("property.")
+                else spec.target
+            )
             if property_name not in target_fields:
                 continue
             self._binding_baselines.pop((spec.element_id, spec.target), None)

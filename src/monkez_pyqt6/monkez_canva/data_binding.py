@@ -33,6 +33,7 @@ BINDING_TARGET_PREFIXES = (
     "highlight",
     "animation",
     "port.",
+    "property.",
 )
 
 _MISSING = object()
@@ -61,6 +62,8 @@ def _normalize_target(value: Any) -> str:
         raise ValueError(f"Unsupported data-binding target: {target!r}")
     if target.startswith("port.") and not target.removeprefix("port.").strip():
         raise ValueError("Port binding target requires a port ID")
+    if target.startswith("property.") and not target.removeprefix("property.").strip():
+        raise ValueError("Property binding target requires a property name")
     return target
 
 

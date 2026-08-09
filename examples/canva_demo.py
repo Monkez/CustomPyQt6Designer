@@ -87,7 +87,13 @@ def main() -> int:
             event["sequence"], event["bindingId"], event["event"], event["state"],
         )
     )
+    canvas.componentPackChanged.connect(
+        lambda pack_id, enabled: logger.info(
+            "componentPackChanged -> %s enabled=%s", pack_id, enabled
+        )
+    )
     canvas.enableWorkflowComponents()
+    canvas.enableAllComponentPacks()
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 
@@ -247,6 +253,26 @@ def main() -> int:
             sourcePort="out", targetPort="in", connector_id="workflow-display",
             route="bezier", arrowEnd=True,
         )
+        kpi = canvas.addPackComponent(
+            "dash_kpi_card", 560, 400, element_id="pack-throughput-kpi",
+            text="Throughput", value=72.4, unit="fps", trend=8.2,
+        )
+        canvas.addPackComponent(
+            "ind_tank", 830, 360, element_id="pack-buffer-tank",
+            text="Frame buffer", value=68, unit="%",
+        )
+        canvas.addPackComponent(
+            "soft_service", 1080, 405, element_id="pack-api-service",
+            text="Inference API", technology="FastAPI", status="online",
+        )
+        canvas.addDataBinding(
+            kpi,
+            "property.value",
+            "vision.kpi",
+            binding_id="throughput-kpi-binding",
+            transforms={"op": "get", "path": "fps"},
+            throttle=0.1,
+        )
     canvas.objectClicked.connect(lambda object_id: canvas.highlightObject(object_id))
     window.resize(1180, 680)
     window.show()
@@ -278,6 +304,7 @@ def main() -> int:
             lambda: canvas.feedDataSources({
                 "vision.metrics": {"samples": [42, 61, 57, 81, 74, 93]},
                 "vision.status": "live telemetry connected",
+                "vision.kpi": {"fps": 91.6},
             }),
         )
     logger.info("Demo window shown: %sx%s", window.width(), window.height())
@@ -286,6 +313,7 @@ def main() -> int:
     logger.info("When successful, logs will show 'Editor shortcut received' and toolbox state")
     logger.info("Open the packet debugger with Ctrl+K, then search 'runtime debugger'")
     logger.info("Workflow Pack is enabled; select a workflow node to edit/run it")
+    logger.info("Dashboard, Industrial and Software component packs are enabled")
     logger.info("Select an element and open Inspector > Data bindings for live data")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)

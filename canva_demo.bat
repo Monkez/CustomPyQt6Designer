@@ -26,6 +26,9 @@ echo [TIP] Open View ^> Auto layout, or Ctrl+K and search "layout"
 echo [TIP] Select several nodes before arranging to limit the layout scope
 echo [TIP] Ctrl+K, search "runtime debugger" to inspect packet tickets and timeline
 echo [TIP] Select a connector, then use Debugger ^> Breakpoint, Pause, Step and Resume
+echo [TIP] Dashboard, Industrial and Software packs are enabled in this demo
+echo [TIP] Select the KPI, Tank or Service to edit its component-specific properties
+echo [TIP] Right-click blank canvas ^> Component packs, or Ctrl+K, to enable/disable packs
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

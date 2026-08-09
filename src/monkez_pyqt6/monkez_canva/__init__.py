@@ -55,6 +55,17 @@ from .data_binding import (
     apply_binding_pipeline,
     binding_specs_from_document,
 )
+from .component_packs import (
+    COMPONENT_PACKS,
+    COMPONENT_PACK_VERSION,
+    DASHBOARD_PACK_ID,
+    INDUSTRIAL_PACK_ID,
+    SOFTWARE_PACK_ID,
+    ComponentPack,
+    component_pack,
+    component_packs,
+    register_component_pack,
+)
 
 from .models import (
     DOCUMENT_FORMAT,
@@ -139,6 +150,8 @@ __all__ = [
     "BRANCH_POLICIES",
     "BINDING_STATES",
     "BINDING_TARGET_PREFIXES",
+    "COMPONENT_PACKS",
+    "COMPONENT_PACK_VERSION",
     "CLIPBOARD_FORMAT",
     "CLIPBOARD_VERSION",
     "CANVAS_CLIPBOARD_MIME_TYPE",
@@ -160,9 +173,11 @@ __all__ = [
     "BindingEvent",
     "BindingSpec",
     "BindingUpdate",
+    "ComponentPack",
     "CanvasDocument",
     "BUILTIN_ELEMENT_DEFINITIONS",
     "ConnectorModel",
+    "DASHBOARD_PACK_ID",
     "ElementModel",
     "ElementDefinition",
     "ElementRegistry",
@@ -171,6 +186,7 @@ __all__ = [
     "LayoutNode",
     "LayoutOptions",
     "LayoutResult",
+    "INDUSTRIAL_PACK_ID",
     "MessageTicket",
     "OperationEvent",
     "PaletteEntry",
@@ -183,6 +199,7 @@ __all__ = [
     "SnapGuide",
     "SnapRect",
     "SnapResult",
+    "SOFTWARE_PACK_ID",
     "TERMINAL_MESSAGE_STATES",
     "WORKFLOW_COMPONENT_DEFINITIONS",
     "WORKFLOW_COMPONENT_TYPES",
@@ -243,4 +260,7 @@ __all__ = [
     "workflow_component_definitions",
     "apply_binding_pipeline",
     "binding_specs_from_document",
+    "component_pack",
+    "component_packs",
+    "register_component_pack",
 ]

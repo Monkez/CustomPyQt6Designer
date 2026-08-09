@@ -32,7 +32,13 @@ from PyQt6.QtWidgets import (
 from PyQt6 import uic
 
 from monkez_pyqt6 import monkez_widgets
-from monkez_pyqt6.monkez_canva import CanvasDocument, ElementDefinition
+from monkez_pyqt6.monkez_canva import (
+    DASHBOARD_PACK_ID,
+    INDUSTRIAL_PACK_ID,
+    SOFTWARE_PACK_ID,
+    CanvasDocument,
+    ElementDefinition,
+)
 from monkez_pyqt6.monkez_widgets._painting import aligned_corner_radius, aligned_stroke_rect
 from monkez_pyqt6.monkez_widgets import (
     MonkezButton,
@@ -3238,6 +3244,13 @@ class WidgetTests(unittest.TestCase):
             "transform", 280, 40, element_id="transform"
         )
         sink = canvas.addWorkflowComponent("sink", 540, 40, element_id="sink")
+        switch = canvas.addWorkflowComponent(
+            "switch", 540, 220, element_id="switch"
+        )
+        self.assertEqual(
+            ("in", "true", "false", "error"),
+            tuple(port["id"] for port in canvas.element(switch).ports),
+        )
         canvas.connectElements(
             source, transform, source_port="out", target_port="in",
             connector_id="source-transform",
@@ -3437,6 +3450,175 @@ class WidgetTests(unittest.TestCase):
         canvas.close()
         restored.deleteLater()
         source_field.deleteLater()
+        canvas.deleteLater()
+
+    def test_canva_native_component_packs_render_bind_and_edit(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(1100, 760)
+        canvas.show()
+        diagnostics = []
+        pack_changes = []
+        canvas.diagnosticMessage.connect(diagnostics.append)
+        canvas.componentPackChanged.connect(
+            lambda pack_id, enabled: pack_changes.append((pack_id, enabled))
+        )
+        self.assertFalse(canvas.enabledComponentPacks())
+        self.assertIsNone(canvas.elementRegistry().definition("dash_gauge"))
+
+        self.assertEqual(15, len(canvas.enableComponentPack("dashboard")))
+        self.assertFalse(canvas.enableComponentPack("dashboard"))
+        gauge = canvas.addPackComponent(
+            "dash_gauge", -360, -180, element_id="pack-gauge"
+        )
+        canvas.addPackComponent(
+            "dash_sparkline", -100, -180, element_id="pack-sparkline"
+        )
+        tank = canvas.addPackComponent(
+            "ind_tank", 180, -180, element_id="pack-tank"
+        )
+        decision = canvas.addPackComponent(
+            "soft_decision", 410, -150, element_id="pack-decision"
+        )
+        self.assertEqual(
+            (DASHBOARD_PACK_ID, INDUSTRIAL_PACK_ID, SOFTWARE_PACK_ID),
+            canvas.enabledComponentPacks(),
+        )
+        self.assertTrue(canvas.element(gauge).definition.renderer_factory)
+        self.assertEqual("fluid", canvas.element(tank).ports[0]["dataType"])
+        self.assertEqual(("in", "yes", "no"), tuple(
+            port["id"] for port in canvas.element(decision).ports
+        ))
+
+        binding = canvas.addDataBinding(
+            gauge,
+            "property.value",
+            "live-gauge",
+            binding_id="live-gauge-value",
+        )
+        canonical_value = canvas.documentModel().element(gauge).properties["value"]
+        canvas.feedDataSource("live-gauge", 91)
+        self.assertEqual(91, canvas.element(gauge).custom_properties["value"])
+        self.assertEqual(
+            canonical_value,
+            canvas.documentModel().element(gauge).properties["value"],
+        )
+        self.assertTrue(canvas.removeDataBinding(binding))
+        self.assertEqual(canonical_value, canvas.element(gauge).custom_properties["value"])
+        with self.assertRaisesRegex(KeyError, "Unknown bindable property"):
+            canvas.addDataBinding(gauge, "property.not_real", "invalid")
+
+        canvas.setEditMode(True)
+        canvas.selectElement(gauge)
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(gauge)
+        component_inspector = toolbox._extension_inspector_widget
+        self.assertIsNotNone(component_inspector)
+        value_field = component_inspector.findChild(QLineEdit, "pack_value")
+        self.assertIsNotNone(value_field)
+        value_field.setText("81")
+        value_field.editingFinished.emit()
+        self.app.processEvents()
+        self.assertEqual(
+            81.0, canvas.documentModel().element(gauge).properties["value"]
+        )
+        canvas.selectElement(decision)
+        toolbox._sync_inspector(decision)
+        self.assertFalse([
+            field for field in toolbox._extension_inspector_widget.findChildren(QLineEdit)
+            if field.objectName().startswith("pack_")
+        ])
+
+        existing_types = {
+            canvas.element(element_id).kind for element_id in canvas.elements()
+        }
+        missing_definitions = [
+            definition
+            for pack in canvas.componentPacks()
+            for definition in pack.definitions
+            if definition.type_id not in existing_types
+        ]
+        for index, definition in enumerate(missing_definitions):
+            canvas.addPackComponent(
+                definition.type_id,
+                -900 + (index % 8) * 240,
+                300 + (index // 8) * 210,
+                element_id=f"render-{definition.type_id}",
+            )
+        self.assertEqual(43, len([
+            element_id for element_id in canvas.elements()
+            if canvas.element(element_id).definition.plugin_id
+            in (DASHBOARD_PACK_ID, INDUSTRIAL_PACK_ID, SOFTWARE_PACK_ID)
+        ]))
+
+        image = QImage(1200, 800, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(QColor("#ffffff"))
+        painter = QPainter(image)
+        canvas._scene.render(painter, QRectF(0, 0, 1200, 800))
+        painter.end()
+        self.assertFalse([
+            message for message in diagnostics if message.startswith("Renderer ")
+        ])
+        self.assertNotEqual(QColor("#ffffff"), image.pixelColor(600, 400))
+
+        menu = canvas.createContextMenu()
+        self.assertIn("Component packs", [action.text() for action in menu.actions()])
+        canvas.showCommandPalette("component pack")
+        command_labels = [
+            command[1] for command in canvas._command_palette._commands()
+        ]
+        self.assertIn("Disable Dashboard component pack", command_labels)
+
+        document = canvas.toDocument()
+        restored = MonkezCanva()
+        restored.setDocumentModel(CanvasDocument.from_dict(document))
+        self.assertEqual("__missing__", restored.element(gauge).definition.plugin_id)
+        restored.enableComponentPack("dashboard")
+        self.assertEqual(DASHBOARD_PACK_ID, restored.element(gauge).definition.plugin_id)
+
+        removed = canvas.disableComponentPack("dashboard")
+        self.assertEqual(15, len(removed))
+        self.assertIsNotNone(canvas.element(gauge))
+        self.assertIsNone(canvas.element(gauge).definition)
+        canvas.enableComponentPack("dashboard")
+        self.assertEqual(DASHBOARD_PACK_ID, canvas.element(gauge).definition.plugin_id)
+        self.assertIn((DASHBOARD_PACK_ID, False), pack_changes)
+
+        conflicting = MonkezCanva()
+        conflicting.registerElementDefinition(ElementDefinition(
+            "dash_gauge", "Vendor gauge", "Vendor", 120, 90,
+            plugin_id="vendor.pack",
+        ))
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            conflicting.enableComponentPack("dashboard")
+        self.assertIsNone(conflicting.elementRegistry().definition("dash_kpi_card"))
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            conflicting.enableAllComponentPacks()
+        self.assertIsNone(conflicting.elementRegistry().definition("ind_tank"))
+
+        future_payload = CanvasDocument.empty().to_dict()
+        future_payload["version"] = 99
+        future_payload["elements"] = [
+            {"id": "future-gauge", "type": "dash_gauge", "value": 55}
+        ]
+        future = MonkezCanva()
+        future.setDocumentModel(
+            CanvasDocument.from_dict(future_payload, allow_newer=True)
+        )
+        future.enableComponentPack("dashboard")
+        self.assertTrue(future.isReadOnly())
+        self.assertEqual(
+            DASHBOARD_PACK_ID,
+            future.element("future-gauge").definition.plugin_id,
+        )
+        self.assertEqual(99, future.toDocument()["version"])
+
+        menu.deleteLater()
+        canvas.setEditMode(False)
+        canvas.close()
+        restored.deleteLater()
+        conflicting.deleteLater()
+        future.deleteLater()
         canvas.deleteLater()
 
 

@@ -304,6 +304,18 @@ definitions and state.
 Next data slices: optional MQTT/WebSocket/OPC-UA/Modbus adapter packages,
 historian/ring-buffer policies, write-back bindings and aggregate source health.
 
+### Native component-pack progress — 2026-08-09
+
+`MC-PACK-NATIVE-001` completes Phase 4 with 43 opt-in components across Dashboard,
+Industrial and Software/Flowchart. `component_packs.py` owns immutable Qt-free
+catalogs; separate Qt modules own vector painting and compact schema-generated
+property controls. Canvas APIs, palette, blank context menu and Ctrl+K can enable
+or disable each pack without mutating its document. Typed ports, missing-component
+reconciliation and validated `property.<schema-name>` data bindings are covered.
+
+Next ecosystem slices: PNG/SVG/PDF export, page/print configuration, DOT/Mermaid
+exchange, public SDK/example plugin and document diagnostics/diff.
+
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
 selected icon color, field focus states, card title clearance and JSON editor

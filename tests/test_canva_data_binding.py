@@ -124,6 +124,14 @@ class DataBindingKernelTests(unittest.TestCase):
             BindingSpec.from_record("a", {
                 "id": "bad", "source": "x", "target": "__dict__",
             })
+        property_spec = BindingSpec.from_record("gauge", {
+            "id": "gauge-value", "source": "sensor", "target": "property.value",
+        })
+        self.assertEqual("property.value", property_spec.target)
+        with self.assertRaisesRegex(ValueError, "property name"):
+            BindingSpec.from_record("gauge", {
+                "id": "missing-property", "source": "sensor", "target": "property.",
+            })
 
     def test_one_thousand_batched_source_values_keep_latest_state(self) -> None:
         batches = []

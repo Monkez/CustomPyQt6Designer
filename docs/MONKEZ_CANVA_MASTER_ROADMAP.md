@@ -228,6 +228,14 @@ process, decision, document, terminator, annotation and sticky note.
 Packs are registry packages; they must not enlarge the default palette until
 enabled by the application.
 
+Completed (2026-08-09): `MC-PACK-NATIVE-001` ships all 43 planned components as
+three opt-in Qt-free catalogs. The Qt adapter attaches native vector renderers,
+schema-driven compact Inspectors and typed ports only when a pack is enabled.
+Palette, blank-canvas menu, Ctrl+K and public APIs share the same enable/disable
+state. Pack records remain portable and recover from missing-component placeholders.
+Declarative binding now supports validated `property.<schema-name>` targets so
+live values drive pack-specific properties without persisting runtime state.
+
 ## Phase 5 — Export and ecosystem
 
 - PNG, transparent PNG, SVG and PDF export for scene or selection;
