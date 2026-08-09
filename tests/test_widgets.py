@@ -3225,6 +3225,71 @@ class WidgetTests(unittest.TestCase):
         restored.deleteLater()
         canvas.deleteLater()
 
+    def test_canva_workflow_pack_executor_and_control_pane_integration(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(1000, 700)
+        canvas.show()
+        self.assertFalse(canvas.workflowComponentsEnabled())
+        self.assertEqual(29, len(canvas.enableWorkflowComponents()))
+
+        source = canvas.addWorkflowComponent("source", 20, 40, element_id="source")
+        transform = canvas.addWorkflowComponent(
+            "transform", 280, 40, element_id="transform"
+        )
+        sink = canvas.addWorkflowComponent("sink", 540, 40, element_id="sink")
+        canvas.connectElements(
+            source, transform, source_port="out", target_port="in",
+            connector_id="source-transform",
+        )
+        canvas.connectElements(
+            transform, sink, source_port="out", target_port="in",
+            connector_id="transform-sink",
+        )
+        canvas.setWorkflowConfig(transform, operation="scale", value=3)
+
+        traces = []
+        states = []
+        canvas.workflowTraceEvent.connect(traces.append)
+        canvas.workflowNodeStateChanged.connect(
+            lambda node_id, state: states.append((node_id, state))
+        )
+        result = canvas.runWorkflow(source, 7, visualize=False)
+        self.assertEqual("completed", result["state"])
+        self.assertEqual((21.0,), tuple(result["outputs"][sink]))
+        self.assertTrue(traces)
+        self.assertIn((sink, "completed"), states)
+
+        canvas.setEditMode(True)
+        canvas.selectElement(transform)
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(transform)
+        self.assertTrue(toolbox._workflow_group.isVisibleTo(toolbox))
+        self.assertEqual("Transform", toolbox._workflow_kind_label.text())
+        self.assertEqual("Completed", toolbox._workflow_state_label.text())
+        self.assertEqual(3, json.loads(
+            toolbox._workflow_config_edit.toPlainText()
+        )["value"])
+
+        toolbox._workflow_config_edit.setPlainText(
+            json.dumps({"operation": "scale", "value": 4})
+        )
+        toolbox._pending_inspector_fields.add("workflow")
+        toolbox._apply_inspector()
+        self.assertEqual(4, canvas.workflowConfig(transform)["value"])
+        self.assertTrue(canvas.canUndo())
+
+        field = toolbox._number_fields["x"]
+        self.assertFalse(field._step_up.icon().isNull())
+        self.assertFalse(field._step_down.icon().isNull())
+        self.assertGreater(field._step_up.x(), field.lineEdit().x())
+        self.assertEqual(5, toolbox._tabs.count())
+        self.assertFalse(toolbox._tabs.tabIcon(1).isNull())
+
+        canvas.setEditMode(False)
+        canvas.close()
+        canvas.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

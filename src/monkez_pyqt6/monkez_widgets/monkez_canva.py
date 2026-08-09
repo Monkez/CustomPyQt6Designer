@@ -11,7 +11,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from PyQt6.QtCore import (
     QByteArray,
@@ -45,6 +45,7 @@ from PyQt6.QtGui import (
     QUndoStack,
 )
 from PyQt6.QtWidgets import (
+    QAbstractSpinBox,
     QAbstractItemView,
     QApplication,
     QCheckBox,
@@ -69,6 +70,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -91,6 +93,11 @@ from monkez_pyqt6.monkez_canva import (
     OperationEvent,
     PacketRuntime,
     RuntimeTraceEvent,
+    WORKFLOW_COMPONENT_DEFINITIONS,
+    WORKFLOW_PLUGIN_ID,
+    WorkflowExecutor,
+    WorkflowGraph,
+    WorkflowTraceEvent,
     PortCompatibility,
     PALETTE_FAVORITES_KEY,
     PALETTE_RECENT_KEY,
@@ -316,6 +323,42 @@ def _paint_breakpoint_badge(painter: QPainter, center: QPointF) -> None:
     )
     painter.drawRoundedRect(
         QRectF(center.x() + 1.2, center.y() - 3.5, 2.2, 7), 0.7, 0.7
+    )
+    painter.restore()
+
+
+def _paint_workflow_state(
+    painter: QPainter, rect: QRectF, state: str
+) -> None:
+    colors = {
+        "queued": QColor("#7c3aed"),
+        "running": QColor("#2563eb"),
+        "completed": QColor("#0f9f8f"),
+        "failed": QColor("#dc2626"),
+        "cancelled": QColor("#64748b"),
+        "paused": QColor("#d97706"),
+    }
+    color = colors.get(str(state))
+    if color is None:
+        return
+    badge = QRectF(rect.left() + 10, rect.bottom() - 21, min(92, rect.width() - 20), 16)
+    painter.save()
+    painter.setPen(Qt.PenStyle.NoPen)
+    surface = QColor(color)
+    surface.setAlpha(28)
+    painter.setBrush(surface)
+    painter.drawRoundedRect(badge, 8, 8)
+    painter.setBrush(color)
+    painter.drawEllipse(QPointF(badge.left() + 9, badge.center().y()), 3, 3)
+    painter.setPen(color)
+    font = QFont(painter.font())
+    font.setPixelSize(9)
+    font.setBold(True)
+    painter.setFont(font)
+    painter.drawText(
+        badge.adjusted(17, 0, -5, 0),
+        Qt.AlignmentFlag.AlignVCenter,
+        str(state).replace("_", " ").title(),
     )
     painter.restore()
 
@@ -609,6 +652,13 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
         painter.drawLine(QPointF(8, 9), QPointF(11, 12))
         painter.drawLine(QPointF(11, 12), QPointF(14, 10))
         painter.drawLine(QPointF(14, 10), QPointF(17, 14))
+    elif name in ("chevron_up", "chevron_down"):
+        if name == "chevron_up":
+            painter.drawLine(QPointF(5, 12), QPointF(10, 7))
+            painter.drawLine(QPointF(10, 7), QPointF(15, 12))
+        else:
+            painter.drawLine(QPointF(5, 8), QPointF(10, 13))
+            painter.drawLine(QPointF(10, 13), QPointF(15, 8))
 
     painter.end()
     return QIcon(pixmap)
@@ -938,6 +988,23 @@ class _CanvasElement(QGraphicsObject):
             painter.setBrush(self.color)
             painter.drawEllipse(center, 4, 4)
             self._paint_ports(painter)
+        elif self.supports_ports:
+            painter.drawRoundedRect(rect, 12, 12)
+            header = QRectF(rect.left(), rect.top(), rect.width(), 32)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self.color)
+            painter.drawRoundedRect(header, 10, 10)
+            painter.fillRect(
+                QRectF(header.left(), header.bottom() - 10, header.width(), 10),
+                self.color,
+            )
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(
+                header.adjusted(12, 0, -12, 0),
+                Qt.AlignmentFlag.AlignVCenter,
+                self.text,
+            )
+            self._paint_ports(painter)
         else:
             radius = 10 if self.kind in ("button", "rectangle") else 4
             painter.drawRoundedRect(rect, radius, radius)
@@ -953,6 +1020,12 @@ class _CanvasElement(QGraphicsObject):
             painter.setPen(QPen(QColor("#2563eb"), 1.5))
             for point in (rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()):
                 painter.drawRect(QRectF(point.x() - 4, point.y() - 4, 8, 8))
+        if self.definition is not None and "workflow" in self.definition.capabilities:
+            _paint_workflow_state(
+                painter,
+                rect,
+                self.canvas.workflowNodeState(self.element_id),
+            )
         if self.canvas._has_runtime_breakpoint(self.element_id):
             _paint_breakpoint_badge(painter, rect.topRight() + QPointF(-7, 7))
 
@@ -2137,11 +2210,41 @@ class _CanvasPaneHeader(QFrame):
 
 
 class _CanvasNumberField(QDoubleSpinBox):
-    """Spinbox that renders a real mixed-value state until the user edits it."""
+    """Stable, frameless-stepper number field used throughout the control pane.
+
+    Windows' native spin-box subcontrols draw platform separators over Qt style
+    sheets at some DPI scales.  Owning the two tiny step buttons keeps the field
+    geometry and hover states identical on every supported platform.
+    """
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._mixed_value = False
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self._step_up = QToolButton(self)
+        self._step_down = QToolButton(self)
+        for button, icon_name, callback, tooltip in (
+            (self._step_up, "chevron_up", self.stepUp, "Increase value"),
+            (self._step_down, "chevron_down", self.stepDown, "Decrease value"),
+        ):
+            button.setObjectName("canvasNumberStepper")
+            button.setIcon(_canvas_icon(icon_name, "#56616a"))
+            button.setIconSize(QSize(10, 7))
+            button.setFixedSize(24, 15)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setAutoRepeat(True)
+            button.setAutoRepeatDelay(350)
+            button.setAutoRepeatInterval(70)
+            button.setToolTip(tooltip)
+            button.clicked.connect(callback)
+            button.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        right = self.width() - 5
+        center = self.height() // 2
+        self._step_up.move(right - self._step_up.width(), center - 15)
+        self._step_down.move(right - self._step_down.width(), center)
 
     def setMixedValue(self, mixed: bool, fallback: float | None = None) -> None:
         if fallback is not None:
@@ -2384,6 +2487,7 @@ class _CanvasCommandPalette(QDialog):
             ("runtime:debugger", "Open runtime debugger", "Runtime", "messages packets timeline trace", "command", True, canvas.showRuntimeDebugger),
             ("runtime:pause", "Resume packet runtime" if canvas.runtimePaused() else "Pause packet runtime", "Runtime", "debug execution", "pause", bool(canvas.messageTickets(False)), canvas.resumeRuntime if canvas.runtimePaused() else canvas.pauseRuntime),
             ("runtime:step", "Step next packet", "Runtime", "debug breakpoint", "arrow_right", canvas.runtimePaused() and bool(canvas.messageTickets(False)), canvas.stepRuntime),
+            ("workflow:enable-pack", "Enable workflow component pack", "Workflow", "source sink transform filter delay queue runtime", "node", not canvas.workflowComponentsEnabled(), canvas.enableWorkflowComponents),
             ("save:project", "Save project workspace", "Save", "persistent durable", "save", writable, canvas.savePersistent),
             ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
         ))
@@ -2417,6 +2521,17 @@ class _CanvasCommandPalette(QDialog):
                 ("connector:add-waypoint", "Add reroute point", "Connector", "routing waypoint", "add", writable, lambda: canvas.addConnectorWaypoint(connector_id)),
                 ("connector:clear-waypoints", "Clear reroute points", "Connector", "routing waypoint", "delete", writable and bool(canvas.connector(connector_id).waypoints), lambda: canvas.clearConnectorWaypoints(connector_id)),
             ))
+        if len(selected) == 1 and selected[0] in canvas._elements:
+            selected_id = selected[0]
+            definition = canvas.elementRegistry().definition(
+                canvas.element(selected_id).kind
+            )
+            if definition is not None and "workflow" in definition.capabilities:
+                commands.extend((
+                    ("workflow:run-selected", "Run workflow from selected node", "Workflow", "execute source token", "arrow_right", True, lambda: canvas.runWorkflow(selected_id, {})),
+                    ("workflow:step", "Step active workflow node", "Workflow", "debug execute", "actual_size", canvas.activeWorkflowExecutor() is not None, canvas.stepWorkflow),
+                    ("workflow:run-active", "Run active workflow", "Workflow", "continue execute", "arrow_right", canvas.activeWorkflowExecutor() is not None, canvas.runActiveWorkflow),
+                ))
         for alignment in ("left", "hcenter", "right", "top", "vcenter", "bottom"):
             commands.append((
                 f"arrange:{alignment}", f"Align {alignment}", "Arrange", "selection",
@@ -2523,11 +2638,24 @@ class _CanvasEditorToolbox(QDialog):
         self._tabs.tabBar().setObjectName("canvasEditorTabBar")
         self._tabs.tabBar().setExpanding(True)
         self._tabs.tabBar().setUsesScrollButtons(False)
-        self._tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
-        self._tabs.addTab(self._inspector_tab(), _canvas_icon("color"), "Inspect")
-        self._tabs.addTab(self._layers_tab(), _canvas_icon("front"), "Layers")
-        self._tabs.addTab(self._view_tab(), _canvas_icon("grid"), "View")
-        self._tabs.addTab(self._save_tab(), _canvas_icon("save"), "Save")
+        self._tab_icons = (
+            ("rectangle", "Add"),
+            ("color", "Inspect"),
+            ("front", "Layers"),
+            ("grid", "View"),
+            ("save", "Save"),
+        )
+        for icon_name, label in self._tab_icons:
+            page = {
+                "Add": self._elements_tab,
+                "Inspect": self._inspector_tab,
+                "Layers": self._layers_tab,
+                "View": self._view_tab,
+                "Save": self._save_tab,
+            }[label]()
+            self._tabs.addTab(page, _canvas_icon(icon_name), label)
+        self._tabs.currentChanged.connect(self._sync_tab_icons)
+        self._sync_tab_icons(0)
         content.addWidget(self._tabs, 1)
         footer = QFrame()
         footer.setObjectName("canvasPaneFooter")
@@ -2561,10 +2689,16 @@ class _CanvasEditorToolbox(QDialog):
                 canvas.selectedElementId()
             )
         )
+        canvas.workflowNodeStateChanged.connect(self._sync_workflow_state)
         self._sync_inspector(canvas.selectedElementId())
         self.refreshLayers()
         self._sync_modified_status(canvas.isDocumentModified())
         self._sync_read_only_status(canvas.isReadOnly(), canvas.readOnlyReason())
+
+    def _sync_tab_icons(self, current: int) -> None:
+        for index, (icon_name, _label) in enumerate(self._tab_icons):
+            color = "#ef5d50" if index == current else "#64707a"
+            self._tabs.setTabIcon(index, _canvas_icon(icon_name, color))
 
     @staticmethod
     def _pane_stylesheet() -> str:
@@ -2575,7 +2709,7 @@ class _CanvasEditorToolbox(QDialog):
             border: 1px solid #d8d5d0;
             border-radius: 20px;
         }
-        QFrame#canvasPaneHeader { border: none; border-bottom: 1px solid #ebe7e2; background: transparent; }
+        QFrame#canvasPaneHeader { border: none; background: transparent; }
         QLabel#canvasPaneBrand { background: #ff6b5f; border-radius: 10px; }
         QLabel#canvasPaneTitle { color: #303941; font-size: 17px; font-weight: 700; }
         QLabel#canvasSelectionBadge {
@@ -2599,6 +2733,19 @@ class _CanvasEditorToolbox(QDialog):
             color: #ef5d50; background: #fff3f0; border: 1px solid #ffd3cc;
             border-radius: 9px; padding: 6px 10px; font-weight: 700;
         }
+        QLabel#runtimeState {
+            color: #68727a; background: #f4f2ef; border: 1px solid #e4dfd9;
+            border-radius: 9px; padding: 5px 9px; font-size: 9px; font-weight: 700;
+        }
+        QLabel#runtimeState[state="running"], QLabel#runtimeState[state="queued"] {
+            color: #2563eb; background: #eff6ff; border-color: #bfdbfe;
+        }
+        QLabel#runtimeState[state="completed"] {
+            color: #087f72; background: #effbf8; border-color: #bdebe3;
+        }
+        QLabel#runtimeState[state="failed"], QLabel#runtimeState[state="cancelled"] {
+            color: #c2413a; background: #fff2f0; border-color: #ffcfc8;
+        }
         QLabel#canvasSelectionHint { color: #858b90; font-size: 9px; }
         QLabel#autoApplyStatus {
             color: #0f9f8f; background: #effbf8; border: 1px solid #c6eee7;
@@ -2616,16 +2763,17 @@ class _CanvasEditorToolbox(QDialog):
             border: none; background: transparent; top: 0px;
         }
         QTabBar#canvasEditorTabBar {
-            background: #f3f1ee; border: none; border-radius: 12px;
-            padding: 4px; margin: 0px 0px 6px 0px;
+            background: #f1efec; border: 1px solid #ebe7e2; border-radius: 13px;
+            padding: 4px; margin: 2px 0px 7px 0px;
         }
         QTabBar#canvasEditorTabBar::tab {
             color: #667079; background: transparent; border: 1px solid transparent;
-            border-radius: 9px; min-height: 25px; padding: 5px 3px; margin: 0px;
+            border-radius: 9px; min-height: 27px; padding: 5px 3px; margin: 0px 1px;
             font-size: 10px; font-weight: 600;
         }
         QTabBar#canvasEditorTabBar::tab:selected {
-            color: #e95549; background: #fffefd; border-color: #ebe5df;
+            color: #e95549; background: #fffefd; border-color: #e7e1da;
+            font-weight: 700;
         }
         QTabBar#canvasEditorTabBar::tab:hover:!selected {
             color: #3f474e; background: #f9f7f4; border-color: #eee9e4;
@@ -2671,13 +2819,14 @@ class _CanvasEditorToolbox(QDialog):
         QToolButton#canvasPaletteFavorite:hover { background: #fff0d8; }
         QLineEdit#canvasPaletteSearch { padding-left: 7px; }
         QLabel#canvasPaletteCount { color: #8c8984; font-size: 9px; }
-        QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
+        QLineEdit, QDoubleSpinBox, QComboBox, QListWidget, QPlainTextEdit {
             color: #303941; background: #fffefd; border: 1px solid #d9d6d1;
             border-radius: 10px; padding: 4px 10px; min-height: 30px;
             selection-background-color: #ffd8d2;
         }
-        QLineEdit:hover, QDoubleSpinBox:hover, QComboBox:hover { border-color: #c6c1bb; }
-        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus {
+        QPlainTextEdit { padding: 8px 10px; font-family: Consolas; font-size: 10px; }
+        QLineEdit:hover, QDoubleSpinBox:hover, QComboBox:hover, QPlainTextEdit:hover { border-color: #c6c1bb; }
+        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus, QPlainTextEdit:focus {
             border: 1px solid #ff8c80; background: #ffffff;
         }
         QLineEdit:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
@@ -2691,25 +2840,16 @@ class _CanvasEditorToolbox(QDialog):
         QComboBox::down-arrow {
             image: url(__SPIN_DOWN__); width: 10px; height: 7px;
         }
-        QDoubleSpinBox { padding-right: 29px; }
-        QDoubleSpinBox::up-button {
-            subcontrol-origin: padding; subcontrol-position: top right;
-            background: transparent; border: none; border-radius: 6px;
-            width: 24px; height: 14px; margin: 3px 3px 0px 0px;
+        QDoubleSpinBox { padding-right: 34px; }
+        QToolButton#canvasNumberStepper {
+            background: transparent; border: none; border-radius: 5px;
+            padding: 0px; margin: 0px; min-width: 24px; min-height: 15px;
         }
-        QDoubleSpinBox::down-button {
-            subcontrol-origin: padding; subcontrol-position: bottom right;
-            background: transparent; border: none; border-radius: 6px;
-            width: 24px; height: 14px; margin: 0px 3px 3px 0px;
-        }
-        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+        QToolButton#canvasNumberStepper:hover {
             background: #fff0ed;
         }
-        QDoubleSpinBox::up-arrow {
-            image: url(__SPIN_UP__); width: 10px; height: 7px;
-        }
-        QDoubleSpinBox::down-arrow {
-            image: url(__SPIN_DOWN__); width: 10px; height: 7px;
+        QToolButton#canvasNumberStepper:pressed {
+            background: #ffdcd6;
         }
         QCheckBox { color: #3b444b; spacing: 8px; }
         QCheckBox::indicator {
@@ -2881,7 +3021,7 @@ class _CanvasEditorToolbox(QDialog):
 
         self._multi_select_group = _CanvasCardGroup("Quick arrange")
         arrange_layout = QHBoxLayout(self._multi_select_group)
-        arrange_layout.setContentsMargins(8, 10, 8, 8)
+        arrange_layout.setContentsMargins(8, 36, 8, 8)
         arrange_layout.setSpacing(3)
         arrange_actions = (
             ("align_left", "Align left", lambda: self.canvas.alignSelected("left")),
@@ -2945,7 +3085,7 @@ class _CanvasEditorToolbox(QDialog):
         self._port_unit_edit = QLineEdit()
         self._port_unit_edit.setPlaceholderText("Unit, e.g. V or °C")
         self._port_required_check = QCheckBox("Required")
-        self._port_max_connections_field = QDoubleSpinBox()
+        self._port_max_connections_field = _CanvasNumberField()
         self._port_max_connections_field.setDecimals(0)
         self._port_max_connections_field.setRange(0, 10000)
         self._port_max_connections_field.setSpecialValueText("Unlimited")
@@ -3012,9 +3152,50 @@ class _CanvasEditorToolbox(QDialog):
         )
         layout.addWidget(self._ports_group)
 
+        self._workflow_group = _CanvasCardGroup("Workflow runtime")
+        workflow_layout = QVBoxLayout(self._workflow_group)
+        workflow_summary = QHBoxLayout()
+        self._workflow_kind_label = QLabel("Component")
+        self._workflow_kind_label.setObjectName("canvasObjectType")
+        self._workflow_state_label = QLabel("Idle")
+        self._workflow_state_label.setObjectName("runtimeState")
+        workflow_summary.addWidget(self._workflow_kind_label)
+        workflow_summary.addStretch(1)
+        workflow_summary.addWidget(self._workflow_state_label)
+        workflow_layout.addLayout(workflow_summary)
+        self._workflow_config_edit = QPlainTextEdit()
+        self._workflow_config_edit.setPlaceholderText(
+            '{\n  "operation": "identity"\n}'
+        )
+        self._workflow_config_edit.setMaximumHeight(106)
+        self._workflow_config_edit.setToolTip(
+            "Portable declarative configuration for this workflow component"
+        )
+        self._workflow_config_edit.textChanged.connect(
+            lambda: self._schedule_inspector_apply(220, "workflow")
+        )
+        workflow_layout.addWidget(self._workflow_config_edit)
+        workflow_actions = QHBoxLayout()
+        run_workflow = QPushButton("Run here")
+        run_workflow.setObjectName("primaryAction")
+        run_workflow.setIcon(_canvas_icon("arrow_right", "#ffffff"))
+        run_workflow.clicked.connect(self._run_selected_workflow)
+        step_workflow = QPushButton("Step")
+        step_workflow.setIcon(_canvas_icon("actual_size"))
+        step_workflow.clicked.connect(self.canvas.stepWorkflow)
+        debug_workflow = QToolButton()
+        debug_workflow.setIcon(_canvas_icon("command"))
+        debug_workflow.setToolTip("Open Runtime Debugger")
+        debug_workflow.clicked.connect(self.canvas.showRuntimeDebugger)
+        workflow_actions.addWidget(run_workflow)
+        workflow_actions.addWidget(step_workflow)
+        workflow_actions.addWidget(debug_workflow)
+        workflow_layout.addLayout(workflow_actions)
+        layout.addWidget(self._workflow_group)
+
         self._geometry_group = _CanvasCardGroup("Position / size")
         geometry_form = QGridLayout(self._geometry_group)
-        geometry_form.setContentsMargins(13, 20, 13, 13)
+        geometry_form.setContentsMargins(13, 38, 13, 13)
         geometry_form.setHorizontalSpacing(14)
         geometry_form.setVerticalSpacing(7)
         geometry_form.setColumnStretch(0, 1)
@@ -3118,30 +3299,30 @@ class _CanvasEditorToolbox(QDialog):
         )
         self._line_style_combo = QComboBox()
         self._line_style_combo.addItems(("Solid", "Dash", "Dot", "DashDot"))
-        self._line_width_field = QDoubleSpinBox()
+        self._line_width_field = _CanvasNumberField()
         self._line_width_field.setRange(0.5, 40.0)
         self._line_width_field.setDecimals(1)
         self._connector_label_edit = QLineEdit()
         self._connector_label_edit.setPlaceholderText("Optional edge label")
-        self._label_position_field = QDoubleSpinBox()
+        self._label_position_field = _CanvasNumberField()
         self._label_position_field.setRange(0.0, 100.0)
         self._label_position_field.setSuffix(" %")
-        self._corner_radius_field = QDoubleSpinBox()
+        self._corner_radius_field = _CanvasNumberField()
         self._corner_radius_field.setRange(0.0, 80.0)
         self._corner_radius_field.setSuffix(" px")
-        self._parallel_spacing_field = QDoubleSpinBox()
+        self._parallel_spacing_field = _CanvasNumberField()
         self._parallel_spacing_field.setRange(0.0, 120.0)
         self._parallel_spacing_field.setSuffix(" px")
-        self._obstacle_clearance_field = QDoubleSpinBox()
+        self._obstacle_clearance_field = _CanvasNumberField()
         self._obstacle_clearance_field.setRange(0.0, 160.0)
         self._obstacle_clearance_field.setSuffix(" px")
         self._bridge_crossings_check = QCheckBox("Draw bridge over crossings")
-        self._bridge_size_field = QDoubleSpinBox()
+        self._bridge_size_field = _CanvasNumberField()
         self._bridge_size_field.setRange(3.0, 30.0)
         self._bridge_size_field.setSuffix(" px")
         self._bus_style_combo = QComboBox()
         self._bus_style_combo.addItems(("None", "Trunk", "Double"))
-        self._bus_width_field = QDoubleSpinBox()
+        self._bus_width_field = _CanvasNumberField()
         self._bus_width_field.setRange(2.0, 80.0)
         self._bus_width_field.setSuffix(" px")
         self._bus_id_edit = QLineEdit()
@@ -3156,24 +3337,24 @@ class _CanvasEditorToolbox(QDialog):
         self._animated_check = QCheckBox("Enable effect")
         self._effect_combo = QComboBox()
         self._effect_combo.addItems(("Flow", "Pulse", "Glow", "Particles", "Packet"))
-        self._flow_speed_field = QDoubleSpinBox()
+        self._flow_speed_field = _CanvasNumberField()
         self._flow_speed_field.setRange(0.1, 20.0)
         self._flow_speed_field.setDecimals(1)
         self._flow_direction_combo = QComboBox()
         self._flow_direction_combo.addItems(("Forward", "Reverse"))
-        self._flow_spacing_field = QDoubleSpinBox()
+        self._flow_spacing_field = _CanvasNumberField()
         self._flow_spacing_field.setRange(1.0, 20.0)
         self._flow_spacing_field.setDecimals(1)
-        self._effect_intensity_field = QDoubleSpinBox()
+        self._effect_intensity_field = _CanvasNumberField()
         self._effect_intensity_field.setRange(0.2, 4.0)
         self._effect_intensity_field.setDecimals(1)
         self._effect_intensity_field.setSingleStep(0.1)
         self._packet_loop_check = QCheckBox("Repeat continuously")
-        self._packet_duration_field = QDoubleSpinBox()
+        self._packet_duration_field = _CanvasNumberField()
         self._packet_duration_field.setRange(0.1, 120.0)
         self._packet_duration_field.setDecimals(2)
         self._packet_duration_field.setSuffix(" s")
-        self._packet_interval_field = QDoubleSpinBox()
+        self._packet_interval_field = _CanvasNumberField()
         self._packet_interval_field.setRange(0.05, 120.0)
         self._packet_interval_field.setDecimals(2)
         self._packet_interval_field.setSuffix(" s")
@@ -3192,10 +3373,10 @@ class _CanvasEditorToolbox(QDialog):
         self._send_packet_button = QPushButton("Send test packet")
         self._send_packet_button.setIcon(_canvas_icon("send"))
         self._send_packet_button.clicked.connect(self._send_test_packet)
-        self._connector_opacity_field = QDoubleSpinBox()
+        self._connector_opacity_field = _CanvasNumberField()
         self._connector_opacity_field.setRange(0.0, 1.0)
         self._connector_opacity_field.setDecimals(2)
-        self._connector_z_field = QDoubleSpinBox()
+        self._connector_z_field = _CanvasNumberField()
         self._connector_z_field.setRange(-10000.0, 10000.0)
         self._points_edit = QLineEdit()
         self._points_edit.setPlaceholderText("[[x, y], [x, y]]")
@@ -3429,11 +3610,11 @@ class _CanvasEditorToolbox(QDialog):
         auto_layout_grid.addWidget(self._layout_direction_combo, 1, 1)
         auto_layout_grid.addWidget(QLabel("Scope"), 2, 0, 1, 2)
         auto_layout_grid.addWidget(self._layout_scope_combo, 3, 0, 1, 2)
-        self._layout_node_spacing = QDoubleSpinBox()
+        self._layout_node_spacing = _CanvasNumberField()
         self._layout_node_spacing.setRange(4, 1000)
         self._layout_node_spacing.setValue(48)
         self._layout_node_spacing.setSuffix(" px")
-        self._layout_layer_spacing = QDoubleSpinBox()
+        self._layout_layer_spacing = _CanvasNumberField()
         self._layout_layer_spacing.setRange(8, 2000)
         self._layout_layer_spacing.setValue(120)
         self._layout_layer_spacing.setSuffix(" px")
@@ -3441,7 +3622,7 @@ class _CanvasEditorToolbox(QDialog):
         auto_layout_grid.addWidget(QLabel("Layer gap"), 4, 1)
         auto_layout_grid.addWidget(self._layout_node_spacing, 5, 0)
         auto_layout_grid.addWidget(self._layout_layer_spacing, 5, 1)
-        self._layout_iterations = QDoubleSpinBox()
+        self._layout_iterations = _CanvasNumberField()
         self._layout_iterations.setDecimals(0)
         self._layout_iterations.setRange(10, 2000)
         self._layout_iterations.setValue(180)
@@ -3499,7 +3680,7 @@ class _CanvasEditorToolbox(QDialog):
         self._smart_guides_check = QCheckBox("Show smart guides")
         self._smart_guides_check.toggled.connect(self.canvas.setSmartGuidesVisible)
         snapping_layout.addWidget(self._smart_guides_check, 2, 0)
-        self._snap_distance_field = QDoubleSpinBox()
+        self._snap_distance_field = _CanvasNumberField()
         self._snap_distance_field.setRange(1.0, 40.0)
         self._snap_distance_field.setSuffix(" px")
         self._snap_distance_field.setToolTip("Maximum distance before an item snaps")
@@ -4029,6 +4210,14 @@ class _CanvasEditorToolbox(QDialog):
         else:
             values = {key: field.value() for key, field in self._number_fields.items()}
             values["text"] = self._text_edit.text()
+            if (
+                "workflow" in self._pending_inspector_fields
+                and self._workflow_group.isVisible()
+            ):
+                workflow = json.loads(self._workflow_config_edit.toPlainText() or "{}")
+                if not isinstance(workflow, dict):
+                    raise ValueError("Workflow configuration must be a JSON object")
+                values["workflow"] = workflow
             if item.supports_ports:
                 self.canvas.setNodePorts(element_id, self._ports_from_editor())
             if item.kind in ("image", "animated_image"):
@@ -4110,6 +4299,7 @@ class _CanvasEditorToolbox(QDialog):
         )
         self._selection_hint.show()
         self._ports_group.hide()
+        self._workflow_group.hide()
         self._media_group.hide()
         self._stroke_group.hide()
         self._content_group.setVisible(homogeneous_elements and len(kinds) == 1)
@@ -4198,6 +4388,7 @@ class _CanvasEditorToolbox(QDialog):
             self._source_edit.clear()
             self._content_group.hide()
             self._ports_group.hide()
+            self._workflow_group.hide()
             self._geometry_group.hide()
             self._media_group.hide()
             self._stroke_group.hide()
@@ -4205,6 +4396,7 @@ class _CanvasEditorToolbox(QDialog):
             self._group_properties_group.hide()
         elif selected_count > 1:
             self._group_properties_group.hide()
+            self._workflow_group.hide()
             self._sync_multi_inspector(items)
         else:
             self._id_edit.setEnabled(True)
@@ -4216,6 +4408,7 @@ class _CanvasEditorToolbox(QDialog):
                 self._id_edit.setEnabled(True)
                 self._content_group.hide()
                 self._ports_group.hide()
+                self._workflow_group.hide()
                 self._media_group.hide()
                 self._stroke_group.hide()
                 self._group_properties_group.show()
@@ -4261,6 +4454,8 @@ class _CanvasEditorToolbox(QDialog):
             content = not connector and "content" in capabilities
             self._content_group.setVisible(content)
             self._ports_group.setVisible(not connector and "ports" in capabilities)
+            workflow = not connector and "workflow" in capabilities
+            self._workflow_group.setVisible(workflow)
             self._geometry_group.setVisible(not connector and "geometry" in capabilities)
             self._media_group.setVisible(media)
             self._stroke_group.setVisible(connector or line)
@@ -4348,6 +4543,17 @@ class _CanvasEditorToolbox(QDialog):
                 self._data_edit.setVisible(chart)
                 self._source_edit.setText(item.source)
                 self._set_ports_editor(item.ports if item.supports_ports else [])
+                if workflow:
+                    config = self.canvas.workflowConfig(item.element_id)
+                    self._workflow_kind_label.setText(
+                        item.kind.removeprefix("wf_").replace("_", " ").title()
+                    )
+                    state = self.canvas.workflowNodeState(item.element_id)
+                    self._workflow_state_label.setText(state.replace("_", " ").title())
+                    self._workflow_state_label.setProperty("state", state)
+                    self._workflow_config_edit.setPlainText(
+                        json.dumps(config, indent=2, ensure_ascii=False)
+                    )
                 values = {
                     "x": item.pos().x(), "y": item.pos().y(),
                     "width": item._rect.width(), "height": item._rect.height(),
@@ -4376,6 +4582,26 @@ class _CanvasEditorToolbox(QDialog):
         self._sync_extension_inspector(item if selected_count == 1 else None)
         self._syncing_inspector = False
         self._sync_packet_controls()
+
+    def _sync_workflow_state(self, node_id: str, state: str) -> None:
+        if (
+            self.canvas.selectedElementId() == node_id
+            and self._workflow_group.isVisible()
+        ):
+            self._workflow_state_label.setText(str(state).replace("_", " ").title())
+            self._workflow_state_label.setProperty("state", str(state))
+            self._workflow_state_label.style().unpolish(self._workflow_state_label)
+            self._workflow_state_label.style().polish(self._workflow_state_label)
+
+    def _run_selected_workflow(self) -> None:
+        element_id = self.canvas.selectedElementId()
+        if not element_id:
+            return
+        self._apply_inspector()
+        try:
+            self.canvas.runWorkflow(element_id, {}, visualize=True)
+        except (KeyError, RuntimeError, TypeError, ValueError) as error:
+            self.canvas.diagnosticMessage.emit(f"Workflow run rejected: {error}")
 
     def _sync_extension_inspector(self, item: _CanvasElement | _CanvasConnector | None) -> None:
         if self._extension_inspector_widget is not None:
@@ -4805,8 +5031,29 @@ class _CanvasRuntimeDebugger(QDialog):
         self._messages = QListWidget()
         self._messages.currentItemChanged.connect(self._sync_details)
         self._trace = QListWidget()
+        workflow_page = QWidget()
+        workflow_layout = QVBoxLayout(workflow_page)
+        workflow_layout.setContentsMargins(0, 0, 0, 0)
+        workflow_actions = QHBoxLayout()
+        workflow_run = QPushButton("Run queued")
+        workflow_run.setIcon(_canvas_icon("arrow_right"))
+        workflow_run.clicked.connect(self._run_workflow)
+        workflow_step = QPushButton("Step node")
+        workflow_step.setIcon(_canvas_icon("actual_size"))
+        workflow_step.clicked.connect(canvas.stepWorkflow)
+        workflow_cancel = QPushButton("Cancel")
+        workflow_cancel.setIcon(_canvas_icon("delete"))
+        workflow_cancel.clicked.connect(canvas.cancelWorkflow)
+        workflow_actions.addWidget(workflow_run)
+        workflow_actions.addWidget(workflow_step)
+        workflow_actions.addWidget(workflow_cancel)
+        workflow_actions.addStretch(1)
+        workflow_layout.addLayout(workflow_actions)
+        self._workflow = QListWidget()
+        workflow_layout.addWidget(self._workflow, 1)
         self._tabs.addTab(self._messages, "Messages")
         self._tabs.addTab(self._trace, "Timeline")
+        self._tabs.addTab(workflow_page, "Workflow")
         root.addWidget(self._tabs, 1)
 
         details = QFrame()
@@ -4827,13 +5074,19 @@ class _CanvasRuntimeDebugger(QDialog):
         canvas.runtimeBreakpointsChanged.connect(
             lambda _breakpoints: self._refresh_trace()
         )
+        canvas.workflowTraceEvent.connect(lambda _event: self._refresh_workflow())
+        canvas.workflowNodeStateChanged.connect(
+            lambda _node_id, _state: self._refresh_workflow()
+        )
         self._sync_pause_state(canvas.runtimePaused())
         self._refresh_messages()
         self._refresh_trace()
+        self._refresh_workflow()
 
     def showEvent(self, event) -> None:
         self._refresh_messages()
         self._refresh_trace()
+        self._refresh_workflow()
         super().showEvent(event)
 
     def _refresh_messages(self) -> None:
@@ -4879,6 +5132,23 @@ class _CanvasRuntimeDebugger(QDialog):
             self._trace.addItem(
                 f"#{event['sequence']:04d}  {event['event']}  "
                 f"{event['messageId']}  {event['objectId']}{suffix}"
+            )
+
+    def _refresh_workflow(self) -> None:
+        self._workflow.clear()
+        for event in reversed(self.canvas.workflowTrace(limit=400)):
+            detail = event.get("detail") or {}
+            suffix = ""
+            if event.get("event") == "node_failed":
+                suffix = f" · {detail.get('error', '')}"
+            elif event.get("event") == "connector_emitted":
+                suffix = (
+                    f" · {detail.get('sourcePort', '')} → "
+                    f"{detail.get('targetPort', '')}"
+                )
+            self._workflow.addItem(
+                f"#{event['sequence']:04d}  {event['event']}  "
+                f"{event.get('nodeId', '')}  {event.get('connectorId', '')}{suffix}"
             )
 
     def _selected_message_id(self) -> str:
@@ -4943,6 +5213,18 @@ class _CanvasRuntimeDebugger(QDialog):
     def _clear_completed(self) -> None:
         self.canvas.clearRuntimeHistory()
         self._refresh_messages()
+
+    def _run_workflow(self) -> None:
+        executor = self.canvas.activeWorkflowExecutor()
+        if executor is None:
+            self.canvas.diagnosticMessage.emit(
+                "No active workflow. Start one from code or a Source context menu."
+            )
+            return
+        if executor.state == "paused":
+            self.canvas.resumeWorkflow()
+        self.canvas.runActiveWorkflow()
+        self._refresh_workflow()
 
 
 class _CanvasQuickToolbar(QFrame):
@@ -5381,6 +5663,9 @@ class MonkezCanva(QWidget):
     runtimeTraceEvent = pyqtSignal(dict)
     runtimePausedChanged = pyqtSignal(bool)
     runtimeBreakpointsChanged = pyqtSignal(list)
+    workflowTraceEvent = pyqtSignal(dict)
+    workflowNodeStateChanged = pyqtSignal(str, str)
+    workflowFinished = pyqtSignal(dict)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -5404,6 +5689,11 @@ class MonkezCanva(QWidget):
         self._runtime_pending_arrivals: list[tuple[str, str]] = []
         self._packet_runtime = PacketRuntime(event_sink=self._on_packet_runtime_event)
         self._runtime_debugger: _CanvasRuntimeDebugger | None = None
+        self._workflow_executor: WorkflowExecutor | None = None
+        self._workflow_node_states: dict[str, str] = {}
+        self._workflow_trace: list[dict[str, Any]] = []
+        self._workflow_visualize = True
+        self._workflow_finish_emitted = False
         self._port_runtime_values: dict[tuple[str, str], Any] = {}
         self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
@@ -5893,6 +6183,12 @@ class MonkezCanva(QWidget):
                 enabled=writable,
                 icon="folder",
             )
+            action(
+                "Enable workflow component pack",
+                self.enableWorkflowComponents,
+                enabled=not self.workflowComponentsEnabled(),
+                icon="node",
+            )
             add_menu = menu.addMenu(_canvas_icon("rectangle"), "Add component")
             for definition in self._element_registry.definitions():
                 entry = add_menu.addAction(_canvas_icon(definition.icon), definition.label)
@@ -6033,6 +6329,21 @@ class MonkezCanva(QWidget):
                 enabled=True,
                 icon="save",
             )
+        elif object_id in self._elements:
+            definition = self._element_registry.definition(
+                self._elements[object_id].kind
+            )
+            if definition is not None and "workflow" in definition.capabilities:
+                action(
+                    "Run workflow from here",
+                    lambda: self.runWorkflow(object_id, {}),
+                    icon="arrow_right",
+                )
+                action(
+                    "Open runtime debugger…",
+                    self.showRuntimeDebugger,
+                    icon="command",
+                )
         return menu
 
     def showContextMenu(self, global_position, object_id: str = "") -> None:
@@ -7888,6 +8199,299 @@ class MonkezCanva(QWidget):
         self._runtime_debugger.raise_()
         self._runtime_debugger.activateWindow()
 
+    def enableWorkflowComponents(
+        self, replace_existing: bool = False
+    ) -> tuple[str, ...]:
+        """Enable the opt-in executable workflow component pack on this canvas."""
+
+        toolbox_visible = self._toolbox is not None and self._toolbox.isVisible()
+        if self._toolbox is not None:
+            self._toolbox.close()
+            self._toolbox.deleteLater()
+            self._toolbox = None
+        registered = []
+        for definition in WORKFLOW_COMPONENT_DEFINITIONS:
+            existing = self._element_registry.definition(definition.type_id)
+            if existing is not None and not replace_existing:
+                if existing.plugin_id == WORKFLOW_PLUGIN_ID:
+                    continue
+                raise ValueError(
+                    f"Workflow component conflicts with registered type: {definition.type_id}"
+                )
+            self._element_registry.register(
+                definition, replace_existing=existing is not None
+            )
+            self._reconcile_registry_records(definition.type_id)
+            registered.append(definition.type_id)
+        if toolbox_visible:
+            self._ensure_toolbox()
+            self._toolbox.show()
+        self.diagnosticMessage.emit(
+            f"Workflow component pack enabled: {len(registered)} new definitions"
+        )
+        return tuple(registered)
+
+    def disableWorkflowComponents(self) -> tuple[str, ...]:
+        removed = self.unregisterElementPlugin(WORKFLOW_PLUGIN_ID)
+        self.diagnosticMessage.emit(
+            f"Workflow component pack disabled: {len(removed)} definitions"
+        )
+        return removed
+
+    def workflowComponentsEnabled(self) -> bool:
+        return all(
+            self._element_registry.definition(definition.type_id) is not None
+            for definition in WORKFLOW_COMPONENT_DEFINITIONS
+        )
+
+    def workflowComponentDefinitions(self) -> tuple[ElementDefinition, ...]:
+        return WORKFLOW_COMPONENT_DEFINITIONS
+
+    def addWorkflowComponent(
+        self,
+        kind: str,
+        x: float | None = None,
+        y: float | None = None,
+        **options,
+    ) -> str:
+        if not self.workflowComponentsEnabled():
+            self.enableWorkflowComponents()
+        type_id = str(kind).lower().strip().replace("-", "_")
+        if not type_id.startswith("wf_"):
+            type_id = f"wf_{type_id}"
+        if self._element_registry.definition(type_id) is None:
+            raise KeyError(f"Unknown workflow component: {kind}")
+        return self.addElement(type_id, x, y, **options)
+
+    def setWorkflowConfig(
+        self, element_id: str, config: Mapping[str, Any] | None = None, **values
+    ) -> "MonkezCanva":
+        item = self._required_element(element_id)
+        definition = self._element_registry.definition(item.kind)
+        if definition is None or "workflow" not in definition.capabilities:
+            raise TypeError(f"Element {element_id!r} is not a workflow component")
+        merged = dict(
+            self._document_model.element(element_id).properties.get("workflow", {})
+        )
+        merged.update(dict(config or {}))
+        merged.update(values)
+        return self.updateElement(element_id, workflow=merged)
+
+    def workflowConfig(self, element_id: str) -> dict[str, Any]:
+        model = self._document_model.element(element_id)
+        if model is None:
+            raise KeyError(f"Unknown workflow element: {element_id}")
+        return dict(model.properties.get("workflow", {}))
+
+    def createWorkflowExecutor(
+        self,
+        *,
+        handlers: Mapping[str, Callable] | None = None,
+        max_steps: int = 100_000,
+        visualize: bool = True,
+    ) -> WorkflowExecutor:
+        graph = WorkflowGraph.from_document(self.toDocument())
+        executor = WorkflowExecutor(
+            graph,
+            event_sink=self._on_workflow_event,
+            max_steps=max_steps,
+        )
+        for key, handler in dict(handlers or {}).items():
+            executor.register_handler(
+                str(key), handler, node=str(key) in graph.nodes
+            )
+        self._workflow_executor = executor
+        self._workflow_visualize = bool(visualize)
+        self._workflow_finish_emitted = False
+        self._workflow_node_states = {node_id: "idle" for node_id in graph.nodes}
+        for node_id in graph.nodes:
+            item = self._elements.get(node_id)
+            if item is not None:
+                item.update()
+        return executor
+
+    def startWorkflow(
+        self,
+        source_id: str,
+        payload: Any = None,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+        priority: int = 0,
+        token_id: str | None = None,
+        handlers: Mapping[str, Callable] | None = None,
+        visualize: bool = True,
+    ) -> str:
+        executor = self.createWorkflowExecutor(
+            handlers=handlers, visualize=visualize
+        )
+        return executor.start(
+            source_id, payload, metadata=metadata, priority=priority,
+            token_id=token_id,
+        )
+
+    def runWorkflow(
+        self,
+        source_id: str,
+        payload: Any = None,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+        priority: int = 0,
+        token_id: str | None = None,
+        handlers: Mapping[str, Callable] | None = None,
+        visualize: bool = True,
+        max_steps: int = 100_000,
+    ) -> dict[str, Any]:
+        executor = self.createWorkflowExecutor(
+            handlers=handlers, max_steps=max_steps, visualize=visualize
+        )
+        executor.start(
+            source_id, payload, metadata=metadata, priority=priority,
+            token_id=token_id,
+        )
+        result = executor.run_until_idle()
+        return self._emit_workflow_finished(result)
+
+    def stepWorkflow(self, auto_advance: bool = True) -> bool:
+        if self._workflow_executor is None:
+            return False
+        stepped = self._workflow_executor.step(auto_advance=auto_advance)
+        if (
+            self._workflow_executor.state in ("completed", "failed", "cancelled")
+            and not self._workflow_finish_emitted
+        ):
+            self._emit_workflow_finished(self._workflow_executor.result())
+        return stepped
+
+    def runActiveWorkflow(self, auto_advance: bool = True) -> dict[str, Any]:
+        if self._workflow_executor is None:
+            raise RuntimeError("No workflow executor is active")
+        result = self._workflow_executor.run_until_idle(
+            auto_advance=auto_advance
+        )
+        if result.state in ("completed", "failed", "cancelled"):
+            return self._emit_workflow_finished(result)
+        return self._workflow_result_dict(result)
+
+    def advanceWorkflow(self, seconds: float) -> dict[str, Any]:
+        if self._workflow_executor is None:
+            raise RuntimeError("No workflow executor is active")
+        result = self._workflow_executor.advance(seconds)
+        if result.state in ("completed", "failed", "cancelled"):
+            return self._emit_workflow_finished(result)
+        return self._workflow_result_dict(result)
+
+    def pauseWorkflow(self) -> bool:
+        return bool(self._workflow_executor and self._workflow_executor.pause())
+
+    def resumeWorkflow(self, run_until_idle: bool = False) -> bool:
+        if self._workflow_executor is None:
+            return False
+        changed = self._workflow_executor.resume()
+        if changed and run_until_idle:
+            result = self._workflow_executor.run_until_idle()
+            self._emit_workflow_finished(result)
+        return changed
+
+    def cancelWorkflow(self) -> bool:
+        if self._workflow_executor is None:
+            return False
+        changed = self._workflow_executor.cancel()
+        if changed:
+            self._emit_workflow_finished(self._workflow_executor.result())
+        return changed
+
+    def activeWorkflowExecutor(self) -> WorkflowExecutor | None:
+        return self._workflow_executor
+
+    def workflowNodeState(self, node_id: str) -> str:
+        return self._workflow_node_states.get(str(node_id), "idle")
+
+    def workflowTrace(self, limit: int | None = None) -> list[dict[str, Any]]:
+        return list(
+            self._workflow_trace
+            if limit is None else self._workflow_trace[-max(0, int(limit)):]
+        )
+
+    def clearWorkflowRuntime(self) -> None:
+        self._workflow_executor = None
+        self._workflow_trace.clear()
+        old_ids = tuple(self._workflow_node_states)
+        self._workflow_node_states.clear()
+        for node_id in old_ids:
+            item = self._elements.get(node_id)
+            if item is not None:
+                item.update()
+        self.diagnosticMessage.emit("Workflow runtime state cleared")
+
+    def _on_workflow_event(self, event: WorkflowTraceEvent) -> None:
+        record = event.to_dict()
+        self._workflow_trace.append(record)
+        if len(self._workflow_trace) > 2000:
+            del self._workflow_trace[:-2000]
+        state = {
+            "token_queued": "queued",
+            "node_started": "running",
+            "node_completed": "completed",
+            "node_failed": "failed",
+        }.get(event.event)
+        if state and event.node_id:
+            self._workflow_node_states[event.node_id] = state
+            item = self._elements.get(event.node_id)
+            if item is not None:
+                item.update()
+            self.workflowNodeStateChanged.emit(event.node_id, state)
+        if (
+            event.event == "connector_emitted"
+            and getattr(self, "_workflow_visualize", True)
+            and event.connector_id in self._connectors
+        ):
+            connector = self._connectors[event.connector_id]
+            message_id = f"wf-{event.token_id[:6]}-{event.sequence}"
+            try:
+                self.sendMessageTicket(
+                    event.connector_id,
+                    message_id=message_id,
+                    payload=event.detail.get("payload"),
+                    metadata={
+                        **dict(event.detail.get("metadata", {})),
+                        "workflowToken": event.token_id,
+                        "workflowNode": event.node_id,
+                    },
+                    priority=int(
+                        dict(event.detail.get("metadata", {})).get("priority", 0)
+                    ),
+                    ttl=64,
+                    timeout=max(5.0, connector.packet_duration * 5.0),
+                    travel_time=connector.packet_duration,
+                )
+            except (KeyError, RuntimeError, TypeError, ValueError) as error:
+                self.diagnosticMessage.emit(
+                    f"Workflow packet visualization skipped: {error}"
+                )
+        self.workflowTraceEvent.emit(record)
+
+    @staticmethod
+    def _workflow_result_dict(result) -> dict[str, Any]:
+        return {
+            "state": result.state,
+            "steps": result.steps,
+            "logicalTime": result.logical_time,
+            "outputs": {key: list(values) for key, values in result.outputs.items()},
+            "errors": [dict(error) for error in result.errors],
+            "nodeStates": dict(result.node_states),
+        }
+
+    def _emit_workflow_finished(self, result) -> dict[str, Any]:
+        payload = self._workflow_result_dict(result)
+        if not getattr(self, "_workflow_finish_emitted", False):
+            self._workflow_finish_emitted = True
+            self.workflowFinished.emit(payload)
+            self.diagnosticMessage.emit(
+                f"Workflow {result.state}: {result.steps} steps, "
+                f"{len(result.errors)} errors"
+            )
+        return payload
+
     def renameConnector(self, connector_id: str, new_id: str) -> str:
         if not self._restoring:
             self._ensure_writable()
@@ -8103,6 +8707,7 @@ class MonkezCanva(QWidget):
         self._packet_runtime.clear()
         self.runtimePausedChanged.emit(False)
         self.runtimeBreakpointsChanged.emit([])
+        self.clearWorkflowRuntime()
         self._port_runtime_values.clear()
 
     def documentModel(self) -> CanvasDocument:

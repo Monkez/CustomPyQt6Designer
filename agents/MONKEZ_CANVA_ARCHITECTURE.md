@@ -311,6 +311,34 @@ sent packets continue to completion so `wait_to_end=True` cannot deadlock. Publi
 `animationStats()` and `animationFrameInterval()` expose lightweight diagnostics
 without leaking scheduler implementation details.
 
+## Workflow execution boundary
+
+`monkez_canva/workflow.py` is Qt-free and consumes a `CanvasDocument` projection
+through `WorkflowGraph.from_document()`. Only supported `wf_*` node records and
+connectors whose endpoints both belong to the workflow graph participate. Port
+IDs are validated while compiling; graphics objects, timers and widget state
+never enter the executor.
+
+`WorkflowExecutor` owns a stable priority/logical-time heap. Every work item has
+a token ID, payload, metadata, input port and scheduled logical time. Built-in
+handlers return normalized `WorkflowNodeResult` emissions; application handlers
+may be registered per node or per type. A plain mapping returned by a custom
+handler remains payload data, while explicit multi-port routing uses
+`WorkflowNodeResult`, avoiding ambiguous dictionaries.
+
+The Qt adapter subscribes through one event sink. It projects node states and
+trace into transient canvas dictionaries/signals and may mirror connector
+emissions as `MessageTicket` animations. Visualization is optional and never
+controls execution. Workflow config stays canonical JSON under the element
+`workflow` property, while executor state, payloads, outputs and errors are
+excluded from save/Undo. The debugger and Inspector are public-API clients, not
+executor owners.
+
+The catalog lives in `workflow_components.py` under plugin owner
+`monkez.workflow`. It is opt-in to protect default palette density. Enabling it
+late reconciles missing workflow placeholders without changing IDs; disabling
+it unloads definitions while preserving canonical records.
+
 ## Roadmap
 
 1. Clipboard, keyboard nudging and true mixed-value property editing.

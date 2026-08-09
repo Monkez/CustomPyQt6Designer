@@ -166,6 +166,16 @@ never enter portable JSON. The public v1 schema now documents the port contract.
 - logic: Gate, Compare, Filter, Transform, Map, Counter and StateMachine;
 - boundaries: Source, Sink, InputInterface, OutputInterface and ErrorHandler.
 
+Completed foundation (2026-08-09): `MC-RUNTIME-WORKFLOW-001` ships all 29 types
+as the opt-in `monkez.workflow` registry pack. A Qt-free deterministic executor
+compiles the portable document, routes typed-port emissions with logical time,
+supports declarative transform/filter/switch/timing/state operations and exposes
+node/type custom-handler boundaries. Canvas integration adds run/step/pause/
+resume/cancel APIs, transient node status, packet visualization, signals, an
+object-specific Inspector card and a Workflow debugger timeline. Recurring
+wall-clock timers, queue backpressure and persisted replay fixtures remain later
+runtime slices rather than hidden behavior in this foundation.
+
 ### Packet runtime v2
 
 Add `MessageTicket`, non-blocking and async APIs, payload metadata, priority, TTL,

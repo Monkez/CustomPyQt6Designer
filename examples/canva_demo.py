@@ -69,6 +69,19 @@ def main() -> int:
             event["sequence"], event["event"], event["messageId"], event["objectId"],
         )
     )
+    canvas.workflowTraceEvent.connect(
+        lambda event: logger.info(
+            "workflowTrace -> #%s %s node=%s token=%s",
+            event["sequence"], event["event"], event["nodeId"], event["tokenId"],
+        )
+    )
+    canvas.workflowFinished.connect(
+        lambda result: logger.info(
+            "workflowFinished -> %s steps=%s outputs=%s",
+            result["state"], result["steps"], result["outputs"],
+        )
+    )
+    canvas.enableWorkflowComponents()
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 
@@ -187,6 +200,29 @@ def main() -> int:
         canvas.setPortRuntimeValue(
             detector, "objects", [{"label": "vehicle", "confidence": 0.94}]
         )
+        workflow_source = canvas.addWorkflowComponent(
+            "source", -250, 410, element_id="workflow-source", text="Telemetry"
+        )
+        workflow_transform = canvas.addWorkflowComponent(
+            "transform", 20, 410, element_id="workflow-transform",
+            text="Normalize value",
+        )
+        workflow_sink = canvas.addWorkflowComponent(
+            "sink", 290, 410, element_id="workflow-sink", text="Dashboard"
+        )
+        canvas.setWorkflowConfig(
+            workflow_transform, operation="scale", value=1.5
+        )
+        canvas.connectElements(
+            workflow_source, workflow_transform,
+            sourcePort="out", targetPort="in", connector_id="workflow-normalize",
+            route="bezier", arrowEnd=True,
+        )
+        canvas.connectElements(
+            workflow_transform, workflow_sink,
+            sourcePort="out", targetPort="in", connector_id="workflow-display",
+            route="bezier", arrowEnd=True,
+        )
     canvas.objectClicked.connect(lambda object_id: canvas.highlightObject(object_id))
     window.resize(1180, 680)
     window.show()
@@ -205,11 +241,19 @@ def main() -> int:
                 branch_policy="all",
             ),
         )
+    if "workflow-source" in canvas.elements():
+        QTimer.singleShot(
+            1400,
+            lambda: canvas.runWorkflow(
+                "workflow-source", 42, metadata={"topic": "telemetry.demo"}
+            ),
+        )
     logger.info("Demo window shown: %sx%s", window.width(), window.height())
     logger.info("Shortcut option 1: press Ctrl+D, release Ctrl, then press E")
     logger.info("Shortcut option 2: hold Ctrl, press D, then press E")
     logger.info("When successful, logs will show 'Editor shortcut received' and toolbox state")
     logger.info("Open the packet debugger with Ctrl+K, then search 'runtime debugger'")
+    logger.info("Workflow Pack is enabled; select a workflow node to edit/run it")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)
     return result

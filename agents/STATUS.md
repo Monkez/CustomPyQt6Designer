@@ -306,7 +306,22 @@ Updated: 2026-08-09
   timeline, details and controls; breakpoint badges render directly on canvas.
   Headless coverage includes 1,000 concurrent tickets and offscreen QA captures
   two paused messages plus a frozen packet at a splitter graph.
-- The automated suite contains 197 tests and covers all 36 public
+- `MC-RUNTIME-WORKFLOW-001` adds the opt-in 29-component Workflow Pack and a
+  deterministic Qt-free executor. Source/Sink boundaries, routing, timing and
+  logic components compile from the portable document and support logical-time
+  run/step/pause/resume/cancel, custom node/type handlers, bounded trace and
+  cycle guards. Canvas projection adds transient node states, optional packet
+  visualization, workflow signals, context/command actions, a dedicated
+  Inspector card and a Workflow tab in Runtime Debugger. The demo runs a
+  Source → Transform → Sink graph.
+- `MC-EDITOR-PANE-005` completes another native Windows polish pass. Every pane
+  number field now owns two compact borderless step buttons, eliminating the
+  platform divider lines shown at non-default DPI. The five-tab segmented bar
+  has balanced inset spacing, explicit selected icon color and a flatter active
+  capsule; card title clearance, JSON fields and workflow state chips follow the
+  same warm-white/coral/teal visual system. Offscreen visual QA covers the full
+  pane and Position / size card at 438×720.
+- The automated suite contains 204 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

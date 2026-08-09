@@ -25,6 +25,26 @@ from .packet_runtime import (
     PacketRuntime,
     RuntimeTraceEvent,
 )
+from .workflow import (
+    WORKFLOW_COMPONENT_TYPES,
+    WORKFLOW_TERMINAL_STATES,
+    WorkflowConnector,
+    WorkflowContext,
+    WorkflowEmission,
+    WorkflowExecutor,
+    WorkflowGraph,
+    WorkflowNode,
+    WorkflowNodeResult,
+    WorkflowRunResult,
+    WorkflowTraceEvent,
+)
+from .workflow_components import (
+    WORKFLOW_COMPONENT_DEFINITIONS,
+    WORKFLOW_PLUGIN_ID,
+    WORKFLOW_PLUGIN_VERSION,
+    register_workflow_components,
+    workflow_component_definitions,
+)
 
 from .models import (
     DOCUMENT_FORMAT,
@@ -149,6 +169,20 @@ __all__ = [
     "SnapRect",
     "SnapResult",
     "TERMINAL_MESSAGE_STATES",
+    "WORKFLOW_COMPONENT_DEFINITIONS",
+    "WORKFLOW_COMPONENT_TYPES",
+    "WORKFLOW_PLUGIN_ID",
+    "WORKFLOW_PLUGIN_VERSION",
+    "WORKFLOW_TERMINAL_STATES",
+    "WorkflowConnector",
+    "WorkflowContext",
+    "WorkflowEmission",
+    "WorkflowExecutor",
+    "WorkflowGraph",
+    "WorkflowNode",
+    "WorkflowNodeResult",
+    "WorkflowRunResult",
+    "WorkflowTraceEvent",
     "create_default_element_registry",
     "atomic_write_json",
     "backup_path",
@@ -189,4 +223,6 @@ __all__ = [
     "DocumentMigrationResult",
     "sha256_file",
     "verify_asset_manifest",
+    "register_workflow_components",
+    "workflow_component_definitions",
 ]

@@ -402,6 +402,69 @@ canvas.connectPorts(splitter, "out-2", "monitor-b", "in")
 canvas.connectPorts(splitter, "out-3", "archive", "in")
 ```
 
+## Workflow component pack và executor
+
+Workflow Pack là bộ 29 component opt-in, vì vậy palette mặc định vẫn gọn. Gọi
+`enableWorkflowComponents()` để thêm bốn nhóm Boundaries, Routing, Timing và Logic.
+Mỗi component dùng typed ports, ID ổn định và cấu hình JSON portable trong field
+`workflow`; document không lưu callable hay tên module Python.
+
+```python
+canvas.enableWorkflowComponents()
+
+source = canvas.addWorkflowComponent("source", 0, 0, element_id="source")
+transform = canvas.addWorkflowComponent("transform", 260, 0, element_id="scale")
+sink = canvas.addWorkflowComponent("sink", 520, 0, element_id="sink")
+
+canvas.connectPorts(source, "out", transform, "in")
+canvas.connectPorts(transform, "out", sink, "in")
+canvas.setWorkflowConfig(transform, operation="scale", value=1.5)
+
+result = canvas.runWorkflow(
+    source,
+    42,
+    metadata={"topic": "telemetry"},
+    visualize=True,
+)
+print(result["outputs"][sink])  # [63.0]
+```
+
+Các component hiện có:
+
+- Boundaries: Source, Sink, Input/Output interface và Error handler;
+- Routing: Junction, Reroute, Merge, Splitter, Switch, Router, Multiplexer,
+  Demultiplexer và Bus;
+- Timing: Timer, Delay, Queue, Buffer, Throttle, Debounce, Retry và Rate limiter;
+- Logic: Gate, Compare, Filter, Transform, Map, Counter và State machine.
+
+Executor thuần Python dùng logical time và hàng đợi deterministic, nên Delay,
+Throttle, Debounce và Retry chạy/test được mà không phụ thuộc timer Qt. Cùng document
+có thể chạy headless bằng `WorkflowGraph`/`WorkflowExecutor`, hoặc chạy qua canvas để
+node hiện badge trạng thái và connector minh họa token bằng packet animation. Runtime
+state, trace, payload và output đều transient, không làm document dirty.
+
+Inspector của workflow node có card **Workflow runtime** riêng. JSON thay đổi được
+auto-apply và Undo/Redo như property khác; các nút Run here, Step và Debugger cho phép
+thử graph ngay tại chỗ. Runtime Debugger có tab Workflow hiển thị timeline theo thứ
+tự sequence. Các signal `workflowTraceEvent(dict)`,
+`workflowNodeStateChanged(str, str)` và `workflowFinished(dict)` cho phép ứng dụng host
+xây status panel riêng.
+
+```python
+executor = canvas.createWorkflowExecutor(handlers={"custom-node": my_handler})
+token = executor.start("source", {"value": 10})
+canvas.stepWorkflow()
+canvas.runActiveWorkflow()
+canvas.pauseWorkflow()
+canvas.resumeWorkflow()
+canvas.cancelWorkflow()
+```
+
+Custom handler trả payload thường, hoặc `WorkflowNodeResult` khi cần phát ra nhiều
+port, delay hay failure edge rõ ràng. Cấu hình Queue/Buffer và Timer ở milestone này
+là nền tảng deterministic; backpressure nhiều producer và recurring wall-clock timer
+sẽ được bổ sung trong runtime nâng cao.
+
 ## Node có nhiều port
 
 Mỗi node có thể có số lượng port tùy ý. Port có ID ổn định và một trong ba mode:

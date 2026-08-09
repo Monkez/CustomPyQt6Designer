@@ -277,6 +277,24 @@ The 1,000-concurrent-ticket headless scenario is part of the unit suite. Next:
 workflow component definitions/executor, replay, aggregate link metrics and
 failure-edge routing.
 
+### Workflow execution progress — 2026-08-09
+
+`MC-RUNTIME-WORKFLOW-001` implements the Qt-free graph compiler/executor and the
+29-component opt-in Workflow Pack. Declarative routing, timing and logic nodes,
+custom handler boundaries, logical-time stepping, trace and cycle guards are
+covered headlessly. `MonkezCanva` exposes lifecycle APIs/signals, transient node
+badges, packet visualization, context/command actions, a conditional Inspector
+card and the Workflow tab in Runtime Debugger. The demo enables the pack and
+runs a Source → Transform → Sink example.
+
+Next runtime slices: recurring timer scheduling, bounded queue/backpressure,
+replay fixtures, link metrics and explicit workflow failure-edge conventions.
+
+`MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
+with owned borderless steppers. It also refines the five-tab segmented bar,
+selected icon color, field focus states, card title clearance and JSON editor
+styling. Visual QA targets the full 438×720 pane and Position / size card.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:
