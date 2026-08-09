@@ -253,7 +253,15 @@ validated A3/A4/A5/Letter/Legal page configuration with native Page Setup and
 Print Preview. Qt-free deterministic DOT and constrained Mermaid exporters keep
 stable IDs, labels, component shapes, ports, arrow direction and nested-selection
 semantics. Floatbar, context menus, Ctrl+K, public APIs and demo diagnostics use
-the same implementation. DOT import remains the next graph-exchange slice.
+the same implementation.
+
+Completed slice (2026-08-09): `MC-ECOSYSTEM-EXCHANGE-002` adds a constrained,
+Qt-free DOT importer with bounded input/object sizes, deterministic fallback
+layout and actionable parser errors. The canvas adapter remaps colliding IDs,
+restores endpoint ports and known component packs, degrades unknown types safely,
+places the graph at a requested point or viewport center and can wrap it as one
+reusable subflow. Each successful import is one Undo command and is available
+through the blank-canvas menu, Ctrl+K, public API and demo diagnostics.
 
 ## Cross-phase quality gates
 

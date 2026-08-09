@@ -7,15 +7,19 @@ They never mutate the source document and can be used in headless tooling.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Mapping
 
+from .auto_layout import LayoutEdge, LayoutNode, LayoutOptions, layout_graph
 from .models import CanvasDocument
 
 
 GRAPH_DIRECTIONS = ("TB", "TD", "BT", "LR", "RL")
 EXPORT_PAGE_SIZES = ("A3", "A4", "A5", "LETTER", "LEGAL")
 EXPORT_PAGE_ORIENTATIONS = ("portrait", "landscape")
+MAX_DOT_BYTES = 5 * 1024 * 1024
+MAX_DOT_OBJECTS = 10_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +72,26 @@ class GraphSelection:
     elements: tuple[Mapping[str, Any], ...]
     connectors: tuple[Mapping[str, Any], ...]
     object_ids: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class DotImportResult:
+    """Validated portable records produced by the constrained DOT parser."""
+
+    name: str
+    directed: bool
+    elements: tuple[Mapping[str, Any], ...]
+    connectors: tuple[Mapping[str, Any], ...]
+    warnings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "directed": self.directed,
+            "elements": [dict(record) for record in self.elements],
+            "connectors": [dict(record) for record in self.connectors],
+            "warnings": list(self.warnings),
+        }
 
 
 def _plain_document(document: CanvasDocument | Mapping[str, Any]) -> dict[str, Any]:
@@ -264,3 +288,406 @@ def export_mermaid(
         label_part = "" if label == str(connector["id"]) else f'|"{_mermaid_text(label)}"|'
         lines.append(f"  {aliases[source]} {operator}{label_part} {aliases[target]}")
     return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True, slots=True)
+class _DotToken:
+    kind: str
+    value: str
+    offset: int
+
+
+def _dot_tokens(value: bytes | str) -> tuple[_DotToken, ...]:
+    if isinstance(value, bytes):
+        if len(value) > MAX_DOT_BYTES:
+            raise ValueError("DOT input is too large")
+        text = value.decode("utf-8-sig")
+    else:
+        text = str(value)
+        if len(text.encode("utf-8")) > MAX_DOT_BYTES:
+            raise ValueError("DOT input is too large")
+        text = text.removeprefix("\ufeff")
+    result: list[_DotToken] = []
+    index = 0
+    punctuation = "{}[];,=:\n"
+    while index < len(text):
+        character = text[index]
+        if character.isspace():
+            index += 1
+            continue
+        if character == "#":
+            index = text.find("\n", index)
+            if index < 0:
+                break
+            continue
+        if text.startswith("//", index):
+            index = text.find("\n", index + 2)
+            if index < 0:
+                break
+            continue
+        if text.startswith("/*", index):
+            closing = text.find("*/", index + 2)
+            if closing < 0:
+                raise ValueError(f"Unterminated DOT comment at offset {index}")
+            index = closing + 2
+            continue
+        if text.startswith("->", index) or text.startswith("--", index):
+            result.append(_DotToken("edge", text[index : index + 2], index))
+            index += 2
+            continue
+        if character in punctuation:
+            if character != "\n":
+                result.append(_DotToken(character, character, index))
+            index += 1
+            continue
+        if character == '"':
+            start = index
+            index += 1
+            decoded: list[str] = []
+            while index < len(text) and text[index] != '"':
+                if text[index] == "\\":
+                    index += 1
+                    if index >= len(text):
+                        raise ValueError(f"Unterminated DOT string at offset {start}")
+                    escaped = text[index]
+                    decoded.append({"n": "\n", "r": "\r", "t": "\t"}.get(escaped, escaped))
+                else:
+                    decoded.append(text[index])
+                index += 1
+            if index >= len(text):
+                raise ValueError(f"Unterminated DOT string at offset {start}")
+            result.append(_DotToken("id", "".join(decoded), start))
+            index += 1
+            continue
+        if character == "<":
+            raise ValueError(
+                f"HTML-like DOT labels are not supported at offset {index}"
+            )
+        start = index
+        while index < len(text):
+            if text[index].isspace() or text[index] in punctuation + '"<':
+                break
+            if text.startswith("->", index) or text.startswith("--", index):
+                break
+            index += 1
+        if index == start:
+            raise ValueError(f"Unsupported DOT token at offset {index}: {text[index]!r}")
+        result.append(_DotToken("id", text[start:index], start))
+        if len(result) > MAX_DOT_OBJECTS * 32:
+            raise ValueError("DOT input contains too many tokens")
+    result.append(_DotToken("eof", "", len(text)))
+    return tuple(result)
+
+
+class _DotParser:
+    def __init__(self, tokens: tuple[_DotToken, ...]) -> None:
+        self.tokens = tokens
+        self.index = 0
+        self.directed = True
+        self.name = "Imported DOT"
+        self.graph_attributes: dict[str, str] = {}
+        self.node_defaults: dict[str, str] = {}
+        self.edge_defaults: dict[str, str] = {}
+        self.nodes: OrderedDict[str, dict[str, str]] = OrderedDict()
+        self.edges: list[tuple[tuple[str, str], tuple[str, str], dict[str, str], str]] = []
+
+    @property
+    def current(self) -> _DotToken:
+        return self.tokens[self.index]
+
+    def _advance(self) -> _DotToken:
+        token = self.current
+        self.index += 1
+        return token
+
+    def _accept(self, kind: str, value: str = "") -> _DotToken | None:
+        token = self.current
+        if token.kind != kind or value and token.value.casefold() != value.casefold():
+            return None
+        self.index += 1
+        return token
+
+    def _require(self, kind: str, value: str = "") -> _DotToken:
+        token = self._accept(kind, value)
+        if token is None:
+            expectation = value or kind
+            raise ValueError(
+                f"Expected {expectation!r} at DOT offset {self.current.offset}, "
+                f"found {self.current.value or self.current.kind!r}"
+            )
+        return token
+
+    def _identifier(self) -> str:
+        return self._require("id").value
+
+    def _attributes(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        while self._accept("[") is not None:
+            while self._accept("]") is None:
+                if self.current.kind == "eof":
+                    raise ValueError("Unterminated DOT attribute list")
+                key = self._identifier().strip().lower()
+                value = "true"
+                if self._accept("=") is not None:
+                    value = self._identifier()
+                if key:
+                    result[key] = value
+                self._accept(",")
+                self._accept(";")
+        return result
+
+    def _endpoint(self) -> tuple[str, str]:
+        node_id = self._identifier().strip()
+        if not node_id:
+            raise ValueError("DOT node IDs cannot be empty")
+        port_id = ""
+        if self._accept(":") is not None:
+            port_id = self._identifier().strip()
+            if self._accept(":") is not None:
+                self._identifier()  # compass point, deliberately ignored
+        self.nodes.setdefault(node_id, dict(self.node_defaults))
+        return node_id, port_id
+
+    def parse(self) -> None:
+        if self.current.kind == "id" and self.current.value.casefold() == "strict":
+            self._advance()
+        graph_kind = self._identifier().casefold()
+        if graph_kind not in {"graph", "digraph"}:
+            raise ValueError("DOT input must start with graph or digraph")
+        self.directed = graph_kind == "digraph"
+        if self.current.kind == "id":
+            self.name = self._identifier().strip() or self.name
+        self._require("{")
+        statements = 0
+        while self._accept("}") is None:
+            if self.current.kind == "eof":
+                raise ValueError("Unterminated DOT graph")
+            if self._accept(";") is not None or self._accept(",") is not None:
+                continue
+            statements += 1
+            if statements > MAX_DOT_OBJECTS * 4:
+                raise ValueError("DOT input contains too many statements")
+            if self.current.kind == "id" and self.current.value.casefold() == "subgraph":
+                raise ValueError(
+                    f"DOT subgraphs are not supported at offset {self.current.offset}"
+                )
+            if self.current.kind == "id" and self.current.value.casefold() in {
+                "graph",
+                "node",
+                "edge",
+            }:
+                target = self._identifier().casefold()
+                attributes = self._attributes()
+                if not attributes:
+                    raise ValueError(f"DOT {target} defaults require an attribute list")
+                if target == "graph":
+                    self.graph_attributes.update(attributes)
+                elif target == "node":
+                    self.node_defaults.update(attributes)
+                else:
+                    self.edge_defaults.update(attributes)
+                self._accept(";")
+                continue
+            first = self._endpoint()
+            if self._accept("=") is not None:
+                self.nodes.pop(first[0], None)
+                self.graph_attributes[first[0].lower()] = self._identifier()
+                self._accept(";")
+                continue
+            edge_token = self._accept("edge")
+            if edge_token is not None:
+                endpoints = [first, self._endpoint()]
+                operators = [edge_token.value]
+                while (edge_token := self._accept("edge")) is not None:
+                    operators.append(edge_token.value)
+                    endpoints.append(self._endpoint())
+                attributes = {**self.edge_defaults, **self._attributes()}
+                for index, operator in enumerate(operators):
+                    self.edges.append(
+                        (endpoints[index], endpoints[index + 1], dict(attributes), operator)
+                    )
+            else:
+                self.nodes[first[0]].update(self._attributes())
+            self._accept(";")
+        self._accept(";")
+        self._require("eof")
+        if len(self.nodes) + len(self.edges) > MAX_DOT_OBJECTS:
+            raise ValueError("DOT input contains too many graph objects")
+
+
+def _dot_float(
+    value: Any,
+    default: float,
+    *,
+    minimum: float = -1e9,
+    maximum: float = 1e9,
+) -> float:
+    try:
+        return max(minimum, min(maximum, float(str(value).rstrip("!"))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _dot_position(value: str) -> tuple[float, float] | None:
+    parts = str(value).rstrip("!").split(",")
+    if len(parts) < 2:
+        return None
+    try:
+        return float(parts[0]), -float(parts[1])
+    except ValueError:
+        return None
+
+
+def _dot_element_type(attributes: Mapping[str, str]) -> str:
+    declared = str(attributes.get("monkez_type", "")).strip().lower()
+    if declared and declared != "connector":
+        return declared
+    shape = str(attributes.get("shape", "box")).lower()
+    return {
+        "diamond": "diamond",
+        "ellipse": "ellipse",
+        "circle": "ellipse",
+        "oval": "ellipse",
+        "plaintext": "text",
+        "none": "text",
+    }.get(shape, "rectangle")
+
+
+def import_dot(value: bytes | str) -> DotImportResult:
+    """Parse a safe DOT subset into portable MonkezCanva element records.
+
+    Supported input covers ordinary node/edge statements, chained edges,
+    quoted IDs, graph/node/edge defaults, endpoint ports and the attributes
+    emitted by :func:`export_dot`. HTML labels, subgraphs and executable or
+    external Graphviz features are deliberately rejected.
+    """
+
+    parser = _DotParser(_dot_tokens(value))
+    parser.parse()
+    warnings: list[str] = []
+    edge_records: list[dict[str, Any]] = []
+    occupied_ids = set(parser.nodes)
+    edge_counter = 0
+
+    def allocate_edge_id(requested: str) -> str:
+        nonlocal edge_counter
+        base = requested.strip()
+        if not base:
+            edge_counter += 1
+            base = f"edge-{edge_counter}"
+        candidate = base
+        suffix = 2
+        while candidate in occupied_ids:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        occupied_ids.add(candidate)
+        return candidate
+
+    for source, target, attributes, operator in parser.edges:
+        expected_operator = "->" if parser.directed else "--"
+        if operator != expected_operator:
+            graph_kind = "digraph" if parser.directed else "graph"
+            raise ValueError(
+                f"DOT {graph_kind} edges must use {expected_operator!r}, "
+                f"found {operator!r}"
+            )
+        direction = str(attributes.get("dir", "forward" if parser.directed else "none")).lower()
+        arrow_start = direction in {"back", "both"}
+        arrow_end = direction in {"forward", "both"}
+        record: dict[str, Any] = {
+            "id": allocate_edge_id(str(attributes.get("id", ""))),
+            "type": "connector",
+            "source": source[0],
+            "target": target[0],
+            "sourcePort": str(attributes.get("monkez_source_port", source[1])),
+            "targetPort": str(attributes.get("monkez_target_port", target[1])),
+            "arrowStart": arrow_start,
+            "arrowEnd": arrow_end,
+            "metadata": {"dotAttributes": dict(attributes), "dotOperator": operator},
+        }
+        if attributes.get("label"):
+            record["label"] = attributes["label"]
+        if attributes.get("color"):
+            record["color"] = attributes["color"]
+        if attributes.get("penwidth"):
+            record["lineWidth"] = _dot_float(
+                attributes["penwidth"], 2.0, minimum=0.5, maximum=50.0
+            )
+        style = str(attributes.get("style", "")).lower()
+        if "dashed" in style:
+            record["lineStyle"] = "dash"
+        elif "dotted" in style:
+            record["lineStyle"] = "dot"
+        edge_records.append(record)
+
+    element_records: list[dict[str, Any]] = []
+    positioned: set[str] = set()
+    for node_id, attributes in parser.nodes.items():
+        width = _dot_float(
+            attributes.get("width"),
+            120.0 / 72.0,
+            minimum=24.0 / 72.0,
+            maximum=10_000.0 / 72.0,
+        ) * 72.0
+        height = _dot_float(
+            attributes.get("height"),
+            72.0 / 72.0,
+            minimum=24.0 / 72.0,
+            maximum=10_000.0 / 72.0,
+        ) * 72.0
+        position = _dot_position(str(attributes.get("pos", "")))
+        record: dict[str, Any] = {
+            "id": node_id,
+            "type": _dot_element_type(attributes),
+            "x": position[0] if position else 0.0,
+            "y": position[1] if position else 0.0,
+            "width": width,
+            "height": height,
+            "text": str(attributes.get("label", node_id)),
+            "metadata": {"dotAttributes": dict(attributes)},
+        }
+        if position is not None:
+            positioned.add(node_id)
+        if attributes.get("color"):
+            record["color"] = attributes["color"]
+        if attributes.get("fillcolor") and attributes.get("fillcolor") != "#ffffff":
+            record["background"] = attributes["fillcolor"]
+        if attributes.get("fontcolor"):
+            record["textColor"] = attributes["fontcolor"]
+        element_records.append(record)
+
+    if element_records and len(positioned) != len(element_records):
+        direction = {
+            "LR": "right",
+            "RL": "left",
+            "TB": "down",
+            "BT": "up",
+        }.get(str(parser.graph_attributes.get("rankdir", "LR")).upper(), "right")
+        layout = layout_graph(
+            [
+                LayoutNode(
+                    str(record["id"]),
+                    float(record["x"]),
+                    float(record["y"]),
+                    float(record["width"]),
+                    float(record["height"]),
+                    str(record["id"]) in positioned,
+                )
+                for record in element_records
+            ],
+            [LayoutEdge(str(record["source"]), str(record["target"])) for record in edge_records],
+            options=LayoutOptions(direction=direction, preserve_center=False),
+        )
+        for record in element_records:
+            if str(record["id"]) not in positioned:
+                record["x"], record["y"] = layout.positions[str(record["id"])]
+        if positioned:
+            warnings.append("Missing DOT positions were filled with deterministic layout")
+
+    return DotImportResult(
+        parser.name,
+        parser.directed,
+        tuple(element_records),
+        tuple(edge_records),
+        tuple(warnings),
+    )

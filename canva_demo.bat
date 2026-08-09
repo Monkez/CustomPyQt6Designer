@@ -31,6 +31,8 @@ echo [TIP] Select the KPI, Tank or Service to edit its component-specific proper
 echo [TIP] Right-click blank canvas ^> Component packs, or Ctrl+K, to enable/disable packs
 echo [TIP] Use the export icon on the floating toolbar for PNG, transparent PNG, SVG or PDF
 echo [TIP] Ctrl+K, search "export" for selection, DOT, Mermaid, page setup and print preview
+echo [TIP] Right-click blank canvas or Ctrl+K to import a Graphviz DOT graph
+echo [TIP] "Import DOT as subflow" wraps the imported graph as one reusable group
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

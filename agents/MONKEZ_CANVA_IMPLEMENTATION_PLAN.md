@@ -325,8 +325,14 @@ Print Preview, floatbar/context/Ctrl+K discovery and `exportCompleted` diagnosti
 share the same API. The Qt-free `exchange.py` layer adds nested-scope resolution,
 deterministic DOT output and constrained Mermaid flowcharts with safe escaping.
 
-Next: constrained DOT import, reusable document templates, public component SDK
-plus example plugin, then document diff/diagnostics reports.
+`MC-ECOSYSTEM-EXCHANGE-002` completes constrained DOT import and import-as-subflow.
+The Qt-free parser bounds input, rejects executable/complex Graphviz constructs,
+restores exported semantics and deterministically lays out missing positions. The
+widget adapter remaps collisions, resolves known packs, infers endpoint ports and
+commits the imported graph through one Undo command.
+
+Next: reusable document templates, public component SDK plus example plugin,
+then document diff/diagnostics reports.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,

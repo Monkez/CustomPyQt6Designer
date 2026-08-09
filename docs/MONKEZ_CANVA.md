@@ -751,6 +751,13 @@ canvas.exportMermaid("output/pipeline.mmd", direction="LR")
 from monkez_pyqt6.monkez_canva import export_dot, export_mermaid
 dot_text = export_dot(canvas.documentModel(), ["source", "transform", "sink"])
 mermaid_text = export_mermaid(canvas.documentModel(), direction="TB")
+
+# Import at an exact top-left position, or omit x/y to center in the viewport.
+report = canvas.loadDot("input/pipeline.dot", x=120, y=80)
+subflow = canvas.importDot(dot_text, as_subflow=True, group_label="API pipeline")
+
+from monkez_pyqt6.monkez_canva import import_dot
+portable_result = import_dot(dot_text)  # Qt-free parse/validation only
 ```
 
 DOT giữ stable ID, component type, port ID, arrow direction, kích thước và vị trí.
@@ -759,6 +766,14 @@ escape nội dung để có thể nhúng trực tiếp vào Markdown. Khi export
 nhiều node, nested member và connector nội bộ được tự động đưa vào phạm vi.
 Các thao tác này có trong menu chuột phải và Ctrl+K; Page setup và Print preview
 dùng native Qt dialog với cùng một cấu hình trang trong phiên chạy.
+
+DOT import hỗ trợ tập con an toàn gồm node/edge, chained edge, quoted ID,
+graph/node/edge defaults, endpoint ports và các thuộc tính do MonkezCanva export.
+Subgraph, HTML-like label và tính năng cần chạy Graphviz bên ngoài bị từ chối.
+Importer giữ ID nếu có thể, tự đổi ID trùng một cách xác định, suy luận typed port,
+tự layout node thiếu `pos`, và gom toàn bộ thay đổi vào đúng một Undo command.
+Component pack gốc được tự bật khi type đã biết; type lạ hạ cấp thành generic node
+và được ghi trong `report["warnings"]` cùng `metadata.dotOriginalType`.
 
 ## Lưu và đọc tài liệu
 

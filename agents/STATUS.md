@@ -345,7 +345,13 @@ Updated: 2026-08-09
   floatbar, context menu, Ctrl+K, public APIs and demo diagnostics share the same
   pipeline. Offscreen visual QA exported a 1102×670 mixed software/dashboard/
   industrial scene with clean bounds, grid and connectors and no editor chrome.
-- The automated suite contains 222 tests and covers all 36 public
+- `MC-ECOSYSTEM-EXCHANGE-002` adds safe constrained DOT import and
+  import-as-subflow. A Qt-free bounded parser restores stable IDs, geometry,
+  typed endpoint ports, arrows and styles; missing positions use deterministic
+  layout. The widget remaps collisions, enables known native packs, degrades
+  unknown types with diagnostics and commits the complete graph as one Undo step.
+  Blank-canvas actions, Ctrl+K, public APIs and demo logs share the same path.
+- The automated suite contains 228 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

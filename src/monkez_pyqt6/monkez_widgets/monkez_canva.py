@@ -147,6 +147,7 @@ from monkez_pyqt6.monkez_canva import (
     evaluate_port_pair,
     export_dot,
     export_mermaid,
+    import_dot,
     normalize_port_record,
     validate_port_value,
     parallel_lane_offset,
@@ -2574,6 +2575,24 @@ class _CanvasCommandPalette(QDialog):
                     "export",
                     bool(canvas.elements()),
                     canvas.exportMermaidToDialog,
+                ),
+                (
+                    "import:dot",
+                    "Import Graphviz DOT",
+                    "Import",
+                    "graph exchange dot",
+                    "folder",
+                    writable,
+                    canvas.importDotFromDialog,
+                ),
+                (
+                    "import:dot-subflow",
+                    "Import DOT as reusable subflow",
+                    "Import",
+                    "graph exchange dot group",
+                    "folder",
+                    writable,
+                    lambda: canvas.importDotFromDialog(as_subflow=True),
                 ),
                 (
                     "print:preview",
@@ -6208,6 +6227,7 @@ class MonkezCanva(QWidget):
     dataSourceBound = pyqtSignal(str)
     componentPackChanged = pyqtSignal(str, bool)
     exportCompleted = pyqtSignal(str, str, str)
+    dotImported = pyqtSignal(dict)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -6752,6 +6772,18 @@ class MonkezCanva(QWidget):
             action(
                 "Import subflow template…",
                 self.importSubflowFromDialog,
+                enabled=writable,
+                icon="folder",
+            )
+            action(
+                "Import Graphviz DOT…",
+                self.importDotFromDialog,
+                enabled=writable,
+                icon="folder",
+            )
+            action(
+                "Import DOT as reusable subflow…",
+                lambda: self.importDotFromDialog(as_subflow=True),
                 enabled=writable,
                 icon="folder",
             )
@@ -11369,6 +11401,266 @@ class MonkezCanva(QWidget):
             "Mermaid (*.mmd *.mermaid);;Markdown (*.md)",
         )
         return str(self.exportMermaid(path, scope=normalized_scope)) if path else ""
+
+    def _resolve_dot_import_type(
+        self, type_id: str, warnings: list[str]
+    ) -> str:
+        requested = str(type_id).strip().lower()
+        if self._element_registry.definition(requested) is not None:
+            return requested
+        for pack in self.componentPacks():
+            if any(definition.type_id == requested for definition in pack.definitions):
+                self.enableComponentPack(pack.pack_id)
+                return requested
+        if any(
+            definition.type_id == requested
+            for definition in WORKFLOW_COMPONENT_DEFINITIONS
+        ):
+            self.enableWorkflowComponents()
+            return requested
+        warnings.append(
+            f"Unknown DOT component type {requested!r} was imported as a generic node"
+        )
+        return "node"
+
+    def importDot(
+        self,
+        value: bytes | str,
+        x: float | None = None,
+        y: float | None = None,
+        *,
+        as_subflow: bool = False,
+        group_label: str = "",
+    ) -> dict[str, Any]:
+        """Import constrained Graphviz DOT as one undoable graph operation.
+
+        IDs are retained when available and deterministically suffixed on
+        collision. ``x``/``y`` place the imported graph's top-left corner; when
+        omitted the graph is centered in the current viewport. Enabling
+        ``as_subflow`` wraps imported nodes in one reusable subflow frame.
+        """
+
+        self._ensure_writable()
+        parsed = import_dot(value)
+        if not parsed.elements:
+            raise ValueError("DOT input contains no nodes")
+        warnings = list(parsed.warnings)
+        occupied = set(self._elements) | set(self._connectors) | set(self._groups)
+        allocated = set(occupied)
+
+        def allocate(requested: str, suffix: str = "import") -> str:
+            base = str(requested).strip() or suffix
+            candidate = base
+            number = 2
+            while candidate in allocated:
+                candidate = f"{base}-{suffix}" if number == 2 else f"{base}-{suffix}-{number}"
+                number += 1
+            allocated.add(candidate)
+            return candidate
+
+        id_map = {
+            str(record["id"]): allocate(str(record["id"]))
+            for record in parsed.elements
+        }
+        prepared_connectors: list[dict[str, Any]] = []
+        for raw in parsed.connectors:
+            record = dict(raw)
+            record["id"] = allocate(str(record["id"]))
+            record["source"] = id_map[str(record["source"])]
+            record["target"] = id_map[str(record["target"])]
+            prepared_connectors.append(record)
+
+        port_roles: dict[tuple[str, str], set[str]] = defaultdict(set)
+        for connector in prepared_connectors:
+            if connector.get("sourcePort"):
+                port_roles[(str(connector["source"]), str(connector["sourcePort"]))].add(
+                    "output"
+                )
+            if connector.get("targetPort"):
+                port_roles[(str(connector["target"]), str(connector["targetPort"]))].add(
+                    "input"
+                )
+
+        source_records: list[dict[str, Any]] = []
+        for raw in parsed.elements:
+            record = dict(raw)
+            source_id = str(record["id"])
+            record["id"] = id_map[source_id]
+            original_type = str(record.get("type", "node"))
+            record["type"] = self._resolve_dot_import_type(original_type, warnings)
+            roles = {
+                port_id: modes
+                for (element_id, port_id), modes in port_roles.items()
+                if element_id == record["id"]
+            }
+            definition = self._element_registry.require(str(record["type"]))
+            if roles and "ports" not in definition.capabilities:
+                if record["type"] in {
+                    "text",
+                    "rectangle",
+                    "ellipse",
+                    "button",
+                    "diamond",
+                    "triangle",
+                }:
+                    record["type"] = "node"
+                    definition = self._element_registry.require("node")
+                else:
+                    for connector in prepared_connectors:
+                        if connector["source"] == record["id"]:
+                            connector["sourcePort"] = ""
+                        if connector["target"] == record["id"]:
+                            connector["targetPort"] = ""
+                    warnings.append(
+                        f"DOT ports on {source_id!r} were ignored because "
+                        f"component {record['type']!r} has no ports"
+                    )
+                    roles = {}
+            metadata = dict(record.get("metadata", {}))
+            if record["type"] != original_type:
+                metadata["dotOriginalType"] = original_type
+            record["metadata"] = metadata
+            prepared = definition.prepare_record(record)
+            if roles:
+                ports = [dict(port) for port in prepared.get("ports", ())]
+                known_ports = {str(port.get("id", "")) for port in ports}
+                for port_id, modes in roles.items():
+                    if port_id in known_ports:
+                        continue
+                    mode = next(iter(modes)) if len(modes) == 1 else "free"
+                    ports.append(
+                        {
+                            "id": port_id,
+                            "mode": mode,
+                            "side": (
+                                "right" if mode == "output" else "left" if mode == "input" else "bottom"
+                            ),
+                            "label": port_id,
+                            "dataType": "any",
+                            "maxConnections": 0,
+                        }
+                    )
+                prepared["ports"] = ports
+                prepared = definition.prepare_record(prepared)
+            source_records.append(prepared)
+
+        left = min(float(record.get("x", 0.0)) for record in source_records)
+        top = min(float(record.get("y", 0.0)) for record in source_records)
+        right = max(
+            float(record.get("x", 0.0)) + float(record.get("width", 120.0))
+            for record in source_records
+        )
+        bottom = max(
+            float(record.get("y", 0.0)) + float(record.get("height", 72.0))
+            for record in source_records
+        )
+        center = self._view.mapToScene(self._view.viewport().rect().center())
+        offset_x = (
+            float(x) - left if x is not None else center.x() - (left + right) / 2.0
+        )
+        offset_y = (
+            float(y) - top if y is not None else center.y() - (top + bottom) / 2.0
+        )
+        for record in source_records:
+            record["x"] = float(record.get("x", 0.0)) + offset_x
+            record["y"] = float(record.get("y", 0.0)) + offset_y
+        for connector in prepared_connectors:
+            connector["waypoints"] = [
+                [float(point[0]) + offset_x, float(point[1]) + offset_y]
+                for point in connector.get("waypoints", ())
+            ]
+
+        group_record: dict[str, Any] | None = None
+        if as_subflow:
+            imported_bounds = group_bounds(
+                (
+                    (
+                        float(record["x"]),
+                        float(record["y"]),
+                        float(record.get("width", 120.0)),
+                        float(record.get("height", 72.0)),
+                    )
+                    for record in source_records
+                )
+            )
+            label = str(group_label or parsed.name or "Imported DOT").strip()
+            safe_label = "-".join(part for part in label.lower().split() if part)
+            group_record = {
+                "id": allocate(safe_label or "dot-subflow", "group"),
+                "kind": "subflow",
+                "label": label,
+                "members": [str(record["id"]) for record in source_records],
+                "x": imported_bounds[0],
+                "y": imported_bounds[1],
+                "width": imported_bounds[2],
+                "height": imported_bounds[3],
+            }
+
+        def mutate(document: CanvasDocument) -> None:
+            for record in source_records:
+                document.add_element(record)
+            for record in prepared_connectors:
+                document.add_connector(record)
+            if group_record is not None:
+                document.add_group(group_record)
+
+        self._push_document_mutation(
+            mutate,
+            "Import DOT as subflow" if group_record is not None else "Import DOT graph",
+        )
+        selected = (
+            [str(group_record["id"])]
+            if group_record is not None
+            else [str(record["id"]) for record in source_records]
+        )
+        if self._edit_mode:
+            self.selectElements(selected)
+        report = {
+            "name": parsed.name,
+            "elements": [str(record["id"]) for record in source_records],
+            "connectors": [str(record["id"]) for record in prepared_connectors],
+            "group": str(group_record["id"]) if group_record is not None else "",
+            "idMap": id_map,
+            "warnings": warnings,
+        }
+        self.dotImported.emit(report)
+        self.diagnosticMessage.emit(
+            f"Imported DOT: {len(source_records)} nodes, "
+            f"{len(prepared_connectors)} connectors"
+            + (f", {len(warnings)} warning(s)" if warnings else "")
+        )
+        return report
+
+    def loadDot(
+        self,
+        path: str | Path,
+        x: float | None = None,
+        y: float | None = None,
+        *,
+        as_subflow: bool = False,
+        group_label: str = "",
+    ) -> dict[str, Any]:
+        """Load and import one UTF-8 Graphviz DOT file."""
+
+        source = Path(path).expanduser().resolve()
+        return self.importDot(
+            source.read_bytes(),
+            x,
+            y,
+            as_subflow=as_subflow,
+            group_label=group_label,
+        )
+
+    def importDotFromDialog(self, *, as_subflow: bool = False) -> dict[str, Any]:
+        """Choose a DOT file and import it at the current viewport center."""
+
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self.window(),
+            "Import Graphviz DOT as subflow" if as_subflow else "Import Graphviz DOT",
+            "",
+            "Graphviz DOT (*.dot *.gv);;All files (*)",
+        )
+        return self.loadDot(path, as_subflow=as_subflow) if path else {}
 
     def printTo(self, printer: QPrinter, *, scope: str = "scene") -> None:
         """Render the canvas onto a caller-owned ``QPrinter``."""

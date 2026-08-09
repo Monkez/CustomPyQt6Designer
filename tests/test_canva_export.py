@@ -139,6 +139,63 @@ class CanvasGraphicExportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Select at least one"):
                 self.canvas.exportSelection(Path(directory) / "empty.png")
 
+    def test_dot_import_is_atomic_collision_safe_typed_and_groupable(self) -> None:
+        self.canvas.setEditMode(True)
+        self.canvas.addElement("rectangle", element_id="api", x=-200, y=-100)
+        reports: list[dict] = []
+        self.canvas.dotImported.connect(reports.append)
+        dot = r'''
+            digraph "Imported pipeline" {
+                "mystery":out -> "api":in [id="entry", label="request"];
+                "api":out -> "db":in [id="persist", dir="both"];
+                "mystery" [label="External", monkez_type="vendor_unknown"];
+                "api" [label="API", monkez_type="soft_service"];
+                "db" [label="Orders", monkez_type="soft_database"];
+            }
+        '''
+
+        report = self.canvas.importDot(dot, 400, 180, as_subflow=True)
+
+        self.assertEqual(1, len(reports))
+        self.assertEqual("api-import", report["idMap"]["api"])
+        self.assertTrue(report["group"])
+        self.assertEqual([report["group"]], self.canvas.selectedObjectIds())
+        self.assertEqual("Import DOT as subflow", self.canvas.undoText())
+        self.assertTrue(any("vendor_unknown" in warning for warning in report["warnings"]))
+        self.assertTrue(self.canvas.componentPackEnabled("software"))
+        imported_api = self.canvas.element(report["idMap"]["api"])
+        imported_unknown = self.canvas.element(report["idMap"]["mystery"])
+        self.assertEqual("soft_service", imported_api.kind)
+        self.assertEqual("node", imported_unknown.kind)
+        self.assertEqual("vendor_unknown", imported_unknown.metadata["dotOriginalType"])
+        self.assertEqual("output", imported_unknown.port("out")["mode"])
+        self.assertGreaterEqual(imported_api.pos().x(), 400)
+        persist = self.canvas.connector(report["connectors"][1])
+        self.assertTrue(persist.arrow_start)
+        self.assertTrue(persist.arrow_end)
+        group = self.canvas.group(report["group"])
+        self.assertEqual("subflow", group.kind)
+        self.assertEqual(set(report["elements"]), set(group.members))
+
+        document_after = self.canvas.toJson(indent=None)
+        self.canvas.undo()
+        self.assertIsNone(self.canvas.element(report["idMap"]["api"]))
+        self.assertIsNone(self.canvas.group(report["group"]))
+        self.canvas.redo()
+        self.assertEqual(document_after, self.canvas.toJson(indent=None))
+
+        before_invalid = self.canvas.toJson(indent=None)
+        with self.assertRaisesRegex(ValueError, "subgraphs"):
+            self.canvas.importDot("digraph G { subgraph cluster { a; } }")
+        self.assertEqual(before_invalid, self.canvas.toJson(indent=None))
+
+        palette = _CanvasCommandPalette(self.canvas)
+        command_ids = {command[0] for command in palette._commands()}
+        palette.deleteLater()
+        self.assertTrue({"import:dot", "import:dot-subflow"}.issubset(command_ids))
+        menu_text = [action.text() for action in self.canvas.createContextMenu("").actions()]
+        self.assertTrue(any("Import Graphviz DOT" in text for text in menu_text))
+
 
 if __name__ == "__main__":
     unittest.main()

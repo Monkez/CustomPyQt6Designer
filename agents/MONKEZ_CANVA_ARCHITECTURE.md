@@ -399,6 +399,16 @@ consume this identical resolved scope, so headless automation and the visible
 editor cannot disagree about graph membership. Text escaping is format-specific;
 neither exporter executes templates or invokes an external process.
 
+DOT import uses the same module but remains a deliberately conservative parser,
+not a Graphviz execution boundary. It accepts at most 5 MiB and 10,000 graph
+objects, rejects subgraphs/HTML labels/mismatched edge operators, clamps geometry
+and stroke values, and emits plain portable records plus warnings. Missing
+positions pass through the deterministic auto-layout adapter. The Qt facade alone
+resolves registry types, enables known native packs, infers endpoint ports,
+performs collision-safe ID remapping and optionally creates a subflow group.
+Document insertion is precomputed before one history mutation, so a failed graph
+never leaves a partially imported document.
+
 `monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
 One render-state context temporarily hides excluded objects, clears selection and
 smart-guide artifacts, optionally suppresses background/grid painting, then

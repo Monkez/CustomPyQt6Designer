@@ -95,6 +95,16 @@ def main() -> int:
     canvas.exportCompleted.connect(
         lambda path, format_name, scope: logger.info("exportCompleted -> %s [%s/%s]", path, scope, format_name)
     )
+    canvas.dotImported.connect(
+        lambda report: logger.info(
+            "dotImported -> %s nodes=%s connectors=%s group=%s warnings=%s",
+            report["name"],
+            len(report["elements"]),
+            len(report["connectors"]),
+            report["group"] or "none",
+            len(report["warnings"]),
+        )
+    )
     canvas.enableWorkflowComponents()
     canvas.enableAllComponentPacks()
     canvas.setPersistenceKey("demo-workspace")

@@ -71,9 +71,11 @@ from .exchange import (
     EXPORT_PAGE_SIZES,
     GRAPH_DIRECTIONS,
     CanvasPageConfig,
+    DotImportResult,
     GraphSelection,
     export_dot,
     export_mermaid,
+    import_dot,
     normalize_page_config,
     select_graph,
 )
@@ -248,6 +250,7 @@ __all__ = [
     "EXPORT_PAGE_ORIENTATIONS",
     "EXPORT_PAGE_SIZES",
     "CanvasPageConfig",
+    "DotImportResult",
     "GraphSelection",
     "descendant_element_ids",
     "group_bounds",
@@ -281,6 +284,7 @@ __all__ = [
     "register_component_pack",
     "export_dot",
     "export_mermaid",
+    "import_dot",
     "normalize_page_config",
     "select_graph",
 ]
