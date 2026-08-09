@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QTabWidget,
     QToolButton,
     QSizePolicy,
     QVBoxLayout,
