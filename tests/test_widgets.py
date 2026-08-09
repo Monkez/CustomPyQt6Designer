@@ -1026,6 +1026,39 @@ class WidgetTests(unittest.TestCase):
         canvas.close()
         canvas.deleteLater()
 
+    def test_canva_control_pane_tabs_are_isolated_after_repeated_switches(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(900, 640)
+        canvas.addNode("Inspectable", element_id="pane-node")
+        canvas.show()
+        canvas.setEditMode(True)
+        canvas.selectElement("pane-node")
+        toolbox = canvas._toolbox
+        toolbox.resize(438, 720)
+        toolbox.show()
+        self.app.processEvents()
+
+        for current in (1, 0, 2, 3, 4, 1, 0):
+            toolbox._tabs.setCurrentIndex(current)
+            self.app.processEvents()
+            self.assertIs(toolbox._tabs.currentWidget(), toolbox._tab_pages[current])
+            for index, page in enumerate(toolbox._tab_pages):
+                self.assertEqual(index == current, page.isVisibleTo(toolbox))
+
+        # Regression: the Add page used to retain Inspector pixels through its
+        # transparent scroll viewport on Windows/fractional DPI displays.
+        self.assertTrue(toolbox._palette_scroll.viewport().testAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground
+        ))
+        self.assertTrue(toolbox._tab_pages[0].testAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground
+        ))
+        self.assertFalse(toolbox._tab_pages[1].isVisibleTo(toolbox))
+
+        canvas.setEditMode(False)
+        canvas.close()
+        canvas.deleteLater()
+
     def test_canva_search_palette_favorites_recent_and_commands(self) -> None:
         canvas = MonkezCanva()
         canvas.resize(900, 620)

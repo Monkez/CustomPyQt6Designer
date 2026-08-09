@@ -398,6 +398,13 @@ card. Advanced Inspector/View/Save sections default collapsed without persisting
 editor-only state into the canvas document. A repeatable 438×720 render script and
 widget regression test cover the approved compact hierarchy.
 
+`MC-EDITOR-PANE-008` hardens the frameless translucent Control Pane against stale
+page compositing on Windows and fractional DPI. Every tab/scroll viewport owns an
+opaque styled paint surface; one current-change path explicitly hides inactive
+pages, raises the active page and invalidates its geometry/paint. Regression tests
+cycle all five tabs repeatedly, and visual QA captures Inspector followed by Add
+at 100%, 150% and 200% scaling.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

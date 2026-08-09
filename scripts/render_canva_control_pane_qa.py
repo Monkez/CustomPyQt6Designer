@@ -54,6 +54,14 @@ def render(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not toolbox.grab().save(str(path)):
         raise RuntimeError(f"Could not save Control Pane QA image: {path}")
+    # Exercise the Windows/translucent-dialog regression path: Inspector first,
+    # then Add.  The second capture must contain only the Add page.
+    toolbox._tabs.setCurrentIndex(0)
+    app.processEvents()
+    app.processEvents()
+    switched_path = path.with_name(f"{path.stem}-add-after-inspect{path.suffix}")
+    if not toolbox.grab().save(str(switched_path)):
+        raise RuntimeError(f"Could not save switched-tab QA image: {switched_path}")
     canvas.close()
 
 

@@ -63,6 +63,13 @@ phiên editor; action ngữ cảnh như **Open data bindings** tự mở đúng 
 đúng card. Việc đóng/mở chỉ thay đổi bố cục, không ghi document và không kích hoạt
 Inspector auto-apply.
 
+Trên Windows, Control Pane dùng cửa sổ trong suốt để giữ shadow mềm. Mỗi tab
+và viewport cuộn vì vậy có một paint surface nền riêng; khi chuyển tab, editor
+ẩn tất cả page không active, raise page active và yêu cầu vẽ lại. Cơ chế này
+ngăn nội dung Inspector/Layers cũ còn lưu trên tab Add ở mức scale 100–200%.
+Script `scripts/render_canva_control_pane_qa.py` luôn chụp cả Inspector và ca
+chuyển Inspector → Add để kiểm tra lỗi chồng hình.
+
 ## Hiệu năng scene lớn và LOD
 
 Tab **View > Rendering** có ba chế độ:

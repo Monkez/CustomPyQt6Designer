@@ -2,7 +2,7 @@
 
 Updated: 2026-08-09
 
-- Current release gate: 268 tests and 54 subtests pass; Ruff is clean; wheel and
+- Current release gate: 269 tests and 54 subtests pass; Ruff is clean; wheel and
   sdist build successfully on the project Python 3.11 environment.
 
 - `MC-CORE-PERFORMANCE-002` adds adaptive Full/Compact/Overview LOD, public
@@ -387,6 +387,11 @@ Updated: 2026-08-09
   diagnostics and unloads factories without deleting records. The repository
   includes a polished Telemetry plugin with native renderer, typed output and
   auto-apply Inspector, registered by `canva_demo.bat`.
+- `MC-EDITOR-PANE-008` fixes stale Control Pane page compositing on translucent
+  Windows tool windows. Tab pages and scroll viewports now paint their own warm
+  background, inactive pages are explicitly hidden, and the active page is raised
+  and repainted. A repeated five-tab regression and Inspect-to-Add visual capture
+  cover the exact overlap reported at normal and high-DPI scale.
 - `MC-EDITOR-PANE-006` replaces the raised selected-tab block with a flat,
   equal-height tab row, subtle baseline and coral active underline. Icons and
   labels retain clear active/hover states without shifting pane geometry.

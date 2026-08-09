@@ -3860,6 +3860,7 @@ class _CanvasEditorToolbox(QDialog):
             ("grid", "View"),
             ("save", "Save"),
         )
+        self._tab_pages: list[QWidget] = []
         for icon_name, label in self._tab_icons:
             page = {
                 "Add": self._elements_tab,
@@ -3868,9 +3869,23 @@ class _CanvasEditorToolbox(QDialog):
                 "View": self._view_tab,
                 "Save": self._save_tab,
             }[label]()
+            # This dialog is translucent on Windows.  Transparent tab pages can
+            # therefore retain pixels from the previously visible page after a
+            # tab switch (especially with fractional DPI scaling).  Give every
+            # page its own styled paint surface and keep explicit ownership of
+            # page visibility so stale Inspector controls never bleed into Add.
+            page.setObjectName("canvasEditorPage")
+            page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            page.setAutoFillBackground(True)
+            for scroll in page.findChildren(QScrollArea):
+                viewport = scroll.viewport()
+                viewport.setObjectName("canvasEditorViewport")
+                viewport.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+                viewport.setAutoFillBackground(True)
+            self._tab_pages.append(page)
             self._tabs.addTab(page, _canvas_icon(icon_name), label)
-        self._tabs.currentChanged.connect(self._sync_tab_icons)
-        self._sync_tab_icons(0)
+        self._tabs.currentChanged.connect(self._sync_active_tab)
+        self._sync_active_tab(0)
         content.addWidget(self._tabs, 1)
         footer = QFrame()
         footer.setObjectName("canvasPaneFooter")
@@ -3911,10 +3926,25 @@ class _CanvasEditorToolbox(QDialog):
         self._sync_modified_status(canvas.isDocumentModified())
         self._sync_read_only_status(canvas.isReadOnly(), canvas.readOnlyReason())
 
-    def _sync_tab_icons(self, current: int) -> None:
+    def _sync_active_tab(self, current: int) -> None:
+        """Synchronize tab chrome and force a clean page repaint on Windows."""
+
         for index, (icon_name, _label) in enumerate(self._tab_icons):
             color = "#ef5d50" if index == current else "#64707a"
             self._tabs.setTabIcon(index, _canvas_icon(icon_name, color))
+        for index, page in enumerate(self._tab_pages):
+            page.setVisible(index == current)
+        page = self._tabs.widget(current) if 0 <= current < self._tabs.count() else None
+        if page is not None:
+            page.raise_()
+            page.updateGeometry()
+            page.update()
+        self._tabs.update()
+
+    def _sync_tab_icons(self, current: int) -> None:
+        """Compatibility alias for integrations that refreshed tab icons."""
+
+        self._sync_active_tab(current)
 
     @staticmethod
     def _pane_stylesheet() -> str:
@@ -3992,8 +4022,10 @@ class _CanvasEditorToolbox(QDialog):
             border-radius: 10px; padding: 9px;
         }
         QTabWidget#canvasEditorTabs::pane {
-            border: none; background: transparent; top: 0px;
+            border: none; background: #fcfbf9; top: 0px;
         }
+        QWidget#canvasEditorPage { background: #fcfbf9; }
+        QWidget#canvasEditorViewport { background: #fcfbf9; }
         QTabBar#canvasEditorTabBar {
             background: transparent; border: none;
             border-bottom: 1px solid #e8e3dd; border-radius: 0px;
