@@ -1,5 +1,19 @@
 # MonkezCanva
 
+## Project scaffolding
+
+Create a portable PyQt6 project with the bundled application skeleton:
+
+```bat
+monkez_pyqt6 init -n telemetry_dashboard -python 3.11
+```
+
+The command creates `main.py`, `assets/qt-uis`, `images`, `icons`, `logs`,
+`configs`, `modules`, `config.json`, and `setup.bat`/`run.bat`/`build.bat`.
+The first run creates `.venv` and installs the package automatically. Use
+`--no-setup` when generating files in CI or when the environment is prepared
+separately.
+
 ## Release 0.6.0
 
 The Designer plugin is included in the package and exposes `MonkezCanva` in the

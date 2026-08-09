@@ -347,8 +347,15 @@ def verify_designer_plugins(
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0].lower() == "init":
+        raw_argv = ["--init", *raw_argv[1:]]
     parser = argparse.ArgumentParser(description="Launch Qt Designer with Custom PyQt6 Designer plugins.")
     parser.add_argument("ui_file", nargs="?", help="Optional .ui file to open.")
+    parser.add_argument("--init", dest="init_project", action="store_true", help="Create a Monkez PyQt6 project.")
+    parser.add_argument("-n", "--name", help="Project name used with --init.")
+    parser.add_argument("-python", "--python", dest="python_version", default="3.11", help="Python version for --init.")
+    parser.add_argument("--no-setup", action="store_true", help="Create the project without running setup.bat.")
     parser.add_argument("--version", action="store_true", help="Print the installed package version.")
     parser.add_argument(
         "--doctor",
@@ -370,7 +377,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Launch Designer briefly and fail unless all bundled custom plugins load.",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
+
+    if args.init_project:
+        from .project import create_project
+
+        project_name = args.name or "monkez_project"
+        target = Path.cwd() / project_name
+        try:
+            created = create_project(
+                target,
+                name=project_name,
+                python_version=args.python_version,
+                run_setup=not args.no_setup,
+            )
+        except (OSError, ValueError, FileExistsError, subprocess.CalledProcessError) as error:
+            print(f"Could not create project: {error}", file=sys.stderr)
+            return 2
+        print(f"Created Monkez project: {created}")
+        print(f"Next: cd {project_name} && run.bat")
+        return 0
 
     if args.version:
         from . import __version__
