@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "monkez-pyqt6"
-version = "0.5.0"
+version = "0.6.0"
 description = "Monkez widgets, UI loader and Qt Designer integration for PyQt6 projects."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,12 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+adapters = [
+    "paho-mqtt>=2.1",
+    "websockets>=12",
+    "asyncua>=1.1",
+    "pymodbus>=3.7",
+]
 camera = [
     "opencv-python>=4.8",
 ]
@@ -34,6 +40,10 @@ designer = [
     "setuptools<81; python_version == '3.11'",
 ]
 all = [
+    "paho-mqtt>=2.1",
+    "websockets>=12",
+    "asyncua>=1.1",
+    "pymodbus>=3.7",
     "opencv-python>=4.8",
     "pyqt6-tools==6.4.2.3.3; python_version == '3.11'",
     "PyQt6-Fluent-Widgets[full]",

@@ -56,6 +56,8 @@ DOCUMENT_JSON_SCHEMA: dict[str, Any] = {
                 "debounce": {"type": "number", "minimum": 0},
                 "throttle": {"type": "number", "minimum": 0},
                 "staleAfter": {"type": "number", "minimum": 0},
+                "writeBack": {"type": "boolean"},
+                "writeTransforms": {"type": "array", "items": {"type": "object"}},
                 "enabled": {"type": "boolean"},
                 "fallback": {},
                 "errorFallback": {},

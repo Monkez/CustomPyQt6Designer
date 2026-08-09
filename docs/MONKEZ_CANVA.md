@@ -1,5 +1,11 @@
 # MonkezCanva
 
+## Release 0.6.0
+
+The Designer plugin is included in the package and exposes `MonkezCanva` in the
+Canvas & Diagram group. Runtime integrations can import adapters and bindings
+from `monkez_pyqt6.monkez_canva.runtime`; protocol drivers are optional extras.
+
 ### Control Pane tab isolation
 
 The Control Pane uses an explicit tab-bar plus stacked-page composite instead
