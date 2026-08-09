@@ -82,6 +82,16 @@ from .data_adapters import (
     DataAdapterEvent,
     DataAdapterManifest,
     DataAdapterRegistry,
+    HistorianPolicy,  # noqa: F401
+)
+from .protocol_adapters import (
+    MQTTAdapter,  # noqa: F401
+    ModbusAdapter,  # noqa: F401
+    OPCUAAdapter,  # noqa: F401
+    ProtocolAdapter,  # noqa: F401
+    WebSocketAdapter,  # noqa: F401
+    available_protocols,  # noqa: F401
+    create_protocol_adapter,  # noqa: F401
 )
 from .diagnostics import (
     DIAGNOSTIC_SEVERITIES,

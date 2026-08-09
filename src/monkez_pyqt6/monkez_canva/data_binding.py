@@ -108,6 +108,8 @@ class BindingSpec:
     fallback: Any = field(default=_MISSING, repr=False)
     error_fallback: Any = field(default=_MISSING, repr=False)
     enabled: bool = True
+    write_back: bool = False
+    write_transforms: tuple[Mapping[str, Any], ...] = ()
 
     @classmethod
     def from_record(
@@ -129,6 +131,11 @@ class BindingSpec:
             not isinstance(transform, Mapping) for transform in transforms
         ):
             raise TypeError("Binding transforms must be a list of objects")
+        write_transforms = raw.get("writeTransforms", ())
+        if isinstance(write_transforms, Mapping):
+            write_transforms = (write_transforms,)
+        if not isinstance(write_transforms, (list, tuple)) or any(not isinstance(item, Mapping) for item in write_transforms):
+            raise TypeError("Write transforms must be a list of objects")
         return cls(
             binding_id,
             str(element_id),
@@ -144,6 +151,8 @@ class BindingSpec:
                 raw["errorFallback"], "errorFallback"
             ),
             bool(raw.get("enabled", True)),
+            bool(raw.get("writeBack", False)),
+            tuple(_json_value(dict(item), "Write transform") for item in write_transforms),
         )
 
     def to_record(self) -> dict[str, Any]:
@@ -170,6 +179,10 @@ class BindingSpec:
             )
         if not self.enabled:
             result["enabled"] = False
+        if self.write_back:
+            result["writeBack"] = True
+        if self.write_transforms:
+            result["writeTransforms"] = [dict(item) for item in self.write_transforms]
         return result
 
 
@@ -452,6 +465,30 @@ class DataBindingEngine:
                         {},
                     ))
         return self._commit(updates, now)
+
+    def write_back(
+        self, binding_id: str, value: Any, writer: Callable[[str, Any, Mapping[str, Any]], Any],
+        *, metadata: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Write a UI value to the binding source through a host adapter."""
+        spec = self._specs.get(str(binding_id))
+        if spec is None:
+            raise KeyError(f"Unknown binding: {binding_id}")
+        if not spec.write_back:
+            raise PermissionError(f"Binding {binding_id!r} does not allow write-back")
+        output = value
+        if spec.write_transforms:
+            output = apply_binding_pipeline(
+                BindingSpec(spec.binding_id, spec.element_id, spec.target, spec.source_id, spec.write_transforms),
+                value,
+            )
+        result = writer(spec.source_id, output, dict(metadata or {}))
+        runtime = self._runtime[spec.binding_id]
+        runtime.value = value
+        runtime.state = "active"
+        now = self._clock()
+        self._record("write_back", spec, runtime, now, value=output)
+        return result
 
     def _commit(
         self, updates: Iterable[BindingUpdate], timestamp: float

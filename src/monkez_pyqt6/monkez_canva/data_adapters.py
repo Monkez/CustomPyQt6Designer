@@ -23,6 +23,26 @@ ADAPTER_STATES = (
 ADAPTER_CAPABILITIES = ("read", "subscribe", "write", "history")
 
 
+@dataclass(frozen=True, slots=True)
+class HistorianPolicy:
+    """Portable retention/query policy for an adapter channel."""
+
+    max_samples: int = 256
+    max_age: float = 0.0
+    aggregation: str = "raw"
+
+    def __post_init__(self) -> None:
+        if int(self.max_samples) < 1:
+            raise ValueError("Historian max_samples must be positive")
+        if float(self.max_age) < 0:
+            raise ValueError("Historian max_age cannot be negative")
+        if self.aggregation not in ("raw", "first", "last", "min", "max", "avg"):
+            raise ValueError("Unsupported historian aggregation")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"maxSamples": int(self.max_samples), "maxAge": float(self.max_age), "aggregation": self.aggregation}
+
+
 def _identifier(value: Any, label: str) -> str:
     result = str(value).strip()
     if not result or any(character.isspace() for character in result):
@@ -146,6 +166,7 @@ class DataAdapterRegistry:
         self._trace: deque[DataAdapterEvent] = deque(maxlen=max(10, int(trace_limit)))
         self._runtimes: dict[str, _AdapterRuntime] = {}
         self._history: dict[tuple[str, str], deque[DataAdapterEvent]] = {}
+        self._historian: dict[tuple[str, str], HistorianPolicy] = {}
         self._subscribers: dict[
             tuple[str, str], dict[int, Callable[[DataAdapterEvent], None]]
         ] = defaultdict(dict)
@@ -371,7 +392,29 @@ class DataAdapterRegistry:
     def history(self, adapter_id: str, channel: str, limit: int | None = None) -> tuple[DataAdapterEvent, ...]:
         with self._lock:
             values = tuple(self._history.get((str(adapter_id), str(channel)), ()))
+            policy = self._historian.get((str(adapter_id), str(channel)))
+        if policy and policy.max_age:
+            cutoff = self._now() - policy.max_age
+            values = tuple(item for item in values if item.timestamp >= cutoff)
+        if policy and policy.aggregation != "raw" and values:
+            numeric = [float(item.value) for item in values if isinstance(item.value, (int, float))]
+            if numeric:
+                aggregate = {"first": numeric[0], "last": numeric[-1], "min": min(numeric), "max": max(numeric), "avg": sum(numeric) / len(numeric)}[policy.aggregation]
+                last = values[-1]
+                values = (DataAdapterEvent(last.sequence, last.timestamp, last.adapter_id, "aggregate", last.channel, aggregate, metadata={"aggregation": policy.aggregation}),)
         return values if limit is None else values[-max(0, int(limit)):]
+
+    def set_historian_policy(self, adapter_id: str, channel: str, policy: HistorianPolicy) -> None:
+        self._required(adapter_id)
+        key = (str(adapter_id), _identifier(channel, "Adapter channel"))
+        with self._lock:
+            self._historian[key] = policy
+            if key in self._history:
+                self._history[key] = deque(self._history[key], maxlen=policy.max_samples)
+
+    def historian_policies(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return {f"{adapter}:{channel}": policy.to_dict() for (adapter, channel), policy in self._historian.items()}
 
     def trace(self, limit: int | None = None) -> tuple[DataAdapterEvent, ...]:
         with self._lock:

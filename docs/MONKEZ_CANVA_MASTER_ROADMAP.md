@@ -231,6 +231,14 @@ chart, appearance, geometry, port, highlight and animation targets are supported
 with an object-specific Inspector and Runtime Debugger tab. Protocol-specific
 connectors, historian windows and write-back remain optional ecosystem adapters.
 
+Update (2026-08-09): protocol-neutral MQTT, WebSocket, OPC-UA and Modbus
+adapter implementations are now available through `protocol_adapters.py`
+without importing external drivers. Binding definitions support opt-in
+`writeBack`/`writeTransforms`, and adapter channels expose configurable
+historian retention and aggregation policies. Runtime re-exports under
+`monkez_canva.runtime` provide the first concrete extraction boundary while the
+legacy canvas facade remains compatible.
+
 ## Phase 4 — Component packs
 
 ### Dashboard

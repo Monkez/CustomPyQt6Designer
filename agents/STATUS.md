@@ -31,6 +31,9 @@ Updated: 2026-08-09
   Add/Inspector pixels when switching tabs on Windows and fractional DPI.
 - Control Pane card groups now start collapsed by default; users can expand only
   the section they need, keeping Inspector/View/Save compact on first launch.
+- Runtime boundary update: dependency-free MQTT/WebSocket/OPC-UA/Modbus adapter
+  wrappers, opt-in binding write-back transforms, historian retention/aggregation
+  policies and `monkez_canva.runtime` re-export modules are now available.
 
 ## Current version
 
