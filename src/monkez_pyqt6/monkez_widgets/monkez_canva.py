@@ -28,6 +28,7 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     QTimer,
+    QThread,
     pyqtProperty,
     pyqtSignal,
 )
@@ -100,6 +101,9 @@ from monkez_pyqt6.monkez_canva import (
     CanvasPageConfig,
     CanvasPerformancePolicy,
     DataBindingEngine,
+    DataAdapterEvent,
+    DataAdapterManifest,
+    DataAdapterRegistry,
     DocumentDiagnosticsReport,
     DocumentDiff,
     ElementDefinition,
@@ -2527,13 +2531,117 @@ class _CanvasCardGroup(QGroupBox):
     at every DPI while retaining QGroupBox semantics and accessibility.
     """
 
+    collapsedChanged = pyqtSignal(bool)
+
+    _HEADER_HEIGHT = 38
+
+    def __init__(
+        self,
+        title: str = "",
+        parent=None,
+        *,
+        collapsed: bool = False,
+    ) -> None:
+        super().__init__(title, parent)
+        self._collapsed = False
+        self._header_hover = False
+        self._collapsed_visibility: dict[QWidget, bool] = {}
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(title)
+        self.setToolTip(f"Click to collapse {title}")
+        if collapsed:
+            self.setCollapsed(True)
+
+    def isCollapsed(self) -> bool:
+        return self._collapsed
+
+    def setCollapsed(self, collapsed: bool) -> None:
+        collapsed = bool(collapsed)
+        if collapsed == self._collapsed:
+            return
+        self._collapsed = collapsed
+        if collapsed:
+            self._collapsed_visibility = {
+                child: not child.isHidden()
+                for child in self.findChildren(
+                    QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly
+                )
+            }
+            for child, was_visible in self._collapsed_visibility.items():
+                if was_visible:
+                    child.hide()
+            self.setMaximumHeight(self._HEADER_HEIGHT + 2)
+            self.setToolTip(f"Click to expand {self.title()}")
+        else:
+            self.setMaximumHeight(16777215)
+            for child, was_visible in tuple(self._collapsed_visibility.items()):
+                if was_visible:
+                    child.show()
+            self._collapsed_visibility.clear()
+            self.setToolTip(f"Click to collapse {self.title()}")
+        self.updateGeometry()
+        self.update()
+        self.collapsedChanged.emit(collapsed)
+
+    def toggleCollapsed(self) -> None:
+        self.setCollapsed(not self._collapsed)
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self._collapsed:
+            for child in self.findChildren(
+                QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly
+            ):
+                if child not in self._collapsed_visibility:
+                    was_visible = not child.isHidden()
+                    self._collapsed_visibility[child] = was_visible
+                    if was_visible:
+                        child.hide()
+        super().showEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        hover = event.position().y() <= self._HEADER_HEIGHT
+        if hover != self._header_hover:
+            self._header_hover = hover
+            self.setCursor(
+                Qt.CursorShape.PointingHandCursor
+                if hover else Qt.CursorShape.ArrowCursor
+            )
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._header_hover = False
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and event.position().y() <= self._HEADER_HEIGHT
+        ):
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            self.toggleCollapsed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.toggleCollapsed()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         card = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        painter.setPen(QPen(QColor("#e5e1dc"), 1.0))
-        painter.setBrush(QColor("#fffefd"))
+        border = QColor("#ddd7d0") if self.hasFocus() else QColor("#e5e1dc")
+        painter.setPen(QPen(border, 1.0))
+        painter.setBrush(QColor("#fffaf8") if self._header_hover else QColor("#fffefd"))
         painter.drawRoundedRect(card, 13.0, 13.0)
         if self.title():
             font = QFont(self.font())
@@ -2542,10 +2650,25 @@ class _CanvasCardGroup(QGroupBox):
             painter.setFont(font)
             painter.setPen(QColor("#303941"))
             painter.drawText(
-                QRectF(14.0, 10.0, max(0.0, self.width() - 28.0), 18.0),
+                QRectF(14.0, 10.0, max(0.0, self.width() - 52.0), 18.0),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 self.title(),
             )
+            chevron = QPainterPath()
+            if self._collapsed:
+                chevron.moveTo(self.width() - 21.0, 13.0)
+                chevron.lineTo(self.width() - 16.0, 18.0)
+                chevron.lineTo(self.width() - 21.0, 23.0)
+            else:
+                chevron.moveTo(self.width() - 23.0, 15.0)
+                chevron.lineTo(self.width() - 18.0, 20.0)
+                chevron.lineTo(self.width() - 13.0, 15.0)
+            chevron_pen = QPen(QColor("#ef5d50") if self._header_hover else QColor("#667079"), 1.8)
+            chevron_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            chevron_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(chevron_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(chevron)
 
 
 class _CanvasCommandPalette(QDialog):
@@ -4169,7 +4292,7 @@ class _CanvasEditorToolbox(QDialog):
         content_form.addRow(self._data_label, self._data_edit)
         layout.addWidget(self._content_group)
 
-        self._ports_group = _CanvasCardGroup("Node ports")
+        self._ports_group = _CanvasCardGroup("Node ports", collapsed=True)
         ports_layout = QVBoxLayout(self._ports_group)
         self._ports_list = QListWidget()
         self._ports_list.setMaximumHeight(112)
@@ -4261,7 +4384,7 @@ class _CanvasEditorToolbox(QDialog):
         )
         layout.addWidget(self._ports_group)
 
-        self._workflow_group = _CanvasCardGroup("Workflow runtime")
+        self._workflow_group = _CanvasCardGroup("Workflow runtime", collapsed=True)
         workflow_layout = QVBoxLayout(self._workflow_group)
         workflow_summary = QHBoxLayout()
         self._workflow_kind_label = QLabel("Component")
@@ -4302,7 +4425,7 @@ class _CanvasEditorToolbox(QDialog):
         workflow_layout.addLayout(workflow_actions)
         layout.addWidget(self._workflow_group)
 
-        self._bindings_group = _CanvasCardGroup("Data bindings")
+        self._bindings_group = _CanvasCardGroup("Data bindings", collapsed=True)
         bindings_layout = QVBoxLayout(self._bindings_group)
         binding_header = QHBoxLayout()
         self._bindings_list = QListWidget()
@@ -4470,7 +4593,9 @@ class _CanvasEditorToolbox(QDialog):
             geometry_form.addWidget(field, row + 1, column)
         layout.addWidget(self._geometry_group)
 
-        self._group_properties_group = _CanvasCardGroup("Group / subflow")
+        self._group_properties_group = _CanvasCardGroup(
+            "Group / subflow", collapsed=True
+        )
         group_form = QFormLayout(self._group_properties_group)
         self._group_kind_combo = QComboBox()
         self._group_kind_combo.addItems(("Frame", "Swimlane", "Subflow"))
@@ -4512,7 +4637,7 @@ class _CanvasEditorToolbox(QDialog):
         group_form.addRow(group_actions)
         layout.insertWidget(layout.indexOf(self._geometry_group), self._group_properties_group)
 
-        self._media_group = _CanvasCardGroup("Media")
+        self._media_group = _CanvasCardGroup("Media", collapsed=True)
         media_layout = QVBoxLayout(self._media_group)
         self._source_edit = QLineEdit()
         self._source_edit.setPlaceholderText("Image or animated GIF source")
@@ -4523,7 +4648,7 @@ class _CanvasEditorToolbox(QDialog):
         media_layout.addWidget(browse)
         layout.addWidget(self._media_group)
 
-        self._stroke_group = _CanvasCardGroup("Line / signal")
+        self._stroke_group = _CanvasCardGroup("Line / signal", collapsed=True)
         stroke_form = QFormLayout(self._stroke_group)
         self._route_combo = QComboBox()
         self._route_combo.addItems(("Bezier", "Auto", "Orthogonal", "Straight", "Polyline"))
@@ -4735,6 +4860,20 @@ class _CanvasEditorToolbox(QDialog):
         layout.addStretch(1)
         self._connect_inspector_auto_apply()
         self._effect_combo.currentIndexChanged.connect(self._sync_packet_controls)
+        for card in (
+            self._ports_group,
+            self._workflow_group,
+            self._bindings_group,
+            self._group_properties_group,
+            self._media_group,
+            self._stroke_group,
+        ):
+            card.collapsedChanged.connect(
+                lambda collapsed: (
+                    self._sync_inspector(self.canvas.selectedElementId())
+                    if not collapsed else None
+                )
+            )
         scroll.setWidget(body)
         page_layout.addWidget(scroll)
         return page
@@ -4826,7 +4965,7 @@ class _CanvasEditorToolbox(QDialog):
         navigation_layout.addLayout(move_row, 2, 0, 1, 3)
         layout.addWidget(navigation)
 
-        performance = _CanvasCardGroup("Rendering")
+        performance = _CanvasCardGroup("Rendering", collapsed=True)
         performance_layout = QVBoxLayout(performance)
         self._performance_mode_combo = QComboBox()
         for label, value in (
@@ -4851,7 +4990,7 @@ class _CanvasEditorToolbox(QDialog):
             lambda _mode: self._sync_performance_controls()
         )
 
-        auto_layout = _CanvasCardGroup("Auto layout")
+        auto_layout = _CanvasCardGroup("Auto layout", collapsed=True)
         auto_layout_grid = QGridLayout(auto_layout)
         self._layout_strategy_combo = QComboBox()
         for label, value in (
@@ -4936,7 +5075,7 @@ class _CanvasEditorToolbox(QDialog):
         grid_layout.addWidget(grid_color, 1, 0, 1, 2)
         layout.addWidget(grid_group)
 
-        snapping = _CanvasCardGroup("Snapping & guides")
+        snapping = _CanvasCardGroup("Snapping & guides", collapsed=True)
         snapping_layout = QGridLayout(snapping)
         self._snap_checks: dict[str, QCheckBox] = {}
         labels = {"grid": "Grid", "edges": "Edges", "centers": "Centers", "ports": "Ports"}
@@ -4956,7 +5095,7 @@ class _CanvasEditorToolbox(QDialog):
         snapping_layout.addWidget(self._snap_distance_field, 2, 1)
         layout.addWidget(snapping)
 
-        navigator = _CanvasCardGroup("Navigator")
+        navigator = _CanvasCardGroup("Navigator", collapsed=True)
         navigator_layout = QGridLayout(navigator)
         self._minimap_check = QCheckBox("Show minimap")
         self._minimap_check.toggled.connect(self.canvas.setMinimapVisible)
@@ -4976,7 +5115,7 @@ class _CanvasEditorToolbox(QDialog):
         layout.addWidget(navigator)
         self.canvas.viewportBookmarksChanged.connect(self._sync_viewport_bookmarks)
 
-        background = _CanvasCardGroup("Canvas background")
+        background = _CanvasCardGroup("Canvas background", collapsed=True)
         background_layout = QGridLayout(background)
         background_color = QPushButton("Background color")
         background_color.setIcon(_canvas_icon("color"))
@@ -5037,7 +5176,7 @@ class _CanvasEditorToolbox(QDialog):
         persistent_layout.addWidget(save_persistent)
         persistent_layout.addWidget(load_persistent)
         layout.addWidget(persistent)
-        history = _CanvasCardGroup("History")
+        history = _CanvasCardGroup("History", collapsed=True)
         history_layout = QHBoxLayout(history)
         self._undo_button = QPushButton("Undo")
         self._undo_button.setIcon(_canvas_icon("undo"))
@@ -6609,6 +6748,10 @@ class _CanvasRuntimeDebugger(QDialog):
         canvas.dataBindingStateChanged.connect(
             lambda _binding_id, _state: self._refresh_bindings()
         )
+        canvas.dataAdapterEvent.connect(lambda _event: self._refresh_bindings())
+        canvas.dataAdapterHealthChanged.connect(
+            lambda _adapter_id, _health: self._refresh_bindings()
+        )
         self._sync_pause_state(canvas.runtimePaused())
         self._refresh_messages()
         self._refresh_trace()
@@ -6689,8 +6832,38 @@ class _CanvasRuntimeDebugger(QDialog):
         colors = {
             "active": "#0f9f8f", "pending": "#7c3aed", "stale": "#d97706",
             "error": "#dc2626", "idle": "#64748b", "disabled": "#94a3b8",
+            "connected": "#0f9f8f", "connecting": "#2563eb",
+            "degraded": "#d97706", "disconnected": "#64748b",
+            "stopped": "#94a3b8",
         }
-        for state in self.canvas._binding_engine.states():
+        adapters = self.canvas.dataAdapters()
+        if adapters:
+            heading = QListWidgetItem("DATA SOURCES")
+            heading.setFlags(Qt.ItemFlag.NoItemFlags)
+            heading.setForeground(QColor("#64748b"))
+            self._bindings.addItem(heading)
+        for health in adapters:
+            status = str(health["state"])
+            item = QListWidgetItem(
+                _canvas_icon("database", colors.get(status, "#64748b")),
+                f"{health['displayName']}  ·  {health['protocol']}  ·  {status}\n"
+                f"{health['received']} received · {health['written']} written · "
+                f"{health['errors']} errors",
+            )
+            item.setToolTip(
+                f"Adapter ID: {health['adapterId']}\n"
+                f"Capabilities: {', '.join(health['capabilities'])}\n"
+                f"Last event: {health.get('lastEvent')}\n"
+                f"Status: {health.get('message') or 'healthy'}"
+            )
+            self._bindings.addItem(item)
+        states = self.canvas._binding_engine.states()
+        if states:
+            heading = QListWidgetItem("ELEMENT BINDINGS")
+            heading.setFlags(Qt.ItemFlag.NoItemFlags)
+            heading.setForeground(QColor("#64748b"))
+            self._bindings.addItem(heading)
+        for state in states:
             status = str(state["state"])
             last = state.get("value")
             value = repr(last)
@@ -7257,6 +7430,9 @@ class MonkezCanva(QWidget):
     dataBindingStateChanged = pyqtSignal(str, dict)
     dataBindingBatchApplied = pyqtSignal(list)
     dataSourceBound = pyqtSignal(str)
+    dataAdapterEvent = pyqtSignal(dict)
+    dataAdapterHealthChanged = pyqtSignal(str, dict)
+    _adapterValueReady = pyqtSignal(str, object)
     componentPackChanged = pyqtSignal(str, bool)
     componentPluginChanged = pyqtSignal(str, bool)
     exportCompleted = pyqtSignal(str, str, str)
@@ -7335,9 +7511,19 @@ class MonkezCanva(QWidget):
         self._binding_baselines: dict[tuple[str, str], Any] = {}
         self._binding_disconnectors: dict[str, list[Callable[[], None]]] = {}
         self._binding_providers: dict[str, dict[str, Any]] = {}
+        self._adapter_source_bindings: dict[str, tuple[str, str, int]] = {}
         self._binding_engine = DataBindingEngine(
             self._apply_binding_batch,
             event_sink=self._on_data_binding_event,
+        )
+        self._data_adapter_registry = DataAdapterRegistry(
+            event_sink=self._on_data_adapter_event
+        )
+        self._adapterValueReady.connect(
+            lambda source_id, event: self.feedDataSource(
+                source_id, event.value, metadata=event.to_dict()
+            ),
+            Qt.ConnectionType.QueuedConnection,
         )
         self._routing_revision = 0
         self._document_model: CanvasDocument | None = None
@@ -7766,6 +7952,7 @@ class MonkezCanva(QWidget):
         self._ensure_toolbox()
         self._toolbox._tabs.setCurrentIndex(1)
         self._toolbox._sync_inspector(target)
+        self._toolbox._bindings_group.setCollapsed(False)
         for scroll in self._toolbox.findChildren(QScrollArea):
             if scroll.widget() is self._toolbox._bindings_group.parentWidget():
                 scroll.ensureWidgetVisible(self._toolbox._bindings_group, 0, 24)
@@ -8991,12 +9178,140 @@ class MonkezCanva(QWidget):
         *,
         signal: str = "valueChanged",
         getter: str = "value",
+        channel: str = "",
     ) -> str:
-        """Bind adapter conventions used by MQTT/WebSocket/OPC-UA/Modbus bridges."""
+        """Bind either the SDK adapter contract or legacy QObject conventions."""
+
+        manifest = getattr(adapter, "manifest", None)
+        manifest = manifest() if callable(manifest) else manifest
+        if isinstance(manifest, (DataAdapterManifest, Mapping)):
+            adapter_id = (
+                manifest.adapter_id
+                if isinstance(manifest, DataAdapterManifest)
+                else str(manifest.get("adapterId", manifest.get("adapter_id", "")))
+            )
+            if not any(
+                record["adapterId"] == adapter_id for record in self.dataAdapters()
+            ):
+                self.registerDataAdapter(adapter)
+            return self.bindAdapterSource(
+                source_id, adapter_id, channel or str(source_id)
+            )
 
         return self.bindQObjectProperty(
             source_id, adapter, getter, getattr(adapter, signal, None)
         )
+
+    def registerDataAdapter(self, adapter, *, start: bool = True) -> str:
+        """Register an optional protocol adapter and optionally start it."""
+
+        return self._data_adapter_registry.register(adapter, start=start)
+
+    def unregisterDataAdapter(self, adapter_id: str) -> bool:
+        """Stop and remove an adapter plus its canvas subscriptions."""
+
+        for source_id, binding in tuple(self._adapter_source_bindings.items()):
+            if binding[0] == str(adapter_id):
+                self.unbindDataSource(source_id)
+        return self._data_adapter_registry.unregister(adapter_id)
+
+    def bindAdapterSource(
+        self,
+        source_id: str,
+        adapter_id: str,
+        channel: str,
+        *,
+        replay_latest: bool = True,
+    ) -> str:
+        """Map one adapter channel to a portable binding source ID."""
+
+        key = str(source_id).strip()
+        if not key:
+            raise ValueError("Data source ID cannot be empty")
+        self.unbindDataSource(key)
+
+        def receive(event: DataAdapterEvent) -> None:
+            self._deliver_data_adapter_value(key, event)
+
+        token = self._data_adapter_registry.subscribe(adapter_id, channel, receive)
+        self._adapter_source_bindings[key] = (str(adapter_id), str(channel), token)
+
+        def disconnect() -> None:
+            self._data_adapter_registry.unsubscribe(token)
+            current = self._adapter_source_bindings.get(key)
+            if current is not None and current[2] == token:
+                self._adapter_source_bindings.pop(key, None)
+
+        self._binding_disconnectors.setdefault(key, []).append(disconnect)
+        if replay_latest:
+            history = self._data_adapter_registry.history(adapter_id, channel, 1)
+            if history:
+                self._deliver_data_adapter_value(key, history[-1])
+        self.dataSourceBound.emit(key)
+        return key
+
+    def dataAdapters(self) -> list[dict[str, Any]]:
+        """Return transient adapter manifests and aggregate runtime health."""
+
+        return [dict(record) for record in self._data_adapter_registry.health()]
+
+    def startDataAdapter(self, adapter_id: str) -> None:
+        self._data_adapter_registry.start(adapter_id)
+
+    def stopDataAdapter(self, adapter_id: str) -> None:
+        self._data_adapter_registry.stop(adapter_id)
+
+    def dataAdapterHealth(self, adapter_id: str = "") -> dict[str, Any] | list[dict[str, Any]]:
+        if adapter_id:
+            return dict(self._data_adapter_registry.health(adapter_id))
+        return self.dataAdapters()
+
+    def dataAdapterHistory(
+        self, adapter_id: str, channel: str, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        return [
+            event.to_dict()
+            for event in self._data_adapter_registry.history(adapter_id, channel, limit)
+        ]
+
+    def dataAdapterTrace(self, limit: int | None = None) -> list[dict[str, Any]]:
+        return [event.to_dict() for event in self._data_adapter_registry.trace(limit)]
+
+    def writeDataAdapter(
+        self,
+        adapter_id: str,
+        channel: str,
+        value: Any,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Write a JSON value through an adapter that declares write capability."""
+
+        return self._data_adapter_registry.write(
+            adapter_id, channel, value, metadata=metadata
+        )
+
+    def readDataAdapter(self, adapter_id: str, channel: str) -> Any:
+        """Read one channel and feed it through bound Canvas sources."""
+
+        return self._data_adapter_registry.read(adapter_id, channel)
+
+    def _deliver_data_adapter_value(
+        self, source_id: str, event: DataAdapterEvent
+    ) -> None:
+        if QThread.currentThread() == self.thread():
+            self.feedDataSource(source_id, event.value, metadata=event.to_dict())
+            return
+        self._adapterValueReady.emit(source_id, event)
+
+    def _on_data_adapter_event(self, event: DataAdapterEvent) -> None:
+        record = event.to_dict()
+        self.dataAdapterEvent.emit(record)
+        try:
+            health = dict(self._data_adapter_registry.health(event.adapter_id))
+        except KeyError:
+            health = {"adapterId": event.adapter_id, "state": "unregistered"}
+        self.dataAdapterHealthChanged.emit(event.adapter_id, health)
 
     def refreshDataSource(self, source_id: str) -> bool:
         key = str(source_id)
@@ -14176,6 +14491,7 @@ class MonkezCanva(QWidget):
         for plugin_id in tuple(self._loaded_plugin_packages):
             self.unloadProjectPlugin(plugin_id)
         self.clearDataBindingRuntime(disconnect_sources=True)
+        self._data_adapter_registry.stop_all()
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
             self._document_subscription = ""

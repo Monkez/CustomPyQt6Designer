@@ -54,6 +54,15 @@ tên; thanh tab dùng icon 16 px, hover rất nhẹ và selected state không c�
 đóng khung như một button. Tab active chỉ đổi icon/chữ sang coral và hiện
 một vạch ngắn 2 px căn giữa, giúp thanh tab thoáng và không nhảy bố cục.
 
+Mỗi card trong Inspector, View và Save là một accordion độc lập. Bấm toàn bộ hàng
+tiêu đề hoặc dùng `Space`/`Enter` khi header có focus để thu gọn/mở rộng; chevron
+đổi giữa hướng phải và hướng xuống. Các nhóm chuyên sâu như Node ports, Data
+bindings, Workflow runtime, routing/effect, auto-layout, snapping và history mặc
+định thu gọn để ưu tiên thuộc tính thường dùng. Trạng thái được giữ trong suốt
+phiên editor; action ngữ cảnh như **Open data bindings** tự mở đúng tab và bung
+đúng card. Việc đóng/mở chỉ thay đổi bố cục, không ghi document và không kích hoạt
+Inspector auto-apply.
+
 ## Hiệu năng scene lớn và LOD
 
 Tab **View > Rendering** có ba chế độ:
@@ -557,6 +566,33 @@ canvas.feedDataSources({
     "machine.running": True,
 })  # batch nhiều source, repaint mỗi target đúng một lần
 ```
+
+Với protocol adapter chuyên nghiệp, khai báo manifest và lifecycle nhỏ gọn thay
+vì buộc thư viện protocol vào widget. Xem adapter chạy được tại
+`examples/canva_data_adapter.py`.
+
+```python
+adapter = SimulatedTelemetryAdapter()
+canvas.registerDataAdapter(adapter)  # tự start
+canvas.bindAdapterSource(
+    "plant.temperature", "demo-telemetry", "temperature"
+)
+
+adapter.publish("temperature", 24.8, metadata={"quality": "good"})
+canvas.writeDataAdapter("demo-telemetry", "setpoint", 26)
+current = canvas.readDataAdapter("demo-telemetry", "setpoint")
+
+health = canvas.dataAdapterHealth("demo-telemetry")
+samples = canvas.dataAdapterHistory("demo-telemetry", "temperature", limit=100)
+trace = canvas.dataAdapterTrace(limit=200)
+canvas.unregisterDataAdapter("demo-telemetry")
+```
+
+`DataAdapterManifest` khai báo `read`, `subscribe`, `write`, `history`; registry từ
+chối write-back nếu adapter không khai báo `write`. History là ring buffer runtime,
+không ghi telemetry hay credential vào project. Adapter có thể publish từ worker
+thread; Canvas chuyển update về GUI thread trước khi đổi element. Runtime Debugger
+hiển thị state, protocol, số event, write, error và health của từng source.
 
 MQTT, WebSocket, OPC-UA và Modbus adapter không bị ép thành dependency của widget;
 host chỉ cần cung cấp QObject có signal/getter hoặc gọi `feedDataSource()`. Dùng

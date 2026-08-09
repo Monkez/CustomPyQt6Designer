@@ -301,8 +301,16 @@ callables, model indexes and conventional external QObject adapters. Inspector,
 context/command discovery, Runtime Debugger, demo and public APIs use the same
 definitions and state.
 
-Next data slices: optional MQTT/WebSocket/OPC-UA/Modbus adapter packages,
-historian/ring-buffer policies, write-back bindings and aggregate source health.
+`MC-RUNTIME-ADAPTER-002` defines the optional MQTT/WebSocket/OPC-UA/Modbus package
+boundary without adding protocol dependencies. The Qt-free registry owns
+lifecycle, capabilities, subscription tokens, bounded channel history and trace,
+write-back validation and aggregate health. Canvas APIs map adapter channels to
+portable binding source IDs, marshal worker publications onto the GUI thread and
+surface health in Runtime Debugger. A simulation adapter is the executable SDK
+example; credentials and live runtime objects remain outside document JSON.
+
+Next data slices: declarative write-back bindings, configurable historian policies
+and independently distributed protocol adapter packages.
 
 ### Native component-pack progress — 2026-08-09
 
@@ -366,13 +374,21 @@ tracker, Control Pane mode selection, export-quality isolation and coalesced
 full-document graphics projection. The reproducible native benchmark and committed
 environment-tagged JSON baseline make later regressions directly comparable.
 
-Next: optional external data-adapter package contract, then packet replay/link
-metrics and recurring workflow scheduling/backpressure slices.
+Next: packet replay/link metrics and recurring workflow scheduling/backpressure
+slices, followed by distributable protocol adapter packages.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
 selected icon color, field focus states, card title clearance and JSON editor
 styling. Visual QA targets the full 438×720 pane and Position / size card.
+
+`MC-EDITOR-PANE-007` adds a reusable custom-painted accordion contract to every
+Control Pane card. Mouse and keyboard toggles share one state path, collapsed
+cards remove their content from layout/focus flow, expansion restores only
+previously visible contextual controls, and deep-link commands expand their target
+card. Advanced Inspector/View/Save sections default collapsed without persisting
+editor-only state into the canvas document. A repeatable 438×720 render script and
+widget regression test cover the approved compact hierarchy.
 
 ## Backlog tracking
 

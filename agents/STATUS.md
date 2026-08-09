@@ -2,6 +2,9 @@
 
 Updated: 2026-08-09
 
+- Current release gate: 265 tests and 54 subtests pass; Ruff is clean; wheel and
+  sdist build successfully on the project Python 3.11 environment.
+
 - `MC-CORE-PERFORMANCE-002` adds adaptive Full/Compact/Overview LOD, public
   render-frame metrics, Auto/Quality/Speed controls, full-quality export isolation
   and coalesced document projection. The native 100/1,000/10,000-node baseline is
@@ -11,6 +14,11 @@ Updated: 2026-08-09
 - Control Pane tab highlight now uses a short custom-painted 2 px coral
   indicator with no selected button frame. Selected icon/text color and a quiet
   hover wash preserve recognition while making the five-tab row visually lighter.
+- `MC-EDITOR-PANE-007` turns every Control Pane card into a keyboard-accessible
+  accordion. Advanced cards start collapsed, header/chevron hover remains subtle,
+  explicit child visibility is restored on expansion and contextual commands open
+  their target card automatically. Repeatable 438×720 offscreen visual QA is
+  provided by `scripts/render_canva_control_pane_qa.py`.
 
 ## Current version
 
@@ -340,6 +348,12 @@ Updated: 2026-08-09
   adapters through one shared timer with explicit disconnect cleanup. Each element
   has a polished Data bindings Inspector card; Runtime Debugger adds a Bindings tab.
   Offscreen QA at 438×720 confirms the full editor fits without horizontal clipping.
+- `MC-RUNTIME-ADAPTER-002` completes the external data-adapter SDK boundary.
+  Protocol packages expose a JSON-safe manifest plus start/stop/subscribe/write
+  hooks, while the Qt-free registry provides lifecycle, health, bounded history,
+  trace, write-back guards and failure isolation. Canvas channel bindings remain
+  transient, are safe for worker-thread publishers and appear with source health
+  in Runtime Debugger. The in-memory example is reusable as an adapter template.
 - `MC-PACK-NATIVE-001` completes Phase 4 with 43 opt-in native components: 15
   Dashboard, 12 Industrial and 16 Software/Flowchart items. Qt-free immutable
   catalogs remain outside the default palette; enabling a pack attaches vector

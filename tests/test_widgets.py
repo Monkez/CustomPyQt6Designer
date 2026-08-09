@@ -3310,6 +3310,40 @@ class WidgetTests(unittest.TestCase):
         canvas.close()
         canvas.deleteLater()
 
+    def test_canva_control_pane_cards_expand_collapse_and_context_open(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(900, 640)
+        canvas.show()
+        node = canvas.addNode("Node", element_id="accordion-node")
+        canvas.addDataBinding(
+            node, "text", "accordion.value", binding_id="accordion-binding"
+        )
+        canvas.setEditMode(True)
+        canvas.selectElement(node)
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        self.app.processEvents()
+
+        ports = toolbox._ports_group
+        self.assertTrue(ports.isCollapsed())
+        self.assertLessEqual(ports.maximumHeight(), ports._HEADER_HEIGHT + 2)
+        ports.setCollapsed(False)
+        self.assertFalse(ports.isCollapsed())
+        self.assertEqual(16777215, ports.maximumHeight())
+        self.assertFalse(toolbox._ports_list.isHidden())
+        ports.toggleCollapsed()
+        self.assertTrue(ports.isCollapsed())
+        self.assertTrue(toolbox._ports_list.isHidden())
+
+        self.assertTrue(toolbox._bindings_group.isCollapsed())
+        canvas.showDataBindingInspector(node)
+        self.assertFalse(toolbox._bindings_group.isCollapsed())
+        self.assertEqual(1, toolbox._tabs.currentIndex())
+
+        canvas.setEditMode(False)
+        canvas.close()
+        canvas.deleteLater()
+
     def test_canva_declarative_data_bindings_sources_and_inspector(self) -> None:
         canvas = MonkezCanva()
         canvas.resize(1000, 700)
@@ -3433,7 +3467,7 @@ class WidgetTests(unittest.TestCase):
         canvas.showRuntimeDebugger()
         self.app.processEvents()
         self.assertEqual(4, canvas._runtime_debugger._tabs.count())
-        self.assertEqual(6, canvas._runtime_debugger._bindings.count())
+        self.assertEqual(7, canvas._runtime_debugger._bindings.count())
         self.assertTrue(canvas.dataBindingTrace())
 
         restored = MonkezCanva()

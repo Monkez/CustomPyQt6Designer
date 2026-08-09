@@ -55,6 +55,14 @@ from .data_binding import (
     apply_binding_pipeline,
     binding_specs_from_document,
 )
+from .data_adapters import (
+    ADAPTER_CAPABILITIES,
+    ADAPTER_STATES,
+    DataAdapterContext,
+    DataAdapterEvent,
+    DataAdapterManifest,
+    DataAdapterRegistry,
+)
 from .diagnostics import (
     DIAGNOSTIC_SEVERITIES,
     DIFF_ACTIONS,
@@ -224,6 +232,8 @@ __all__ = [
     "BRANCH_POLICIES",
     "BINDING_STATES",
     "BINDING_TARGET_PREFIXES",
+    "ADAPTER_CAPABILITIES",
+    "ADAPTER_STATES",
     "COMPONENT_PACKS",
     "COMPONENT_PACK_VERSION",
     "COMPONENT_SDK_VERSION",
@@ -370,6 +380,10 @@ __all__ = [
     "snap_rect",
     "DocumentMigrationResult",
     "DataBindingEngine",
+    "DataAdapterContext",
+    "DataAdapterEvent",
+    "DataAdapterManifest",
+    "DataAdapterRegistry",
     "DocumentChange",
     "DocumentDiagnosticIssue",
     "DocumentDiagnosticsReport",

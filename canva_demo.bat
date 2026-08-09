@@ -38,6 +38,7 @@ echo [TIP] Ctrl+K, search "templates" to browse and insert reusable project temp
 echo [TIP] Ctrl+K, search "health" to inspect document integrity and changes since save
 echo [TIP] Ctrl+K, search "plugins" to discover, review and explicitly trust project packages
 echo [TIP] View ^> Rendering selects adaptive Auto, full Quality or minimal Speed LOD
+echo [TIP] Runtime Debugger ^> Bindings shows demo adapter health and live source counters
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

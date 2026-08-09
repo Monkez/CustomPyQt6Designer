@@ -359,6 +359,16 @@ Callable polling, debounce/throttle flush and stale checks share one 33 ms timer
 signal-only sources allocate no timer. Disconnect callbacks are retained and run
 on explicit unbind or canvas close.
 
+`monkez_canva/data_adapters.py` defines the dependency-free boundary for protocol
+packages. `DataAdapterManifest` carries only JSON-safe identity/capabilities;
+`DataAdapterRegistry` owns lifecycle, channel subscriptions, write-back guards,
+bounded per-source history, trace and aggregate health. Adapter instances,
+credentials, sockets and live values are transient and never enter the canvas
+document. A `DataAdapterContext` is the only callback capability given to an
+adapter. Worker-thread publications cross into the Qt GUI thread through a queued
+signal before reaching `DataBindingEngine`. This keeps MQTT/WebSocket/OPC-UA/
+Modbus clients optional and prevents protocol code from becoming a widget import.
+
 Projection updates bypass `documentChanged` and graphics-to-model reconciliation.
 The adapter snapshots a target's canonical presentation before the first live
 value, restores it when a definition is removed, and reapplies live state after a

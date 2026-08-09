@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow
 from monkez_pyqt6.monkez_widgets import MonkezCanva
 
 from canva_component_plugin import PLUGIN as TELEMETRY_PLUGIN
+from canva_data_adapter import SimulatedTelemetryAdapter
 
 
 def _configure_logging() -> logging.Logger:
@@ -87,6 +88,20 @@ def main() -> int:
         lambda event: logger.info(
             "binding -> #%s %s %s [%s]",
             event["sequence"], event["bindingId"], event["event"], event["state"],
+        )
+    )
+    canvas.dataAdapterEvent.connect(
+        lambda event: logger.info(
+            "dataAdapter -> #%s %s %s channel=%s",
+            event["sequence"], event["adapterId"], event["event"],
+            event["channel"] or "-",
+        )
+    )
+    canvas.dataAdapterHealthChanged.connect(
+        lambda adapter_id, health: logger.info(
+            "dataAdapterHealth -> %s [%s] received=%s errors=%s",
+            adapter_id, health["state"], health.get("received", 0),
+            health.get("errors", 0),
         )
     )
     canvas.componentPackChanged.connect(
@@ -351,6 +366,11 @@ def main() -> int:
             transforms={"op": "get", "path": "fps"},
             throttle=0.1,
         )
+    telemetry_adapter = SimulatedTelemetryAdapter()
+    canvas.registerDataAdapter(telemetry_adapter)
+    canvas.bindAdapterSource("vision.metrics", "demo-telemetry", "metrics")
+    canvas.bindAdapterSource("vision.status", "demo-telemetry", "status")
+    canvas.bindAdapterSource("vision.kpi", "demo-telemetry", "kpi")
     canvas.objectClicked.connect(lambda object_id: canvas.highlightObject(object_id))
     window.resize(1180, 680)
     window.show()
@@ -377,13 +397,16 @@ def main() -> int:
             ),
         )
     if canvas.dataBindings():
+        def publish_demo_telemetry() -> None:
+            telemetry_adapter.publish(
+                "metrics", {"samples": [42, 61, 57, 81, 74, 93]}
+            )
+            telemetry_adapter.publish("status", "live telemetry connected")
+            telemetry_adapter.publish("kpi", {"fps": 91.6})
+
         QTimer.singleShot(
             1800,
-            lambda: canvas.feedDataSources({
-                "vision.metrics": {"samples": [42, 61, 57, 81, 74, 93]},
-                "vision.status": "live telemetry connected",
-                "vision.kpi": {"fps": 91.6},
-            }),
+            publish_demo_telemetry,
         )
     logger.info("Demo window shown: %sx%s", window.width(), window.height())
     logger.info("Shortcut option 1: press Ctrl+D, release Ctrl, then press E")
@@ -393,6 +416,7 @@ def main() -> int:
     logger.info("Workflow Pack is enabled; select a workflow node to edit/run it")
     logger.info("Dashboard, Industrial and Software component packs are enabled")
     logger.info("Select an element and open Inspector > Data bindings for live data")
+    logger.info("Runtime Debugger > Bindings shows adapter health and source counters")
     logger.info("Open reusable project templates with Ctrl+K, then search 'templates'")
     logger.info("Open document health and changes since save with Ctrl+K, then search 'health'")
     logger.info("Open explicit-trust project plugin discovery with Ctrl+K, then search 'plugins'")
