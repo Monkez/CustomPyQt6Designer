@@ -25,6 +25,10 @@ Updated: 2026-08-09
   explicit child visibility is restored on expansion and contextual commands open
   their target card automatically. Repeatable 438×720 offscreen visual QA is
   provided by `scripts/render_canva_control_pane_qa.py`.
+- `MC-EDITOR-PANE-009` rebuilds the tab container as an explicit custom tab-bar /
+  stacked-page composite. Each tab page has an opaque styled surface and the
+  stack repaints its background before showing a page, eliminating stale
+  Add/Inspector pixels when switching tabs on Windows and fractional DPI.
 
 ## Current version
 

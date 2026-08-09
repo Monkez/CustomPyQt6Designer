@@ -1038,6 +1038,12 @@ class WidgetTests(unittest.TestCase):
         toolbox.show()
         self.app.processEvents()
 
+        # The pane is deliberately a custom bar/stack composite.  Keeping
+        # this contract explicit prevents a future QTabWidget reintroduction,
+        # which was the source of stale page compositing on Windows.
+        self.assertEqual("_CanvasPaneTabs", type(toolbox._tabs).__name__)
+        self.assertEqual("canvasPaneStack", toolbox._tabs._stack.objectName())
+
         for current in (1, 0, 2, 3, 4, 1, 0):
             toolbox._tabs.setCurrentIndex(current)
             self.app.processEvents()
@@ -1494,7 +1500,7 @@ class WidgetTests(unittest.TestCase):
             canvas.setEditMode(True)
             toolbox = canvas._toolbox
             self.assertIsNotNone(toolbox)
-            self.assertEqual(5, toolbox.findChild(QTabWidget).count())
+            self.assertEqual(5, toolbox._tabs.count())
             self.assertTrue(toolbox.windowFlags() & Qt.WindowType.FramelessWindowHint)
             self.assertNotIn("EDIT", [label.text() for label in toolbox.findChildren(QLabel)])
             toolbox.refreshLayers()

@@ -1,5 +1,12 @@
 # MonkezCanva
 
+### Control Pane tab isolation
+
+The Control Pane uses an explicit tab-bar plus stacked-page composite instead
+of native `QTabWidget`. Every page owns an opaque styled surface and the stack
+clears its background before each page switch, preventing stale Add/Inspector
+pixels on Windows and fractional-DPI displays.
+
 `MonkezCanva` là canvas editor nhúng trực tiếp trong ứng dụng PyQt6. Widget dùng
 được ở runtime, có plugin Qt Designer và không phụ thuộc WebEngine.
 

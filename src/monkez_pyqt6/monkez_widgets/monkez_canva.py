@@ -79,6 +79,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QTabBar,
     QTabWidget,
     QToolButton,
@@ -2416,6 +2417,106 @@ class _CanvasEditorTabBar(QTabBar):
         painter.drawRoundedRect(indicator, radius, radius)
 
 
+class _CanvasPaneStack(QStackedWidget):
+    """Opaque page stack used by the floating pane.
+
+    ``QTabWidget`` inherits the parent's translucent backing store.  On some
+    Windows/High-DPI combinations that lets the previous page survive a page
+    switch as stale pixels.  Painting the stack's background ourselves makes
+    every transition a real clear-and-paint operation.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#fcfbf9"))
+        painter.end()
+        super().paintEvent(event)
+
+
+class _CanvasPaneTabs(QWidget):
+    """Small, explicit tab-bar/stack composite for the Control Pane.
+
+    Only one widget is ever owned by the visible stack index.  Keeping this
+    contract outside ``QTabWidget`` also makes the pane easy to reason about in
+    tests and prevents native tab-page compositing from leaking between tabs.
+    """
+
+    currentChanged = pyqtSignal(int)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("canvasEditorTabs")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._bar = _CanvasEditorTabBar(self)
+        self._stack = _CanvasPaneStack(self)
+        self._stack.setObjectName("canvasPaneStack")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._bar, 0)
+        layout.addWidget(self._stack, 1)
+        self._bar.currentChanged.connect(self._set_stack_index)
+
+    def _set_stack_index(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
+        self._stack.update()
+        self.currentChanged.emit(index)
+
+    def addTab(self, page: QWidget, icon: QIcon, label: str) -> int:
+        page.setParent(self._stack)
+        page.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        index = self._stack.addWidget(page)
+        self._bar.addTab(icon, label)
+        if self._bar.currentIndex() < 0:
+            self._bar.setCurrentIndex(index)
+        return index
+
+    def setCurrentIndex(self, index: int) -> None:
+        self._bar.setCurrentIndex(int(index))
+
+    def currentIndex(self) -> int:
+        return self._bar.currentIndex()
+
+    def currentWidget(self) -> QWidget | None:
+        return self._stack.currentWidget()
+
+    def widget(self, index: int) -> QWidget:
+        return self._stack.widget(int(index))
+
+    def count(self) -> int:
+        return self._stack.count()
+
+    def tabBar(self) -> _CanvasEditorTabBar:
+        return self._bar
+
+    def setIconSize(self, size: QSize) -> None:
+        self._bar.setIconSize(size)
+
+    def tabIcon(self, index: int) -> QIcon:
+        return self._bar.tabIcon(int(index))
+
+    def setTabIcon(self, index: int, icon: QIcon) -> None:
+        self._bar.setTabIcon(int(index), icon)
+
+    def setTabEnabled(self, index: int, enabled: bool) -> None:
+        self._bar.setTabEnabled(int(index), bool(enabled))
+
+    def isTabEnabled(self, index: int) -> bool:
+        return self._bar.isTabEnabled(int(index))
+
+    def setDocumentMode(self, _enabled: bool) -> None:
+        # Kept as a no-op compatibility surface for the old QTabWidget setup.
+        return None
+
+
+
 class _CanvasNumberField(QDoubleSpinBox):
     """Stable, frameless-stepper number field used throughout the control pane.
 
@@ -3846,11 +3947,8 @@ class _CanvasEditorToolbox(QDialog):
         content.setSpacing(9)
         self._pane_header = _CanvasPaneHeader(self, canvas)
         content.addWidget(self._pane_header)
-        self._tabs = QTabWidget()
-        self._tabs.setObjectName("canvasEditorTabs")
-        self._tabs.setDocumentMode(True)
+        self._tabs = _CanvasPaneTabs()
         self._tabs.setIconSize(QSize(16, 16))
-        self._tabs.setTabBar(_CanvasEditorTabBar(self._tabs))
         self._tabs.tabBar().setExpanding(True)
         self._tabs.tabBar().setUsesScrollButtons(False)
         self._tab_icons = (
@@ -3869,13 +3967,11 @@ class _CanvasEditorToolbox(QDialog):
                 "View": self._view_tab,
                 "Save": self._save_tab,
             }[label]()
-            # This dialog is translucent on Windows.  Transparent tab pages can
-            # therefore retain pixels from the previously visible page after a
-            # tab switch (especially with fractional DPI scaling).  Give every
-            # page its own styled paint surface and keep explicit ownership of
-            # page visibility so stale Inspector controls never bleed into Add.
+            # Every page is opaque and belongs to the explicit stack.  This is
+            # intentionally independent from the translucent tool-window shell.
             page.setObjectName("canvasEditorPage")
             page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            page.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
             page.setAutoFillBackground(True)
             for scroll in page.findChildren(QScrollArea):
                 viewport = scroll.viewport()
@@ -4024,6 +4120,8 @@ class _CanvasEditorToolbox(QDialog):
         QTabWidget#canvasEditorTabs::pane {
             border: none; background: #fcfbf9; top: 0px;
         }
+        QWidget#canvasEditorTabs { background: #fcfbf9; }
+        QStackedWidget#canvasPaneStack { background: #fcfbf9; border: none; }
         QWidget#canvasEditorPage { background: #fcfbf9; }
         QWidget#canvasEditorViewport { background: #fcfbf9; }
         QTabBar#canvasEditorTabBar {
