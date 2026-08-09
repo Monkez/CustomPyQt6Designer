@@ -2834,9 +2834,7 @@ class _CanvasCommandPalette(QDialog):
         # Keep the editor surface opaque.  A translucent tool window allows
         # the canvas backing store to bleed through uncovered layout pixels
         # while QScrollArea pages are being switched.
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.resize(520, 430)
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -3977,9 +3975,7 @@ class _CanvasEditorToolbox(QDialog):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(410, 620)
         self.resize(438, 720)
         root = QVBoxLayout(self)
@@ -4108,7 +4104,7 @@ class _CanvasEditorToolbox(QDialog):
     def _pane_stylesheet() -> str:
         icon_root = Path(__file__).resolve().parent / "monkez_assets" / "icons"
         stylesheet = """
-        QDialog { background: #fcfbf9; }
+        QDialog { background: transparent; }
         QFrame#canvasEditorPanel {
             background: #fcfbf9;
             border: 1px solid #d8d5d0;
