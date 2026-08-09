@@ -711,6 +711,22 @@ new_group = canvas.loadSubflowTemplate(
 )
 ```
 
+Subflow dùng lại thường xuyên có thể publish vào catalog portable của project.
+Catalog nằm trong `.monkez_canva/templates`, nên đi cùng repository khi copy sang
+máy khác:
+
+```python
+canvas.saveGroupAsProjectTemplate(
+    subflow, "recovery-flow", description="Recovery pipeline", tags=("ops",)
+)
+available = canvas.projectTemplates("ops")
+new_group = canvas.instantiateProjectTemplate("recovery-flow", x=800, y=240)
+```
+
+Manifest có ID, label, description, tags, thumbnail và author; payload bị giới
+hạn kích thước/số object và được validate trước khi ghi hoặc instantiate. Mỗi lần
+instantiate vẫn là một Undo command collision-safe.
+
 ## Export hình ảnh, tài liệu và graph
 
 Floatbar có nút **Export** độc lập với Save. Canvas có thể xuất toàn scene hoặc

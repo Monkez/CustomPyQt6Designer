@@ -270,6 +270,12 @@ missing-component records in place, exposes lifecycle signals and keeps unload
 document-safe. A complete trusted Telemetry plugin demonstrates vector painting,
 typed ports and an auto-apply Inspector in the diagnostic demo.
 
+Completed foundation (2026-08-09): `MC-ECOSYSTEM-TEMPLATE-004` adds a bounded,
+Qt-free reusable-template manifest and deterministic project-local catalog under
+`.monkez_canva/templates`. Canvas APIs publish groups with searchable metadata
+and instantiate them through the existing collision-safe, one-command subflow
+path. Malformed catalog entries are isolated with diagnostics.
+
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;

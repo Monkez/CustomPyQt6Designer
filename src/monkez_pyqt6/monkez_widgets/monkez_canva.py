@@ -93,6 +93,8 @@ from monkez_pyqt6.monkez_canva import (
     COMPONENT_PACKS,
     ComponentPack,
     ComponentPlugin,
+    CanvasTemplate,
+    TemplateCatalog,
     CanvasPageConfig,
     DataBindingEngine,
     ElementDefinition,
@@ -2912,20 +2914,24 @@ class _CanvasEditorToolbox(QDialog):
             border: none; background: transparent; top: 0px;
         }
         QTabBar#canvasEditorTabBar {
-            background: #f1efec; border: 1px solid #ebe7e2; border-radius: 13px;
-            padding: 4px; margin: 2px 0px 7px 0px;
+            background: transparent; border: none;
+            border-bottom: 1px solid #e8e3dd; border-radius: 0px;
+            padding: 0px 3px; margin: 2px 0px 8px 0px;
         }
         QTabBar#canvasEditorTabBar::tab {
-            color: #667079; background: transparent; border: 1px solid transparent;
-            border-radius: 9px; min-height: 27px; padding: 5px 3px; margin: 0px 1px;
+            color: #667079; background: transparent;
+            border: none; border-bottom: 2px solid transparent;
+            border-radius: 6px; min-height: 32px; max-height: 32px;
+            padding: 0px 4px; margin: 0px 2px;
             font-size: 10px; font-weight: 600;
         }
         QTabBar#canvasEditorTabBar::tab:selected {
-            color: #e95549; background: #fffefd; border-color: #e7e1da;
-            font-weight: 700;
+            color: #e95549; background: transparent;
+            border-bottom: 2px solid #ff6b5f; font-weight: 700;
         }
         QTabBar#canvasEditorTabBar::tab:hover:!selected {
-            color: #3f474e; background: #f9f7f4; border-color: #eee9e4;
+            color: #3f474e; background: #f8f6f3;
+            border-bottom-color: #d9d4ce;
         }
         QGroupBox {
             color: #303941; background: transparent; border: none;
@@ -6232,6 +6238,8 @@ class MonkezCanva(QWidget):
     componentPluginChanged = pyqtSignal(str, bool)
     exportCompleted = pyqtSignal(str, str, str)
     dotImported = pyqtSignal(dict)
+    projectTemplateSaved = pyqtSignal(str, str)
+    projectTemplateInstantiated = pyqtSignal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -10537,6 +10545,87 @@ class MonkezCanva(QWidget):
         target = Path(path)
         atomic_write_json(target, self.exportSubflow(group_id))
         return target
+
+    def projectTemplateCatalog(self) -> TemplateCatalog:
+        """Return the portable catalog stored beside the project document."""
+
+        return TemplateCatalog(self.projectDirectoryPath() / ".monkez_canva" / "templates")
+
+    def projectTemplates(self, *tags: str) -> list[dict[str, Any]]:
+        """List valid project templates without exposing mutable catalog state."""
+
+        scan = self.projectTemplateCatalog().scan(tags)
+        for filename, message in scan.errors:
+            self.diagnosticMessage.emit(f"Template {filename!r} ignored: {message}")
+        return [
+            {
+                "id": template.template_id,
+                "label": template.label,
+                "kind": template.kind,
+                "description": template.description,
+                "tags": list(template.tags),
+                "thumbnail": template.thumbnail,
+                "author": template.author,
+                "elements": len(template.payload.get("elements", ())),
+                "connectors": len(template.payload.get("connectors", ())),
+                "groups": len(template.payload.get("groups", ())),
+            }
+            for template in scan.templates
+        ]
+
+    def saveGroupAsProjectTemplate(
+        self,
+        group_id: str,
+        template_id: str,
+        *,
+        label: str = "",
+        description: str = "",
+        tags: tuple[str, ...] | list[str] = (),
+        thumbnail: str = "",
+        author: str = "",
+        replace_existing: bool = True,
+    ) -> Path:
+        """Publish a group into the repository-portable template catalog."""
+
+        group = self.group(group_id)
+        if group is None:
+            raise KeyError(f"Unknown MonkezCanva group: {group_id}")
+        template = CanvasTemplate(
+            template_id,
+            label or group.text,
+            "subflow",
+            self.exportSubflow(group_id),
+            description,
+            tuple(tags),
+            thumbnail,
+            author,
+        )
+        target = self.projectTemplateCatalog().save(
+            template, replace_existing=replace_existing
+        )
+        self.projectTemplateSaved.emit(template.template_id, str(target))
+        self.diagnosticMessage.emit(
+            f"Project template saved: {template.label} ({template.template_id})"
+        )
+        return target
+
+    def instantiateProjectTemplate(
+        self,
+        template_id: str,
+        x: float | None = None,
+        y: float | None = None,
+    ) -> str:
+        """Instantiate one catalog entry through the existing atomic subflow path."""
+
+        template = self.projectTemplateCatalog().load(template_id)
+        if template.kind != "subflow":
+            raise ValueError(f"Unsupported project template kind: {template.kind}")
+        group_id = self.importSubflow(dict(template.payload), x, y)
+        self.projectTemplateInstantiated.emit(template.template_id, group_id)
+        self.diagnosticMessage.emit(
+            f"Project template instantiated: {template.label} as {group_id}"
+        )
+        return group_id
 
     def loadSubflowTemplate(
         self, path: str | Path, x: float | None = None, y: float | None = None

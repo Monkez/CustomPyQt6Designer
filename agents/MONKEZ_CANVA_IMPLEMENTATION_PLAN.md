@@ -337,8 +337,12 @@ reconciles placeholders without changing graphics identity and reports plugin
 lifecycle. A trusted Telemetry example covers renderer, typed port and auto-apply
 Inspector contracts in the real demo.
 
-Next: reusable project template catalog, then document diff/diagnostics reports
-and plugin packaging/discovery policy.
+`MC-ECOSYSTEM-TEMPLATE-004` provides the reusable project-template foundation:
+bounded manifests, deterministic `.monkez_canva/templates` catalog, searchable
+metadata and collision-safe/Undoable canvas publishing and instantiation APIs.
+
+Next: visual template browser/thumbnail capture, document diff/diagnostics
+reports and plugin packaging/discovery policy.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,

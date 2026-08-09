@@ -426,6 +426,14 @@ palette once and emits `componentPluginChanged`. Unload removes factories only;
 canonical records remain portable missing components. Renderer/Inspector errors
 stay isolated by the existing factory boundary and are surfaced as diagnostics.
 
+`monkez_canva/templates.py` owns the Qt-free reusable-template boundary. A
+versioned manifest wraps a validated subflow with portable catalog metadata;
+5 MiB/10,000-object limits and dependency checks apply before instantiation.
+`TemplateCatalog` maps normalized IDs to `.monkez_canva/templates` without path
+input, sorts deterministically and isolates malformed files. The Qt facade only
+adapts group export/import, signals and project-root resolution; instantiation
+continues through the existing atomic Undoable subflow operation.
+
 `monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
 One render-state context temporarily hides excluded objects, clears selection and
 smart-guide artifacts, optionally suppresses background/grid painting, then

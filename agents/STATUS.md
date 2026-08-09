@@ -357,7 +357,13 @@ Updated: 2026-08-09
   diagnostics and unloads factories without deleting records. The repository
   includes a polished Telemetry plugin with native renderer, typed output and
   auto-apply Inspector, registered by `canva_demo.bat`.
-- The automated suite contains 233 tests and covers all 36 public
+- `MC-EDITOR-PANE-006` replaces the raised selected-tab block with a flat,
+  equal-height tab row, subtle baseline and coral active underline. Icons and
+  labels retain clear active/hover states without shifting pane geometry.
+- `MC-ECOSYSTEM-TEMPLATE-004` adds bounded reusable-template manifests and a
+  deterministic project-local catalog with metadata, safe scan diagnostics and
+  one-command collision-safe instantiation.
+- The automated suite contains 237 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.
