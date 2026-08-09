@@ -119,6 +119,13 @@ from .registry import (
     create_default_element_registry,
 )
 from .schema import DOCUMENT_JSON_SCHEMA, DocumentMigrationResult, migrate_document
+from .sdk import (
+    COMPONENT_SDK_VERSION,
+    ComponentPlugin,
+    component_plugin,
+    install_component_plugin,
+    uninstall_component_plugin,
+)
 from .snapping import (
     SMART_GUIDES_KEY,
     SNAP_DISTANCE_KEY,
@@ -165,6 +172,7 @@ __all__ = [
     "BINDING_TARGET_PREFIXES",
     "COMPONENT_PACKS",
     "COMPONENT_PACK_VERSION",
+    "COMPONENT_SDK_VERSION",
     "CLIPBOARD_FORMAT",
     "CLIPBOARD_VERSION",
     "CANVAS_CLIPBOARD_MIME_TYPE",
@@ -187,6 +195,7 @@ __all__ = [
     "BindingSpec",
     "BindingUpdate",
     "ComponentPack",
+    "ComponentPlugin",
     "CanvasDocument",
     "BUILTIN_ELEMENT_DEFINITIONS",
     "ConnectorModel",
@@ -281,7 +290,10 @@ __all__ = [
     "binding_specs_from_document",
     "component_pack",
     "component_packs",
+    "component_plugin",
+    "install_component_plugin",
     "register_component_pack",
+    "uninstall_component_plugin",
     "export_dot",
     "export_mermaid",
     "import_dot",

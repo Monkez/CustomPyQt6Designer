@@ -92,6 +92,7 @@ from monkez_pyqt6.monkez_canva import (
     BindingUpdate,
     COMPONENT_PACKS,
     ComponentPack,
+    ComponentPlugin,
     CanvasPageConfig,
     DataBindingEngine,
     ElementDefinition,
@@ -148,6 +149,7 @@ from monkez_pyqt6.monkez_canva import (
     export_dot,
     export_mermaid,
     import_dot,
+    install_component_plugin,
     normalize_port_record,
     validate_port_value,
     parallel_lane_offset,
@@ -2735,6 +2737,7 @@ class _CanvasEditorToolbox(QDialog):
         self._pending_inspector_fields: set[str] = set()
         self._inspector_apply_timer = QTimer(self)
         self._inspector_apply_timer.setSingleShot(True)
+        self._inspector_apply_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._inspector_apply_timer.timeout.connect(self._apply_inspector)
         self.setWindowTitle("MonkezCanva Editor")
         self.setWindowFlags(
@@ -4304,7 +4307,7 @@ class _CanvasEditorToolbox(QDialog):
             ("groupLanes", self._group_lanes_edit),
         ):
             field.textEdited.connect(
-                lambda _text, name=key: self._schedule_inspector_apply(150, name)
+                lambda _text, name=key: self._schedule_inspector_apply(80, name)
             )
         self._id_edit.editingFinished.connect(
             lambda: self._schedule_inspector_apply(0, "id")
@@ -6226,6 +6229,7 @@ class MonkezCanva(QWidget):
     dataBindingBatchApplied = pyqtSignal(list)
     dataSourceBound = pyqtSignal(str)
     componentPackChanged = pyqtSignal(str, bool)
+    componentPluginChanged = pyqtSignal(str, bool)
     exportCompleted = pyqtSignal(str, str, str)
     dotImported = pyqtSignal(dict)
 
@@ -6541,6 +6545,52 @@ class MonkezCanva(QWidget):
                 self._toolbox.show()
         return self
 
+    def registerElementPlugin(
+        self,
+        plugin: ComponentPlugin,
+        *,
+        replace_existing: bool = False,
+    ) -> tuple[str, ...]:
+        """Install or upgrade one trusted SDK plugin as an atomic registry unit.
+
+        The host application imports plugin code explicitly. Canvas documents
+        never import modules, and existing missing-component records reconcile
+        in place after the complete manifest passes validation.
+        """
+
+        if not isinstance(plugin, ComponentPlugin):
+            raise TypeError("registerElementPlugin expects a ComponentPlugin")
+        definitions = {definition.type_id: definition for definition in plugin.definitions}
+        for model in self._document_model.elements:
+            definition = definitions.get(model.type)
+            if definition is not None:
+                definition.prepare_record(model.to_dict(), allow_newer=True)
+
+        toolbox_visible = self._toolbox is not None and self._toolbox.isVisible()
+        if self._toolbox is not None:
+            self._toolbox.close()
+            self._toolbox.deleteLater()
+            self._toolbox = None
+        try:
+            installed = install_component_plugin(
+                self._element_registry,
+                plugin,
+                replace_existing=replace_existing,
+            )
+            for type_id in installed:
+                self._reconcile_registry_records(type_id)
+        finally:
+            if toolbox_visible:
+                self._ensure_toolbox()
+                self._toolbox.show()
+                self._place_toolbox_on_screen()
+        self.componentPluginChanged.emit(plugin.plugin_id, True)
+        self.diagnosticMessage.emit(
+            f"{plugin.label} component plugin {plugin.version or 'unversioned'} enabled: "
+            f"{len(installed)} definitions"
+        )
+        return installed
+
     def unregisterElementPlugin(self, plugin_id: str) -> tuple[str, ...]:
         """Unload registry metadata owned by one plugin; existing records stay intact."""
         removed = self._element_registry.unregister_owner(plugin_id)
@@ -6551,6 +6601,12 @@ class MonkezCanva(QWidget):
                     item.update()
         if self._toolbox is not None:
             self._toolbox._sync_inspector(self.selectedElementId())
+        if removed:
+            owner = str(plugin_id).strip().lower()
+            self.componentPluginChanged.emit(owner, False)
+            self.diagnosticMessage.emit(
+                f"Component plugin {owner!r} disabled: {len(removed)} definitions"
+            )
         return tuple(definition.type_id for definition in removed)
 
     def element(self, element_id: str) -> _CanvasElement | None:

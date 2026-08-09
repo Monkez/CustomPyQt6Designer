@@ -351,7 +351,13 @@ Updated: 2026-08-09
   layout. The widget remaps collisions, enables known native packs, degrades
   unknown types with diagnostics and commits the complete graph as one Undo step.
   Blank-canvas actions, Ctrl+K, public APIs and demo logs share the same path.
-- The automated suite contains 228 tests and covers all 36 public
+- `MC-ECOSYSTEM-SDK-003` adds the public Qt-free Component Plugin SDK with
+  versioned manifests, ownership/conflict checks and atomic registry install.
+  Canvas registration restores missing components in place, emits lifecycle
+  diagnostics and unloads factories without deleting records. The repository
+  includes a polished Telemetry plugin with native renderer, typed output and
+  auto-apply Inspector, registered by `canva_demo.bat`.
+- The automated suite contains 233 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

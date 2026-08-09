@@ -409,6 +409,23 @@ performs collision-safe ID remapping and optionally creates a subflow group.
 Document insertion is precomputed before one history mutation, so a failed graph
 never leaves a partially imported document.
 
+## Public component SDK boundary
+
+`monkez_canva/sdk.py` is Qt-free and owns the public `ComponentPlugin` manifest,
+SDK compatibility checks and atomic registry install/uninstall helpers. A manifest
+is an explicit trusted host object; no document field is ever interpreted as a
+module path or entry point. Every definition must declare the manifest's normalized
+owner ID, and duplicate or foreign-owned type conflicts fail before the caller's
+registry changes. Existing definitions from the same owner and safe `__missing__`
+placeholders support idempotent install and in-place upgrade.
+
+`MonkezCanva.registerElementPlugin()` is the Qt adapter. It preflights existing
+records against candidate schemas, installs the complete manifest, reconciles
+migrations/type factories without replacing graphics identity, rebuilds the
+palette once and emits `componentPluginChanged`. Unload removes factories only;
+canonical records remain portable missing components. Renderer/Inspector errors
+stay isolated by the existing factory boundary and are surfaced as diagnostics.
+
 `monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
 One render-state context temporarily hides excluded objects, clears selection and
 smart-guide artifacts, optionally suppresses background/grid painting, then

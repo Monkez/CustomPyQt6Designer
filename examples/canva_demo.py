@@ -9,6 +9,8 @@ from PyQt6.QtWidgets import QApplication, QMainWindow
 
 from monkez_pyqt6.monkez_widgets import MonkezCanva
 
+from canva_component_plugin import PLUGIN as TELEMETRY_PLUGIN
+
 
 def _configure_logging() -> logging.Logger:
     logger = logging.getLogger("monkez.canva.demo")
@@ -92,6 +94,11 @@ def main() -> int:
             "componentPackChanged -> %s enabled=%s", pack_id, enabled
         )
     )
+    canvas.componentPluginChanged.connect(
+        lambda plugin_id, enabled: logger.info(
+            "componentPluginChanged -> %s enabled=%s", plugin_id, enabled
+        )
+    )
     canvas.exportCompleted.connect(
         lambda path, format_name, scope: logger.info("exportCompleted -> %s [%s/%s]", path, scope, format_name)
     )
@@ -107,6 +114,7 @@ def main() -> int:
     )
     canvas.enableWorkflowComponents()
     canvas.enableAllComponentPacks()
+    canvas.registerElementPlugin(TELEMETRY_PLUGIN)
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 
@@ -277,6 +285,15 @@ def main() -> int:
         canvas.addPackComponent(
             "soft_service", 1080, 405, element_id="pack-api-service",
             text="Inference API", technology="FastAPI", status="online",
+        )
+        canvas.addElement(
+            "telemetry_sensor",
+            1310,
+            405,
+            element_id="sdk-temperature-sensor",
+            text="Device temperature",
+            value=41.7,
+            unit="°C",
         )
         canvas.addDataBinding(
             kpi,

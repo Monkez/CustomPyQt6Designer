@@ -33,6 +33,7 @@ echo [TIP] Use the export icon on the floating toolbar for PNG, transparent PNG,
 echo [TIP] Ctrl+K, search "export" for selection, DOT, Mermaid, page setup and print preview
 echo [TIP] Right-click blank canvas or Ctrl+K to import a Graphviz DOT graph
 echo [TIP] "Import DOT as subflow" wraps the imported graph as one reusable group
+echo [TIP] The SDK examples category contains a trusted plugin component with its own Inspector
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

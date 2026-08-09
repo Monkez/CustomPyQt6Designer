@@ -813,6 +813,22 @@ scene; selection, zoom, viewport và identity của item được giữ nguyên 
 
 ### Đăng ký component riêng
 
+Với plugin có một hoặc nhiều component, nên dùng public Component SDK để kiểm tra
+ownership và cài toàn manifest theo cách nguyên tử:
+
+```python
+from my_company.monkez_plugin import PLUGIN
+
+canvas.registerElementPlugin(PLUGIN)
+canvas.componentPluginChanged.connect(print)
+```
+
+Xem [MonkezCanva Component Plugin SDK](MONKEZ_CANVA_PLUGIN_SDK.md) và
+[`examples/canva_component_plugin.py`](../examples/canva_component_plugin.py)
+để có ví dụ đầy đủ về renderer vector, typed port và Inspector auto-apply.
+`registerElementDefinition()` bên dưới vẫn là API mức thấp phù hợp cho một
+component được khai báo trực tiếp trong ứng dụng.
+
 ```python
 from monkez_pyqt6.monkez_canva import ElementDefinition
 

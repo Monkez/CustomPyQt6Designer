@@ -331,8 +331,14 @@ restores exported semantics and deterministically lays out missing positions. Th
 widget adapter remaps collisions, resolves known packs, infers endpoint ports and
 commits the imported graph through one Undo command.
 
-Next: reusable document templates, public component SDK plus example plugin,
-then document diff/diagnostics reports.
+`MC-ECOSYSTEM-SDK-003` publishes a Qt-free, versioned component manifest and
+atomic registry installer. The canvas adapter preflights existing records,
+reconciles placeholders without changing graphics identity and reports plugin
+lifecycle. A trusted Telemetry example covers renderer, typed port and auto-apply
+Inspector contracts in the real demo.
+
+Next: reusable project template catalog, then document diff/diagnostics reports
+and plugin packaging/discovery policy.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,

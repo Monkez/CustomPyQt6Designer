@@ -263,6 +263,13 @@ places the graph at a requested point or viewport center and can wrap it as one
 reusable subflow. Each successful import is one Undo command and is available
 through the blank-canvas menu, Ctrl+K, public API and demo diagnostics.
 
+Completed slice (2026-08-09): `MC-ECOSYSTEM-SDK-003` publishes a Qt-free
+component-plugin manifest and atomic registry installer with SDK compatibility,
+ownership, duplicate and conflict validation. The canvas facade reconciles
+missing-component records in place, exposes lifecycle signals and keeps unload
+document-safe. A complete trusted Telemetry plugin demonstrates vector painting,
+typed ports and an auto-apply Inspector in the diagnostic demo.
+
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;
