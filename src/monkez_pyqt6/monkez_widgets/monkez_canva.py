@@ -41,6 +41,7 @@ from PyQt6.QtGui import (
     QPageLayout,
     QPageSize,
     QPainter,
+    QPalette,
     QPainterPath,
     QPainterPathStroker,
     QPen,
@@ -2390,6 +2391,13 @@ class _CanvasEditorTabBar(QTabBar):
         super().__init__(parent)
         self.setObjectName("canvasEditorTabBar")
         self.setDrawBase(False)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.AlternateBase):
+            palette.setColor(role, QColor("#fcfbf9"))
+        self.setPalette(palette)
 
     def _indicator_rect(self) -> QRectF:
         index = self.currentIndex()
@@ -2436,7 +2444,9 @@ class _CanvasPaneStack(QStackedWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#fcfbf9"))
         painter.end()
-        super().paintEvent(event)
+        # QStackedWidget's style pass may clear a translucent parent again;
+        # child pages paint themselves independently, so no native frame pass
+        # is needed here.
 
 
 class _CanvasPaneTabs(QWidget):
@@ -2456,6 +2466,10 @@ class _CanvasPaneTabs(QWidget):
         self._bar = _CanvasEditorTabBar(self)
         self._stack = _CanvasPaneStack(self)
         self._stack.setObjectName("canvasPaneStack")
+        stack_palette = self._stack.palette()
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.AlternateBase):
+            stack_palette.setColor(role, QColor("#fcfbf9"))
+        self._stack.setPalette(stack_palette)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -2465,13 +2479,27 @@ class _CanvasPaneTabs(QWidget):
 
     def _set_stack_index(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
-        self._stack.update()
+        self._stack.repaint()
         self.currentChanged.emit(index)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        # The toolbox is a translucent tool window for its rounded shadow.  A
+        # solid surface at this boundary prevents the host canvas (or a stale
+        # previous page) showing through the tab/stack composite during a
+        # native mouse click transition.
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#fcfbf9"))
+        painter.end()
+        super().paintEvent(event)
 
     def addTab(self, page: QWidget, icon: QIcon, label: str) -> int:
         page.setParent(self._stack)
         page.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page_palette = page.palette()
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.AlternateBase):
+            page_palette.setColor(role, QColor("#fcfbf9"))
+        page.setPalette(page_palette)
         index = self._stack.addWidget(page)
         self._bar.addTab(icon, label)
         if self._bar.currentIndex() < 0:
@@ -2788,7 +2816,12 @@ class _CanvasCommandPalette(QDialog):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # Keep the editor surface opaque.  A translucent tool window allows
+        # the canvas backing store to bleed through uncovered layout pixels
+        # while QScrollArea pages are being switched.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
         self.resize(520, 430)
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -3936,6 +3969,9 @@ class _CanvasEditorToolbox(QDialog):
         root.setContentsMargins(14, 14, 14, 14)
         panel = QFrame()
         panel.setObjectName("canvasEditorPanel")
+        panel.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        panel.setAutoFillBackground(True)
         shadow = QGraphicsDropShadowEffect(panel)
         shadow.setBlurRadius(38)
         shadow.setOffset(0, 12)
@@ -4050,6 +4086,7 @@ class _CanvasEditorToolbox(QDialog):
     def _pane_stylesheet() -> str:
         icon_root = Path(__file__).resolve().parent / "monkez_assets" / "icons"
         stylesheet = """
+        QDialog { background: #fcfbf9; }
         QFrame#canvasEditorPanel {
             background: #fcfbf9;
             border: 1px solid #d8d5d0;
@@ -4231,8 +4268,9 @@ class _CanvasEditorToolbox(QDialog):
         QListWidget::item { border-radius: 6px; padding: 7px; margin: 1px; }
         QListWidget::item:selected { color: #d94e43; background: #ffe9e5; }
         QListWidget::item:hover:!selected { background: #f5f2ee; }
-        QScrollArea { background: transparent; border: none; }
-        QWidget#canvasInspectorBody, QWidget#canvasViewBody { background: transparent; }
+        QScrollArea { background: #fcfbf9; border: none; }
+        QWidget#canvasInspectorBody, QWidget#canvasViewBody { background: #fcfbf9; }
+        QWidget#canvasPaletteBody { background: #fcfbf9; }
         QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
         QScrollBar::handle:vertical { background: #d8d4cf; border-radius: 4px; min-height: 28px; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
@@ -4276,6 +4314,12 @@ class _CanvasEditorToolbox(QDialog):
         self._palette_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._palette_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._palette_body = QWidget()
+        self._palette_body.setObjectName("canvasPaletteBody")
+        palette = self._palette_body.palette()
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.AlternateBase):
+            palette.setColor(role, QColor("#fcfbf9"))
+        self._palette_body.setPalette(palette)
+        self._palette_body.setAutoFillBackground(True)
         self._palette_body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._palette_grid = QGridLayout(self._palette_body)
         self._palette_grid.setContentsMargins(3, 3, 3, 3)
