@@ -2449,6 +2449,21 @@ class _CanvasPaneStack(QStackedWidget):
         # is needed here.
 
 
+class _CanvasPanePage(QWidget):
+    """Solid page surface for every Control Pane tab."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#fcfbf9"))
+        painter.end()
+
+
 class _CanvasPaneTabs(QWidget):
     """Small, explicit tab-bar/stack composite for the Control Pane.
 
@@ -3962,7 +3977,9 @@ class _CanvasEditorToolbox(QDialog):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
         self.setMinimumSize(410, 620)
         self.resize(438, 720)
         root = QVBoxLayout(self)
@@ -4014,6 +4031,11 @@ class _CanvasEditorToolbox(QDialog):
                 viewport.setObjectName("canvasEditorViewport")
                 viewport.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
                 viewport.setAutoFillBackground(True)
+                viewport_palette = viewport.palette()
+                for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.AlternateBase):
+                    viewport_palette.setColor(role, QColor("#fcfbf9"))
+                viewport.setPalette(viewport_palette)
+                scroll.setAutoFillBackground(True)
             self._tab_pages.append(page)
             self._tabs.addTab(page, _canvas_icon(icon_name), label)
         self._tabs.currentChanged.connect(self._sync_active_tab)
@@ -4092,7 +4114,7 @@ class _CanvasEditorToolbox(QDialog):
             border: 1px solid #d8d5d0;
             border-radius: 20px;
         }
-        QFrame#canvasPaneHeader { border: none; background: transparent; }
+        QFrame#canvasPaneHeader { border: none; background: #fcfbf9; }
         QLabel#canvasPaneBrand { background: #ff6b5f; border-radius: 10px; }
         QLabel#canvasPaneTitle { color: #303941; font-size: 17px; font-weight: 700; }
         QLabel#canvasSelectionBadge {
@@ -4108,9 +4130,9 @@ class _CanvasEditorToolbox(QDialog):
         }
         QToolButton#canvasPaneClose:hover { color: #d94e43; background: #fff0ed; }
         QToolButton#canvasPaneCommand:hover { color: #d94e43; background: #fff0ed; }
-        QFrame#canvasPaneFooter { border: none; border-top: 1px solid #ebe7e2; background: transparent; }
+        QFrame#canvasPaneFooter { border: none; border-top: 1px solid #ebe7e2; background: #fcfbf9; }
         QLabel#canvasFooterStatus {
-            color: #0f9f8f; background: transparent; font-size: 11px; font-weight: 650;
+            color: #0f9f8f; background: #fcfbf9; font-size: 11px; font-weight: 650;
         }
         QLabel#canvasObjectType {
             color: #ef5d50; background: #fff3f0; border: 1px solid #ffd3cc;
@@ -4166,19 +4188,19 @@ class _CanvasEditorToolbox(QDialog):
         QWidget#canvasEditorPage { background: #fcfbf9; }
         QWidget#canvasEditorViewport { background: #fcfbf9; }
         QTabBar#canvasEditorTabBar {
-            background: transparent; border: none;
+            background: #fcfbf9; border: none;
             border-bottom: 1px solid #e8e3dd; border-radius: 0px;
             padding: 0px 3px; margin: 2px 0px 8px 0px;
         }
         QTabBar#canvasEditorTabBar::tab {
-            color: #667079; background: transparent;
+            color: #667079; background: #fcfbf9;
             border: none; border-radius: 7px;
             min-height: 32px; max-height: 32px;
             padding: 0px 4px; margin: 0px 2px;
             font-size: 10px; font-weight: 600;
         }
         QTabBar#canvasEditorTabBar::tab:selected {
-            color: #e95549; background: transparent;
+            color: #e95549; background: #fcfbf9;
             border: none; font-weight: 700;
         }
         QTabBar#canvasEditorTabBar::tab:hover:!selected {
@@ -4283,7 +4305,7 @@ class _CanvasEditorToolbox(QDialog):
         )
 
     def _elements_tab(self) -> QWidget:
-        page = QWidget()
+        page = _CanvasPanePage()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 4, 0, 0)
         page_layout.setSpacing(7)
@@ -4404,7 +4426,7 @@ class _CanvasEditorToolbox(QDialog):
         self._palette_count.setText(f"{len(entries)} {label}")
 
     def _inspector_tab(self) -> QWidget:
-        page = QWidget()
+        page = _CanvasPanePage()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 4, 0, 0)
         scroll = QScrollArea()
@@ -5060,7 +5082,7 @@ class _CanvasEditorToolbox(QDialog):
         return page
 
     def _layers_tab(self) -> QWidget:
-        page = QWidget()
+        page = _CanvasPanePage()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(7)
@@ -5097,7 +5119,7 @@ class _CanvasEditorToolbox(QDialog):
         return page
 
     def _view_tab(self) -> QWidget:
-        page = QWidget()
+        page = _CanvasPanePage()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
@@ -5326,7 +5348,7 @@ class _CanvasEditorToolbox(QDialog):
         return page
 
     def _save_tab(self) -> QWidget:
-        page = QWidget()
+        page = _CanvasPanePage()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(7)
@@ -6886,7 +6908,7 @@ class _CanvasRuntimeDebugger(QDialog):
         self._messages = QListWidget()
         self._messages.currentItemChanged.connect(self._sync_details)
         self._trace = QListWidget()
-        workflow_page = QWidget()
+        workflow_page = _CanvasPanePage()
         workflow_layout = QVBoxLayout(workflow_page)
         workflow_layout.setContentsMargins(0, 0, 0, 0)
         workflow_actions = QHBoxLayout()
@@ -6924,7 +6946,7 @@ class _CanvasRuntimeDebugger(QDialog):
         self._tabs.addTab(self._messages, "Messages")
         self._tabs.addTab(self._trace, "Timeline")
         self._tabs.addTab(workflow_page, "Workflow")
-        links_page = QWidget()
+        links_page = _CanvasPanePage()
         links_layout = QVBoxLayout(links_page)
         links_layout.setContentsMargins(0, 0, 0, 0)
         links_actions = QHBoxLayout()
