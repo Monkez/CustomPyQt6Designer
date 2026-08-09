@@ -95,6 +95,7 @@ from monkez_pyqt6.monkez_canva import (
     ComponentPlugin,
     CanvasTemplate,
     TemplateCatalog,
+    normalize_template_id,
     CanvasPageConfig,
     DataBindingEngine,
     ElementDefinition,
@@ -2617,6 +2618,7 @@ class _CanvasCommandPalette(QDialog):
                     canvas.showPageSetup,
                 ),
             ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
+            ("template:browse", "Browse project templates", "Templates", "catalog reusable subflow", "grid", True, canvas.showProjectTemplateBrowser),
         ))
         if selected:
             all_locked = all(canvas.objectState(object_id)["locked"] for object_id in selected)
@@ -2725,6 +2727,247 @@ class _CanvasCommandPalette(QDialog):
         if callback is not None:
             self.close()
             callback()
+
+
+class _CanvasTemplateBrowser(QDialog):
+    """Detached searchable browser for repository-portable canvas templates."""
+
+    def __init__(self, canvas: "MonkezCanva") -> None:
+        super().__init__(canvas.window())
+        self.canvas = canvas
+        self.setWindowTitle("MonkezCanva Templates")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.setMinimumSize(720, 500)
+        self.resize(820, 560)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(12)
+
+        header = QHBoxLayout()
+        title = QLabel("Project templates")
+        title.setObjectName("templateBrowserTitle")
+        self._count = QLabel()
+        self._count.setObjectName("templateBrowserCount")
+        header.addWidget(title)
+        header.addStretch(1)
+        header.addWidget(self._count)
+        root.addLayout(header)
+
+        filters = QHBoxLayout()
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Search label, description or tag…")
+        self._search.setClearButtonEnabled(True)
+        self._tag = QComboBox()
+        self._tag.setMinimumWidth(150)
+        self._refresh = QToolButton()
+        self._refresh.setIcon(_canvas_icon("refresh"))
+        self._refresh.setToolTip("Reload project templates")
+        filters.addWidget(self._search, 1)
+        filters.addWidget(self._tag)
+        filters.addWidget(self._refresh)
+        root.addLayout(filters)
+
+        body = QHBoxLayout()
+        body.setSpacing(14)
+        self._list = QListWidget()
+        self._list.setMinimumWidth(290)
+        self._list.setSpacing(5)
+        self._list.setAlternatingRowColors(False)
+        body.addWidget(self._list, 4)
+        preview_panel = QFrame()
+        preview_panel.setObjectName("templatePreviewPanel")
+        preview_layout = QVBoxLayout(preview_panel)
+        preview_layout.setContentsMargins(14, 14, 14, 14)
+        preview_layout.setSpacing(10)
+        self._preview = QLabel("Select a template")
+        self._preview.setObjectName("templatePreviewImage")
+        self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview.setMinimumSize(320, 190)
+        self._preview.setScaledContents(False)
+        self._name = QLabel()
+        self._name.setObjectName("templatePreviewName")
+        self._description = QLabel()
+        self._description.setWordWrap(True)
+        self._description.setObjectName("templatePreviewDescription")
+        self._metadata = QLabel()
+        self._metadata.setWordWrap(True)
+        self._metadata.setObjectName("templatePreviewMetadata")
+        preview_layout.addWidget(self._preview)
+        preview_layout.addWidget(self._name)
+        preview_layout.addWidget(self._description)
+        preview_layout.addWidget(self._metadata)
+        preview_layout.addStretch(1)
+        self._instantiate = QPushButton("Insert into canvas")
+        self._instantiate.setIcon(_canvas_icon("add", "#ffffff"))
+        self._instantiate.setObjectName("primaryAction")
+        self._instantiate.setEnabled(False)
+        preview_layout.addWidget(self._instantiate)
+        body.addWidget(preview_panel, 5)
+        root.addLayout(body, 1)
+
+        self.setStyleSheet("""
+            QDialog { background: #fbfaf8; color: #27313a; }
+            QLabel#templateBrowserTitle { font-size: 18px; font-weight: 750; color: #27313a; }
+            QLabel#templateBrowserCount { color: #e95549; background: #fff1ee;
+                border: 1px solid #ffd3cc; border-radius: 10px; padding: 5px 9px; }
+            QLineEdit, QComboBox { background: #fffefd; border: 1px solid #ddd8d1;
+                border-radius: 10px; padding: 8px 10px; min-height: 24px; }
+            QLineEdit:focus, QComboBox:focus { border-color: #ff8f85; }
+            QToolButton { background: #fffefd; border: 1px solid #ddd8d1;
+                border-radius: 10px; padding: 8px; min-width: 28px; min-height: 28px; }
+            QListWidget { background: transparent; border: none; outline: none; }
+            QListWidget::item { background: #fffefd; border: 1px solid #e5e0da;
+                border-radius: 11px; padding: 11px 12px; margin: 1px 0px; }
+            QListWidget::item:hover { border-color: #ffc1ba; background: #fff8f6; }
+            QListWidget::item:selected { color: #d94e43; border-color: #ff9f95;
+                background: #fff1ee; }
+            QFrame#templatePreviewPanel { background: #fffefd; border: 1px solid #e4dfd9;
+                border-radius: 14px; }
+            QLabel#templatePreviewImage { background: #f5f3f0; border: 1px solid #e5e0da;
+                border-radius: 11px; color: #899199; }
+            QLabel#templatePreviewName { font-size: 15px; font-weight: 700; color: #27313a; }
+            QLabel#templatePreviewDescription { color: #59656e; }
+            QLabel#templatePreviewMetadata { color: #7b858d; font-size: 10px; }
+            QPushButton#primaryAction { color: white; background: #ff6b5f;
+                border: none; border-radius: 10px; padding: 10px 14px; font-weight: 700; }
+            QPushButton#primaryAction:hover { background: #ef5d50; }
+            QPushButton#primaryAction:disabled { background: #e5e1dc; color: #aaa59f; }
+        """)
+        self._search.textChanged.connect(self._apply_filter)
+        self._tag.currentIndexChanged.connect(self._apply_filter)
+        self._refresh.clicked.connect(self.reload)
+        self._list.currentItemChanged.connect(self._show_current)
+        self._list.itemDoubleClicked.connect(lambda _item: self._instantiate_current())
+        self._instantiate.clicked.connect(self._instantiate_current)
+        canvas.projectTemplateSaved.connect(lambda _id, _path: self.reload())
+
+    def showBrowser(self) -> None:
+        self.reload()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._search.setFocus()
+
+    def reload(self) -> None:
+        current = self._current_id()
+        scan = self.canvas.projectTemplateCatalog().scan()
+        self._templates = {template.template_id: template for template in scan.templates}
+        tags = sorted({tag for template in scan.templates for tag in template.tags})
+        selected_tag = self._tag.currentData()
+        with QSignalBlocker(self._tag):
+            self._tag.clear()
+            self._tag.addItem("All tags", "")
+            for tag in tags:
+                self._tag.addItem(tag, tag)
+            index = self._tag.findData(selected_tag)
+            self._tag.setCurrentIndex(max(0, index))
+        for filename, message in scan.errors:
+            self.canvas.diagnosticMessage.emit(f"Template {filename!r} ignored: {message}")
+        self._populate(current)
+
+    def _apply_filter(self, _value: Any = None) -> None:
+        self._populate(self._current_id())
+
+    def _populate(self, preferred: str = "") -> None:
+        query = self._search.text().strip().casefold()
+        tag = str(self._tag.currentData() or "")
+        self._list.clear()
+        for template in self._templates.values():
+            haystack = " ".join((template.label, template.description, *template.tags)).casefold()
+            if query and query not in haystack or tag and tag not in template.tags:
+                continue
+            counts = template.payload
+            subtitle = (
+                f"{len(counts.get('elements', ()))} nodes · "
+                f"{len(counts.get('connectors', ()))} links"
+            )
+            item = QListWidgetItem(f"{template.label}\n{subtitle}")
+            item.setData(Qt.ItemDataRole.UserRole, template.template_id)
+            item.setToolTip(template.description or template.template_id)
+            self._list.addItem(item)
+            if template.template_id == preferred:
+                self._list.setCurrentItem(item)
+        self._count.setText(f"{self._list.count()} templates")
+        if self._list.currentItem() is None and self._list.count():
+            self._list.setCurrentRow(0)
+        elif not self._list.count():
+            self._show_current(None)
+
+    def _current_id(self) -> str:
+        item = self._list.currentItem()
+        return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+
+    def _show_current(self, item: QListWidgetItem | None, _previous=None) -> None:
+        template = self._templates.get(
+            str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+        )
+        self._instantiate.setEnabled(template is not None and not self.canvas.isReadOnly())
+        if template is None:
+            self._preview.setPixmap(QPixmap())
+            self._preview.setText("No matching templates")
+            self._name.clear()
+            self._description.clear()
+            self._metadata.clear()
+            return
+        pixmap = QPixmap()
+        if template.thumbnail:
+            root = self.canvas.projectTemplateCatalog().directory
+            candidate = (root / template.thumbnail).resolve()
+            if candidate.is_relative_to(root) and candidate.is_file():
+                pixmap.load(str(candidate))
+        if pixmap.isNull():
+            pixmap = self._fallback_preview(template)
+        self._preview.setText("")
+        self._preview.setPixmap(
+            pixmap.scaled(
+                320, 190,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        self._name.setText(template.label)
+        self._description.setText(template.description or "No description")
+        counts = template.payload
+        tags = " · ".join(template.tags) if template.tags else "untagged"
+        author = f" · {template.author}" if template.author else ""
+        self._metadata.setText(
+            f"{len(counts.get('elements', ()))} nodes · "
+            f"{len(counts.get('connectors', ()))} links · {tags}{author}"
+        )
+
+    @staticmethod
+    def _fallback_preview(template: CanvasTemplate) -> QPixmap:
+        pixmap = QPixmap(320, 190)
+        pixmap.fill(QColor("#f8f6f3"))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        nodes = max(1, min(5, len(template.payload.get("elements", ()))))
+        spacing = 250.0 / max(1, nodes - 1)
+        centers = [QPointF(35 + index * spacing, 92) for index in range(nodes)]
+        painter.setPen(QPen(QColor("#ff9f95"), 3))
+        for first, second in zip(centers, centers[1:]):
+            painter.drawLine(first, second)
+        for index, center in enumerate(centers):
+            color = QColor("#ff6b5f") if index == 0 else QColor("#ffffff")
+            painter.setBrush(color)
+            painter.setPen(QPen(QColor("#ff6b5f"), 2))
+            painter.drawRoundedRect(QRectF(center.x() - 24, center.y() - 18, 48, 36), 9, 9)
+        painter.end()
+        return pixmap
+
+    def _instantiate_current(self) -> None:
+        template_id = self._current_id()
+        if not template_id or self.canvas.isReadOnly():
+            return
+        group_id = self.canvas.instantiateProjectTemplate(template_id)
+        self.canvas.zoomToSelection()
+        self.canvas.diagnosticMessage.emit(
+            f"Template Browser inserted {template_id!r} as {group_id!r}"
+        )
 
 
 class _CanvasEditorToolbox(QDialog):
@@ -6264,6 +6507,7 @@ class MonkezCanva(QWidget):
         self._runtime_pending_arrivals: list[tuple[str, str]] = []
         self._packet_runtime = PacketRuntime(event_sink=self._on_packet_runtime_event)
         self._runtime_debugger: _CanvasRuntimeDebugger | None = None
+        self._template_browser: _CanvasTemplateBrowser | None = None
         self._workflow_executor: WorkflowExecutor | None = None
         self._workflow_node_states: dict[str, str] = {}
         self._workflow_trace: list[dict[str, Any]] = []
@@ -6487,6 +6731,13 @@ class MonkezCanva(QWidget):
         if self._command_palette is None:
             self._command_palette = _CanvasCommandPalette(self)
         self._command_palette.showPalette(query)
+
+    def showProjectTemplateBrowser(self) -> None:
+        """Open the detached searchable project-template browser."""
+
+        if self._template_browser is None:
+            self._template_browser = _CanvasTemplateBrowser(self)
+        self._template_browser.showBrowser()
 
     def showDataBindingInspector(self, element_id: str = "") -> None:
         """Open the contextual Data bindings card for one element."""
@@ -6838,6 +7089,11 @@ class MonkezCanva(QWidget):
                 self.importSubflowFromDialog,
                 enabled=writable,
                 icon="folder",
+            )
+            action(
+                "Browse project templates...",
+                self.showProjectTemplateBrowser,
+                icon="grid",
             )
             action(
                 "Import Graphviz DOT…",
@@ -10583,6 +10839,7 @@ class MonkezCanva(QWidget):
         tags: tuple[str, ...] | list[str] = (),
         thumbnail: str = "",
         author: str = "",
+        capture_thumbnail: bool = False,
         replace_existing: bool = True,
     ) -> Path:
         """Publish a group into the repository-portable template catalog."""
@@ -10590,6 +10847,11 @@ class MonkezCanva(QWidget):
         group = self.group(group_id)
         if group is None:
             raise KeyError(f"Unknown MonkezCanva group: {group_id}")
+        thumbnail_value = str(thumbnail).strip()
+        if capture_thumbnail and not thumbnail_value:
+            thumbnail_value = self.captureProjectTemplateThumbnail(
+                group_id, template_id
+            )
         template = CanvasTemplate(
             template_id,
             label or group.text,
@@ -10597,7 +10859,7 @@ class MonkezCanva(QWidget):
             self.exportSubflow(group_id),
             description,
             tuple(tags),
-            thumbnail,
+            thumbnail_value,
             author,
         )
         target = self.projectTemplateCatalog().save(
@@ -10608,6 +10870,40 @@ class MonkezCanva(QWidget):
             f"Project template saved: {template.label} ({template.template_id})"
         )
         return target
+
+    def captureProjectTemplateThumbnail(
+        self,
+        group_id: str,
+        template_id: str,
+        *,
+        scale: float = 1.0,
+    ) -> str:
+        """Render a portable PNG preview and return its catalog-relative path."""
+
+        if self.group(group_id) is None:
+            raise KeyError(f"Unknown MonkezCanva group: {group_id}")
+        safe_id = normalize_template_id(template_id)
+        relative = Path("thumbnails") / f"{safe_id}.png"
+        target = self.projectTemplateCatalog().directory / relative
+        previous = self.selectedObjectIds()
+        group_item = self.group(group_id)
+        selectable_flag = QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+        was_selectable = bool(group_item.flags() & selectable_flag)
+        try:
+            self._scene.clearSelection()
+            group_item.setFlag(selectable_flag, True)
+            group_item.setSelected(True)
+            self.exportSelection(
+                target,
+                padding=18.0,
+                scale=max(0.25, min(4.0, float(scale))),
+            )
+        finally:
+            group_item.setSelected(False)
+            group_item.setFlag(selectable_flag, was_selectable)
+            if previous:
+                self.selectElements(previous)
+        return relative.as_posix()
 
     def instantiateProjectTemplate(
         self,
@@ -12692,6 +12988,8 @@ class MonkezCanva(QWidget):
             self._command_palette.close()
         if self._runtime_debugger is not None:
             self._runtime_debugger.close()
+        if self._template_browser is not None:
+            self._template_browser.close()
         self.clearDataBindingRuntime(disconnect_sources=True)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)

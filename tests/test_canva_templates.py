@@ -8,6 +8,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
 from monkez_pyqt6.monkez_canva import (
@@ -113,6 +114,7 @@ class CanvasTemplateWidgetTests(unittest.TestCase):
                 description="Reusable pipeline",
                 tags=("flow", "demo"),
                 author="Monkez",
+                capture_thumbnail=True,
             )
             self.assertTrue(target.is_file())
             self.assertIn(".monkez_canva", target.parts)
@@ -120,6 +122,10 @@ class CanvasTemplateWidgetTests(unittest.TestCase):
             listing = canvas.projectTemplates("flow")
             self.assertEqual("Pipeline", listing[0]["label"])
             self.assertEqual(2, listing[0]["elements"])
+            self.assertEqual("thumbnails/pipeline-template.png", listing[0]["thumbnail"])
+            self.assertTrue(
+                (canvas.projectTemplateCatalog().directory / listing[0]["thumbnail"]).is_file()
+            )
 
             canvas.undoStack().clear()
             imported = canvas.instantiateProjectTemplate("pipeline-template", 600, 200)
@@ -129,6 +135,58 @@ class CanvasTemplateWidgetTests(unittest.TestCase):
             self.assertEqual(1, canvas.undoStack().count())
             self.assertTrue(canvas.undo())
             self.assertEqual(2, len(canvas.elements()))
+            canvas.close()
+            canvas.deleteLater()
+
+    def test_template_browser_filters_previews_and_instantiates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            canvas = MonkezCanva()
+            canvas.resize(900, 600)
+            canvas.setProjectDirectory(directory)
+            source = canvas.addNode("Source", 10, 40, element_id="source")
+            sink = canvas.addNode("Sink", 260, 40, element_id="sink")
+            canvas.connectElements(source, sink, connector_id="edge")
+            group = canvas.addSubflow((source, sink), "pipeline", label="API pipeline")
+            canvas.saveGroupAsProjectTemplate(
+                group,
+                "api-pipeline",
+                description="Reusable API flow",
+                tags=("api", "flow"),
+            )
+            canvas.setEditMode(True)
+            canvas.showProjectTemplateBrowser()
+            self.app.processEvents()
+            browser = canvas._template_browser
+
+            self.assertTrue(browser.isVisible())
+            self.assertEqual(1, browser._list.count())
+            self.assertEqual("API pipeline", browser._name.text())
+            self.assertFalse(browser._preview.pixmap().isNull())
+            browser._search.setText("missing")
+            self.app.processEvents()
+            self.assertEqual(0, browser._list.count())
+            browser._search.setText("api")
+            self.app.processEvents()
+            self.assertEqual(1, browser._list.count())
+
+            canvas.undoStack().clear()
+            browser._instantiate.click()
+            self.app.processEvents()
+            self.assertEqual(4, len(canvas.elements()))
+            self.assertEqual(1, canvas.undoStack().count())
+            labels = {action.text() for action in canvas.createContextMenu().actions()}
+            self.assertIn("Browse project templates...", labels)
+            canvas.showCommandPalette("browse project templates")
+            self.app.processEvents()
+            command_ids = {
+                str(
+                    canvas._command_palette._list.item(index).data(
+                        Qt.ItemDataRole.UserRole
+                    )
+                )
+                for index in range(canvas._command_palette._list.count())
+            }
+            self.assertIn("template:browse", command_ids)
             canvas.close()
             canvas.deleteLater()
 

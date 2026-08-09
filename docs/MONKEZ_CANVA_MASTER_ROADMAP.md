@@ -276,6 +276,12 @@ Qt-free reusable-template manifest and deterministic project-local catalog under
 and instantiate them through the existing collision-safe, one-command subflow
 path. Malformed catalog entries are isolated with diagnostics.
 
+Completed slice (2026-08-09): `MC-ECOSYSTEM-TEMPLATE-005` adds a detached,
+searchable Template Browser with tag filtering, safe thumbnail lookup, generated
+fallback previews and one-click Undoable insertion. Project templates can capture
+their own PNG preview transactionally; blank-canvas context and Ctrl+K expose the
+same browser without making the main Control Pane denser.
+
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;

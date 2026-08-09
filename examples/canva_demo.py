@@ -112,6 +112,18 @@ def main() -> int:
             len(report["warnings"]),
         )
     )
+    canvas.projectTemplateSaved.connect(
+        lambda template_id, path: logger.info(
+            "projectTemplateSaved -> %s at %s", template_id, path
+        )
+    )
+    canvas.projectTemplateInstantiated.connect(
+        lambda template_id, object_ids: logger.info(
+            "projectTemplateInstantiated -> %s (%s objects)",
+            template_id,
+            len(object_ids),
+        )
+    )
     canvas.enableWorkflowComponents()
     canvas.enableAllComponentPacks()
     canvas.registerElementPlugin(TELEMETRY_PLUGIN)
@@ -345,6 +357,7 @@ def main() -> int:
     logger.info("Workflow Pack is enabled; select a workflow node to edit/run it")
     logger.info("Dashboard, Industrial and Software component packs are enabled")
     logger.info("Select an element and open Inspector > Data bindings for live data")
+    logger.info("Open reusable project templates with Ctrl+K, then search 'templates'")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)
     return result

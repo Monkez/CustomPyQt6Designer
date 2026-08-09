@@ -363,7 +363,11 @@ Updated: 2026-08-09
 - `MC-ECOSYSTEM-TEMPLATE-004` adds bounded reusable-template manifests and a
   deterministic project-local catalog with metadata, safe scan diagnostics and
   one-command collision-safe instantiation.
-- The automated suite contains 237 tests and covers all 36 public
+- `MC-ECOSYSTEM-TEMPLATE-005` adds a polished detached Template Browser with
+  search, tag filters, metadata, safe thumbnails, generated previews and
+  one-click insertion. Thumbnail capture uses transactional export; browser,
+  blank context and Ctrl+K share the same public API.
+- The automated suite contains 238 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

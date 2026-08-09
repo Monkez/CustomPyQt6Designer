@@ -434,6 +434,13 @@ input, sorts deterministically and isolates malformed files. The Qt facade only
 adapts group export/import, signals and project-root resolution; instantiation
 continues through the existing atomic Undoable subflow operation.
 
+`_CanvasTemplateBrowser` is a detachable Qt adapter rather than another Control
+Pane tab. It reads immutable catalog scans, filters locally, resolves thumbnails
+only beneath the catalog root and generates a vector-like fallback preview when
+assets are absent. Thumbnail capture reuses the transactional selection export
+pipeline, restores prior selection and never dirties the document. Browser,
+blank context and Ctrl+K all call the same public canvas methods.
+
 `monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
 One render-state context temporarily hides excluded objects, clears selection and
 smart-guide artifacts, optionally suppresses background/grid painting, then

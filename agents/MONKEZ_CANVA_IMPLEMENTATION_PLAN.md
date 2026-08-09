@@ -341,8 +341,11 @@ Inspector contracts in the real demo.
 bounded manifests, deterministic `.monkez_canva/templates` catalog, searchable
 metadata and collision-safe/Undoable canvas publishing and instantiation APIs.
 
-Next: visual template browser/thumbnail capture, document diff/diagnostics
-reports and plugin packaging/discovery policy.
+`MC-ECOSYSTEM-TEMPLATE-005` completes the visual template slice with a detached
+search/tag browser, safe PNG thumbnail capture and fallback previews. Context,
+Ctrl+K and public APIs share one instantiation path.
+
+Next: document diff/diagnostics reports and plugin packaging/discovery policy.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,

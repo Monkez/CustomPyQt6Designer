@@ -721,11 +721,17 @@ canvas.saveGroupAsProjectTemplate(
 )
 available = canvas.projectTemplates("ops")
 new_group = canvas.instantiateProjectTemplate("recovery-flow", x=800, y=240)
+canvas.showProjectTemplateBrowser()
 ```
 
 Manifest có ID, label, description, tags, thumbnail và author; payload bị giới
 hạn kích thước/số object và được validate trước khi ghi hoặc instantiate. Mỗi lần
 instantiate vẫn là một Undo command collision-safe.
+Template Browser là cửa sổ Tool tách rời Control Pane, có search theo label,
+description/tag, tag filter, preview thumbnail hoặc sơ đồ fallback và nút Insert.
+Mở browser từ menu chuột phải vùng trống hoặc `Ctrl+K`. Truyền
+`capture_thumbnail=True` vào `saveGroupAsProjectTemplate()` để tự render PNG
+portable vào `templates/thumbnails` mà không làm dirty document.
 
 ## Export hình ảnh, tài liệu và graph
 
