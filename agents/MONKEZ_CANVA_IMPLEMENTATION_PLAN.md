@@ -248,8 +248,18 @@ Inspector exposes the full contract with immediate updates and visual drag QA
 distinguishes direct, converted and rejected targets. Runtime values remain
 transient and are cleaned up on rename/removal/clear.
 
-Next: automatic layout adapters, followed by workflow runtime components and
-packet runtime v2/debugging.
+### Auto-layout progress â€” 2026-08-09
+
+`MC-EDITOR-LAYOUT-001` adds `auto_layout.py` as a Qt-free deterministic boundary.
+It consumes immutable node/edge geometry and returns top-left positions plus
+metrics without mutating the document. Layered layout condenses cycles through
+SCCs and applies stable barycentric sweeps; tree layout reserves subtree extents;
+radial layout uses graph distance; force layout uses deterministic relaxation and
+collision passes. The widget adapter resolves smart document, selection,
+connected-component or group scope, preserves locked nodes, fits eligible groups
+and commits all changed geometry through one history command.
+
+Next: workflow runtime components and packet runtime v2/debugging.
 
 ## Backlog tracking
 

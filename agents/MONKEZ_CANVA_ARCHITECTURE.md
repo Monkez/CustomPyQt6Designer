@@ -303,6 +303,22 @@ without leaking scheduler implementation details.
 2. Searchable palette, command palette and contextual actions.
 3. Typed ports, advanced routing and group/subflow rendering.
 4. Port data types, cardinality rules and auto layout.
+
+## Deterministic auto-layout boundary
+
+`monkez_canva/auto_layout.py` is deliberately Qt-free. `layout_graph()` accepts
+normalized `LayoutNode`, `LayoutEdge` and `LayoutOptions` values and returns a
+`LayoutResult`; it never reads graphics items or writes a document. This keeps
+layered/tree/radial/force behavior reproducible in headless tests and allows a
+future optional third-party adapter without changing the public canvas API.
+
+`MonkezCanva.computeAutoLayout()` is the non-mutating preview boundary.
+`autoLayout()` resolves scope and graph records, calls the engine, then applies
+all positions and eligible group bounds through exactly one document mutation.
+Locked items remain anchors. Standalone line elements and hidden records are
+excluded by default, while connectors only influence layout when both endpoints
+belong to the resolved scope. UI surfaces are adapters only: View card, context
+menu and command palette all call the same public method.
 5. Declarative data bindings and throttled live chart updates.
 6. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
 7. Large-scene profiling, level-of-detail rendering and culling tests.

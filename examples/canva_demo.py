@@ -54,6 +54,9 @@ def main() -> int:
             "portRuntimeValueChanged -> %s.%s = %r", element, port, value
         )
     )
+    canvas.layoutApplied.connect(
+        lambda metrics: logger.info("layoutApplied -> %s", metrics)
+    )
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 

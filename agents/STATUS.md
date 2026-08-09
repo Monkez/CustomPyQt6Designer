@@ -289,7 +289,15 @@ Updated: 2026-08-09
   direct/conversion/rejected targets. The Inspector edits every typed-port field
   and shows transient runtime state; runtime values emit signals but never persist.
   Schema, demo, public API tests and visual QA cover the new contract.
-- The automated suite contains 184 tests and covers all 36 public
+- `MC-EDITOR-LAYOUT-001` completes Phase 2. The Qt-free deterministic engine
+  provides layered, tree, radial and force-directed strategies with cycle-safe
+  hierarchy, connected-component packing, locked-node anchors and stable output.
+  Smart document/selection/component/group scope is exposed through the View
+  pane, context menus, Ctrl+K and public preview/apply APIs. Layout plus eligible
+  group fitting commits as one undoable mutation. Offscreen QA at 438x720 confirms
+  the compact conditional Force control and a five-node layered result without
+  toolbar drift or canvas clipping.
+- The automated suite contains 191 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

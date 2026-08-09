@@ -8,6 +8,15 @@ from .clipboard import (
     decode_selection_payload,
     remap_selection_payload,
 )
+from .auto_layout import (
+    LAYOUT_DIRECTIONS,
+    LAYOUT_STRATEGIES,
+    LayoutEdge,
+    LayoutNode,
+    LayoutOptions,
+    LayoutResult,
+    layout_graph,
+)
 
 from .models import (
     DOCUMENT_FORMAT,
@@ -92,6 +101,8 @@ __all__ = [
     "CLIPBOARD_FORMAT",
     "CLIPBOARD_VERSION",
     "CANVAS_CLIPBOARD_MIME_TYPE",
+    "LAYOUT_DIRECTIONS",
+    "LAYOUT_STRATEGIES",
     "MAX_RECENT_COMPONENTS",
     "PALETTE_FAVORITES_KEY",
     "PALETTE_RECENT_KEY",
@@ -111,6 +122,10 @@ __all__ = [
     "ElementDefinition",
     "ElementRegistry",
     "GroupModel",
+    "LayoutEdge",
+    "LayoutNode",
+    "LayoutOptions",
+    "LayoutResult",
     "OperationEvent",
     "PaletteEntry",
     "RecoveryLoadResult",
@@ -127,6 +142,7 @@ __all__ = [
     "build_asset_manifest",
     "decode_selection_payload",
     "load_json_with_recovery",
+    "layout_graph",
     "migrate_document",
     "normalize_component_ids",
     "normalize_snap_targets",

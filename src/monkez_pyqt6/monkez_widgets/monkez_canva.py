@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, Callable
 
@@ -81,6 +82,10 @@ from monkez_pyqt6.monkez_canva import (
     CanvasDocument,
     ElementDefinition,
     ElementRegistry,
+    LayoutEdge,
+    LayoutNode,
+    LayoutOptions,
+    LayoutResult,
     OperationEvent,
     PortCompatibility,
     PALETTE_FAVORITES_KEY,
@@ -93,6 +98,7 @@ from monkez_pyqt6.monkez_canva import (
     build_selection_payload,
     create_default_element_registry,
     load_json_with_recovery,
+    layout_graph,
     normalize_component_ids,
     record_recent_component,
     search_palette,
@@ -2384,6 +2390,19 @@ class _CanvasCommandPalette(QDialog):
                 "rectangle", writable and len(selected_elements) >= 2,
                 lambda value=mode: canvas.matchSelectedSize(value),
             ))
+        layoutable = len(canvas._auto_layout_scope_ids("auto")) >= 2
+        for strategy, label in (
+            ("layered", "Layered layout"),
+            ("tree", "Tree layout"),
+            ("radial", "Radial layout"),
+            ("force", "Force-directed layout"),
+        ):
+            commands.append((
+                f"layout:{strategy}", label, "Layout",
+                "graph arrange hierarchy network auto layout", "node",
+                writable and layoutable,
+                lambda value=strategy: canvas.autoLayout(value),
+            ))
         return commands
 
     def _refresh(self, _text: str = "") -> None:
@@ -3344,6 +3363,76 @@ class _CanvasEditorToolbox(QDialog):
         navigation_layout.addLayout(move_row, 2, 0, 1, 3)
         layout.addWidget(navigation)
 
+        auto_layout = _CanvasCardGroup("Auto layout")
+        auto_layout_grid = QGridLayout(auto_layout)
+        self._layout_strategy_combo = QComboBox()
+        for label, value in (
+            ("Layered", "layered"), ("Tree", "tree"),
+            ("Radial", "radial"), ("Force", "force"),
+        ):
+            self._layout_strategy_combo.addItem(label, value)
+        self._layout_direction_combo = QComboBox()
+        for label, value in (
+            ("Left → right", "right"), ("Top → bottom", "down"),
+            ("Right → left", "left"), ("Bottom → top", "up"),
+        ):
+            self._layout_direction_combo.addItem(label, value)
+        self._layout_scope_combo = QComboBox()
+        for label, value in (
+            ("Smart scope", "auto"), ("Whole document", "document"),
+            ("Selection", "selection"), ("Connected component", "component"),
+            ("Selected group", "group"),
+        ):
+            self._layout_scope_combo.addItem(label, value)
+        auto_layout_grid.addWidget(QLabel("Strategy"), 0, 0)
+        auto_layout_grid.addWidget(QLabel("Direction"), 0, 1)
+        auto_layout_grid.addWidget(self._layout_strategy_combo, 1, 0)
+        auto_layout_grid.addWidget(self._layout_direction_combo, 1, 1)
+        auto_layout_grid.addWidget(QLabel("Scope"), 2, 0, 1, 2)
+        auto_layout_grid.addWidget(self._layout_scope_combo, 3, 0, 1, 2)
+        self._layout_node_spacing = QDoubleSpinBox()
+        self._layout_node_spacing.setRange(4, 1000)
+        self._layout_node_spacing.setValue(48)
+        self._layout_node_spacing.setSuffix(" px")
+        self._layout_layer_spacing = QDoubleSpinBox()
+        self._layout_layer_spacing.setRange(8, 2000)
+        self._layout_layer_spacing.setValue(120)
+        self._layout_layer_spacing.setSuffix(" px")
+        auto_layout_grid.addWidget(QLabel("Node gap"), 4, 0)
+        auto_layout_grid.addWidget(QLabel("Layer gap"), 4, 1)
+        auto_layout_grid.addWidget(self._layout_node_spacing, 5, 0)
+        auto_layout_grid.addWidget(self._layout_layer_spacing, 5, 1)
+        self._layout_iterations = QDoubleSpinBox()
+        self._layout_iterations.setDecimals(0)
+        self._layout_iterations.setRange(10, 2000)
+        self._layout_iterations.setValue(180)
+        self._layout_iterations.setSingleStep(10)
+        self._layout_iterations.setSuffix(" steps")
+        self._layout_iterations.setToolTip(
+            "Simulation steps used by Force layout; higher values settle more slowly"
+        )
+        self._layout_iterations_label = QLabel("Force quality")
+        auto_layout_grid.addWidget(self._layout_iterations_label, 6, 0, 1, 2)
+        auto_layout_grid.addWidget(self._layout_iterations, 7, 0, 1, 2)
+        self._layout_preserve_center = QCheckBox("Keep center")
+        self._layout_preserve_center.setChecked(True)
+        self._layout_fit_groups = QCheckBox("Fit groups")
+        self._layout_fit_groups.setChecked(True)
+        self._layout_fit_view = QCheckBox("Fit view")
+        auto_layout_grid.addWidget(self._layout_preserve_center, 8, 0)
+        auto_layout_grid.addWidget(self._layout_fit_groups, 8, 1)
+        auto_layout_grid.addWidget(self._layout_fit_view, 9, 0)
+        apply_layout = QPushButton("Arrange graph")
+        apply_layout.setObjectName("primaryAction")
+        apply_layout.setIcon(_canvas_icon("node", "#ffffff"))
+        apply_layout.clicked.connect(self._apply_auto_layout_controls)
+        auto_layout_grid.addWidget(apply_layout, 10, 0, 1, 2)
+        self._layout_strategy_combo.currentIndexChanged.connect(
+            self._sync_auto_layout_strategy_controls
+        )
+        self._sync_auto_layout_strategy_controls()
+        layout.addWidget(auto_layout)
+
         grid_group = _CanvasCardGroup("Grid")
         grid_layout = QGridLayout(grid_group)
         self._grid_visible_check = QCheckBox("Show grid")
@@ -3546,6 +3635,30 @@ class _CanvasEditorToolbox(QDialog):
         chosen = QColorDialog.getColor(self.canvas.gridColor, self, "Choose grid color")
         if chosen.isValid():
             self.canvas.setGridColor(chosen)
+
+    def _apply_auto_layout_controls(self) -> None:
+        try:
+            self.canvas.autoLayout(
+                str(self._layout_strategy_combo.currentData()),
+                str(self._layout_direction_combo.currentData()),
+                scope=str(self._layout_scope_combo.currentData()),
+                node_spacing=self._layout_node_spacing.value(),
+                layer_spacing=self._layout_layer_spacing.value(),
+                iterations=int(self._layout_iterations.value()),
+                preserve_center=self._layout_preserve_center.isChecked(),
+                fit_groups=self._layout_fit_groups.isChecked(),
+                fit_view=self._layout_fit_view.isChecked(),
+            )
+        except (KeyError, PermissionError, TypeError, ValueError) as error:
+            self.canvas.diagnosticMessage.emit(f"Auto-layout rejected: {error}")
+
+    def _sync_auto_layout_strategy_controls(self) -> None:
+        force = self._layout_strategy_combo.currentData() == "force"
+        self._layout_iterations_label.setVisible(force)
+        self._layout_iterations.setVisible(force)
+        self._layout_direction_combo.setEnabled(
+            self._layout_strategy_combo.currentData() in ("layered", "tree")
+        )
 
     def _choose_background_color(self) -> None:
         chosen = QColorDialog.getColor(self.canvas.backgroundColor, self, "Choose canvas background")
@@ -4997,6 +5110,7 @@ class MonkezCanva(QWidget):
     groupAdded = pyqtSignal(str)
     groupRemoved = pyqtSignal(str)
     portRuntimeValueChanged = pyqtSignal(str, str, object)
+    layoutApplied = pyqtSignal(dict)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -5516,6 +5630,16 @@ class MonkezCanva(QWidget):
             menu.addSeparator()
             action("Select all", self.selectAllElements, enabled=bool(self._elements))
             action("Fit all content", self.fitContent, icon="fit")
+            layout_menu = menu.addMenu(_canvas_icon("node"), "Auto layout")
+            for strategy, label in (
+                ("layered", "Layered"), ("tree", "Tree"),
+                ("radial", "Radial"), ("force", "Force-directed"),
+            ):
+                entry = layout_menu.addAction(label)
+                entry.setEnabled(writable and len(self._auto_layout_scope_ids("auto")) >= 2)
+                entry.triggered.connect(
+                    lambda _checked=False, value=strategy: self.autoLayout(value)
+                )
             action("Toggle grid", lambda: self.setGridVisible(not self.gridVisible), enabled=writable, icon="grid")
             action("Show all objects", self.showAllObjects, enabled=writable, icon="eye")
             action("Clear isolation", self.clearIsolation, enabled=bool(self._isolated_ids), icon="focus")
@@ -5563,6 +5687,18 @@ class MonkezCanva(QWidget):
                 entry.setEnabled(writable)
                 entry.triggered.connect(
                     lambda _checked=False, value=mode: self.matchSelectedSize(value)
+                )
+            layout_menu = menu.addMenu(_canvas_icon("node"), "Auto layout")
+            for strategy, label in (
+                ("layered", "Layered"), ("tree", "Tree"),
+                ("radial", "Radial"), ("force", "Force-directed"),
+            ):
+                entry = layout_menu.addAction(label)
+                entry.setEnabled(writable)
+                entry.triggered.connect(
+                    lambda _checked=False, value=strategy: self.autoLayout(
+                        value, scope="selection"
+                    )
                 )
         menu.addSeparator()
         action("Bring to front", self.bringSelectedToFront, enabled=writable)
@@ -6191,6 +6327,275 @@ class MonkezCanva(QWidget):
 
     def distributeSelectedVertically(self) -> bool:
         return self.distributeSelected("vertical")
+
+    def _auto_layout_scope_ids(
+        self,
+        scope: str,
+        element_ids: Any = None,
+        group_id: str = "",
+    ) -> tuple[list[str], str]:
+        requested_scope = str(scope or "auto").lower().strip().replace("_", "-")
+        requested_scope = {
+            "all": "document", "canvas": "document", "selected": "selection",
+            "connected": "component", "subflow": "group",
+        }.get(requested_scope, requested_scope)
+        group_records = {
+            model.id: model.to_dict() for model in self._document_model.groups
+        }
+        if element_ids is not None:
+            requested = list(dict.fromkeys(str(value) for value in element_ids))
+            return [value for value in requested if value in self._elements], "explicit"
+        selected_objects = self.selectedObjectIds()
+        selected_elements = self.selectedElementIds()
+        selected_group = str(group_id or next(
+            (object_id for object_id in selected_objects if object_id in self._groups), ""
+        ))
+        if requested_scope == "auto":
+            requested_scope = (
+                "group" if selected_group else
+                "selection" if len(selected_elements) >= 2 else
+                "component" if selected_elements else "document"
+            )
+        if requested_scope == "document":
+            return list(self._elements), requested_scope
+        if requested_scope == "selection":
+            requested = list(selected_elements)
+            for selected_id in selected_objects:
+                if selected_id in group_records:
+                    requested.extend(
+                        descendant_element_ids(
+                            selected_id, group_records, self._elements
+                        )
+                    )
+            return list(dict.fromkeys(requested)), requested_scope
+        if requested_scope == "group":
+            if not selected_group or selected_group not in group_records:
+                raise ValueError("Auto-layout group scope requires a selected or explicit group")
+            return list(
+                descendant_element_ids(selected_group, group_records, self._elements)
+            ), requested_scope
+        if requested_scope == "component":
+            seeds = selected_elements
+            if not seeds:
+                raise ValueError("Auto-layout component scope requires a selected element")
+            adjacency: dict[str, list[str]] = defaultdict(list)
+            for connector in self._document_model.connectors:
+                adjacency[connector.source].append(connector.target)
+                adjacency[connector.target].append(connector.source)
+            result: list[str] = []
+            seen: set[str] = set()
+            queue = deque(seeds)
+            while queue:
+                current = queue.popleft()
+                if current in seen or current not in self._elements:
+                    continue
+                seen.add(current)
+                result.append(current)
+                queue.extend(adjacency[current])
+            return result, requested_scope
+        raise ValueError(f"Unsupported MonkezCanva auto-layout scope: {scope}")
+
+    def _auto_layout_input(
+        self,
+        scope: str,
+        element_ids: Any,
+        group_id: str,
+        include_hidden: bool,
+        include_lines: bool,
+        respect_locked: bool,
+    ) -> tuple[list[LayoutNode], list[LayoutEdge], list[str], str]:
+        requested_ids, resolved_scope = self._auto_layout_scope_ids(
+            scope, element_ids, group_id
+        )
+        nodes: list[LayoutNode] = []
+        included: list[str] = []
+        for element_id in requested_ids:
+            model = self._document_model.element(element_id)
+            if model is None:
+                continue
+            record = model.to_dict()
+            if not include_hidden and bool(record.get("hidden", False)):
+                continue
+            if not include_lines and model.type == "line":
+                continue
+            nodes.append(
+                LayoutNode(
+                    element_id,
+                    float(record.get("x", 0.0)),
+                    float(record.get("y", 0.0)),
+                    max(1.0, float(record.get("width", 120.0))),
+                    max(1.0, float(record.get("height", 72.0))),
+                    respect_locked and bool(record.get("locked", False)),
+                )
+            )
+            included.append(element_id)
+        included_set = set(included)
+        edges = [
+            LayoutEdge(connector.source, connector.target)
+            for connector in self._document_model.connectors
+            if connector.source in included_set and connector.target in included_set
+        ]
+        return nodes, edges, included, resolved_scope
+
+    def computeAutoLayout(
+        self,
+        strategy: str = "layered",
+        direction: str = "right",
+        *,
+        scope: str = "auto",
+        element_ids: Any = None,
+        group_id: str = "",
+        node_spacing: float = 48.0,
+        layer_spacing: float = 120.0,
+        component_spacing: float = 160.0,
+        iterations: int = 180,
+        preserve_center: bool = True,
+        include_hidden: bool = False,
+        include_lines: bool = False,
+        respect_locked: bool = True,
+    ) -> LayoutResult:
+        """Compute an auto-layout without mutating the canonical document."""
+
+        nodes, edges, _included, _resolved_scope = self._auto_layout_input(
+            scope, element_ids, group_id, include_hidden, include_lines, respect_locked
+        )
+        return layout_graph(
+            nodes,
+            edges,
+            options=LayoutOptions(
+                strategy=strategy,
+                direction=direction,
+                node_spacing=node_spacing,
+                layer_spacing=layer_spacing,
+                component_spacing=component_spacing,
+                iterations=iterations,
+                preserve_center=preserve_center,
+            ),
+        )
+
+    def autoLayout(
+        self,
+        strategy: str = "layered",
+        direction: str = "right",
+        *,
+        scope: str = "auto",
+        element_ids: Any = None,
+        group_id: str = "",
+        node_spacing: float = 48.0,
+        layer_spacing: float = 120.0,
+        component_spacing: float = 160.0,
+        iterations: int = 180,
+        preserve_center: bool = True,
+        include_hidden: bool = False,
+        include_lines: bool = False,
+        respect_locked: bool = True,
+        fit_groups: bool = True,
+        fit_view: bool = False,
+    ) -> LayoutResult:
+        """Apply a deterministic layout as one undoable document command."""
+
+        self._ensure_writable()
+        nodes, edges, included, resolved_scope = self._auto_layout_input(
+            scope, element_ids, group_id, include_hidden, include_lines, respect_locked
+        )
+        result = layout_graph(
+            nodes,
+            edges,
+            options=LayoutOptions(
+                strategy=strategy,
+                direction=direction,
+                node_spacing=node_spacing,
+                layer_spacing=layer_spacing,
+                component_spacing=component_spacing,
+                iterations=iterations,
+                preserve_center=preserve_center,
+            ),
+        )
+        if not result.moved_count:
+            self.diagnosticMessage.emit(
+                f"Auto-layout {result.strategy}: no movable items in {resolved_scope} scope"
+            )
+            return result
+        included_set = set(included)
+        group_records = {
+            model.id: model.to_dict() for model in self._document_model.groups
+        }
+        fitted_groups: list[str] = []
+        if fit_groups:
+            for current_id, record in group_records.items():
+                descendants = set(
+                    descendant_element_ids(current_id, group_records, self._elements)
+                )
+                if (
+                    descendants
+                    and descendants.issubset(included_set)
+                    and not bool(record.get("locked", False))
+                ):
+                    fitted_groups.append(current_id)
+
+        def mutate(document: CanvasDocument) -> None:
+            for element_id, (x, y) in result.positions.items():
+                model = document.element(element_id)
+                if model is None or (respect_locked and bool(model.properties.get("locked", False))):
+                    continue
+                document.update_element(element_id, {"x": x, "y": y})
+            for current_id in fitted_groups:
+                model = document.group(current_id)
+                if model is None:
+                    continue
+                descendants = descendant_element_ids(
+                    current_id, group_records, self._elements
+                )
+                rectangles = []
+                for element_id in descendants:
+                    element = document.element(element_id)
+                    if element is None:
+                        continue
+                    record = element.to_dict()
+                    rectangles.append((
+                        float(record.get("x", 0.0)), float(record.get("y", 0.0)),
+                        float(record.get("width", 120.0)), float(record.get("height", 72.0)),
+                    ))
+                x, y, width, height = group_bounds(
+                    rectangles,
+                    padding=float(model.properties.get("padding", 28.0)),
+                )
+                document.update_group(
+                    current_id, {"x": x, "y": y, "width": width, "height": height}
+                )
+
+        changed = self._push_document_mutation(
+            mutate, f"Auto layout ({result.strategy})"
+        )
+        metrics = {
+            "strategy": result.strategy,
+            "direction": result.direction,
+            "scope": resolved_scope,
+            "items": len(result.positions),
+            "moved": result.moved_count,
+            "components": result.component_count,
+            "layers": result.layer_count,
+            "groupsFitted": len(fitted_groups),
+            "changed": changed,
+        }
+        self.layoutApplied.emit(metrics)
+        self.diagnosticMessage.emit(
+            f"Auto-layout {result.strategy}/{result.direction}: "
+            f"moved {result.moved_count}/{len(result.positions)} items; "
+            f"components={result.component_count}; layers={result.layer_count}; "
+            f"scope={resolved_scope}"
+        )
+        if fit_view and result.bounds[2] > 0 and result.bounds[3] > 0:
+            self._apply_fit_content(QRectF(*result.bounds))
+        return result
+
+    def autoLayoutSelection(self, strategy: str = "layered", **options) -> LayoutResult:
+        return self.autoLayout(strategy, scope="selection", **options)
+
+    def autoLayoutGroup(
+        self, group_id: str, strategy: str = "layered", **options
+    ) -> LayoutResult:
+        return self.autoLayout(strategy, scope="group", group_id=group_id, **options)
 
     def matchSelectedSize(self, mode: str = "both") -> bool:
         """Match selected element dimensions to the first selected element."""

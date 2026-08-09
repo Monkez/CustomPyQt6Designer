@@ -188,6 +188,46 @@ canvas.setSmartGuidesVisible(True)
 canvas.matchSelectedSize("both")  # width | height | both
 ```
 
+## Auto layout
+
+Tab **View > Auto layout** có thể sắp xếp toàn document, selection hiện tại,
+một connected component hoặc nội dung của group được chọn. **Smart scope** tự
+chọn phạm vi phù hợp từ selection. Bốn chiến lược tương tự có thể tìm bằng
+`Ctrl+K` và gọi từ menu chuột phải:
+
+- `layered`: phân tầng theo hướng, xử lý cycle và giảm giao cắt;
+- `tree`: cây cha/con với khoảng trống theo kích thước subtree;
+- `radial`: các vòng tròn dựa trên graph distance;
+- `force`: mô phỏng network deterministic kèm collision avoidance.
+
+Node bị lock giữ nguyên tọa độ và trở thành anchor. Các component rời nhau được
+đóng gói theo khoảng cách cấu hình. Một lần layout, kể cả fit lại group frame,
+chỉ tạo đúng một bước Undo/Redo. `computeAutoLayout()` dùng để preview và không
+thay đổi canvas.
+
+```python
+preview = canvas.computeAutoLayout(
+    "layered", direction="right", scope="component"
+)
+
+result = canvas.autoLayout(
+    "layered",
+    direction="right",       # right | down | left | up
+    scope="selection",       # auto | document | selection | component | group
+    node_spacing=48,
+    layer_spacing=120,
+    component_spacing=160,
+    preserve_center=True,
+    respect_locked=True,
+    fit_groups=True,
+    fit_view=False,
+)
+
+canvas.autoLayoutSelection("tree")
+canvas.autoLayoutGroup("pipeline", "layered")
+canvas.layoutApplied.connect(lambda metrics: print(metrics))
+```
+
 ## Document Outline, lock/hide/isolate và minimap
 
 Tab **Layers** hiện là Document Outline: tìm theo ID, loại hoặc nhãn; mỗi dòng

@@ -2792,6 +2792,66 @@ class WidgetTests(unittest.TestCase):
         canvas.setEditMode(False)
         canvas.deleteLater()
 
+    def test_canva_auto_layout_is_scoped_undoable_and_discoverable(self) -> None:
+        canvas = MonkezCanva()
+        canvas.setEditMode(True)
+        source = canvas.addNode("Source", -320, 180, element_id="source")
+        middle = canvas.addNode("Middle", 40, -220, element_id="middle")
+        target = canvas.addNode("Target", -80, 260, element_id="target")
+        untouched = canvas.addNode("Untouched", 700, 420, element_id="untouched")
+        canvas.connectElements(source, middle, connector_id="source-middle")
+        canvas.connectElements(middle, target, connector_id="middle-target")
+        canvas.setObjectLocked(middle, True)
+        before = {
+            element_id: tuple(canvas.documentModel().element(element_id).properties[key]
+                              for key in ("x", "y"))
+            for element_id in (source, middle, target, untouched)
+        }
+        canvas.selectElements((source, middle, target))
+        emitted: list[dict] = []
+        canvas.layoutApplied.connect(emitted.append)
+
+        preview = canvas.computeAutoLayout("layered", scope="selection")
+        self.assertEqual(before[middle], preview.positions[middle])
+        self.assertEqual(before, {
+            element_id: tuple(canvas.documentModel().element(element_id).properties[key]
+                              for key in ("x", "y"))
+            for element_id in before
+        })
+        result = canvas.autoLayout("layered", scope="selection")
+
+        self.assertGreaterEqual(result.moved_count, 1)
+        self.assertEqual(before[middle], tuple(
+            canvas.documentModel().element(middle).properties[key] for key in ("x", "y")
+        ))
+        self.assertEqual(before[untouched], tuple(
+            canvas.documentModel().element(untouched).properties[key] for key in ("x", "y")
+        ))
+        self.assertEqual("Auto layout (layered)", canvas.undoText())
+        self.assertEqual("selection", emitted[-1]["scope"])
+        canvas.undo()
+        self.assertEqual(before, {
+            element_id: tuple(canvas.documentModel().element(element_id).properties[key]
+                              for key in ("x", "y"))
+            for element_id in before
+        })
+
+        blank_menu = canvas.createContextMenu()
+        self.assertIn("Auto layout", [entry.text() for entry in blank_menu.actions()])
+        canvas.selectElements((source, target))
+        item_menu = canvas.createContextMenu(source)
+        self.assertIn("Auto layout", [entry.text() for entry in item_menu.actions()])
+        canvas.showCommandPalette()
+        command_ids = {command[0] for command in canvas._command_palette._commands()}
+        canvas._command_palette.close()
+        self.assertTrue({
+            "layout:layered", "layout:tree", "layout:radial", "layout:force"
+        }.issubset(command_ids))
+        with self.assertRaisesRegex(ValueError, "Unsupported.*scope"):
+            canvas.computeAutoLayout(scope="unknown")
+        canvas.setEditMode(False)
+        canvas.deleteLater()
+
     def test_canva_outline_lock_hide_isolate_bookmarks_and_minimap(self) -> None:
         window = QWidget()
         layout = QVBoxLayout(window)

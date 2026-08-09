@@ -133,7 +133,14 @@ connectors. Routing parameters are portable, undoable and Inspector-editable.
 - edge labels, self-loops, parallel edges, crossing bridges and visual buses — complete;
 - obstacle-aware Manhattan routing with configurable clearance — complete;
 - group/frame, swimlane, nested/collapsible group and reusable JSON subflow — complete;
-- automatic layout adapter with layered, tree, force and radial strategies.
+- automatic layout adapter with layered, tree, force and radial strategies â€” complete.
+
+Completed (2026-08-09): `MC-EDITOR-LAYOUT-001` adds a deterministic Qt-free
+layout engine with cycle-safe SCC layering, subtree-aware trees, graph-distance
+radial rings and seeded force simulation. Smart document/selection/component/group
+scope, locked-node preservation, disconnected-component packing, optional group
+fitting and one-command Undo are available through the View pane, context menu,
+Ctrl+K commands and public Python API.
 
 ## Phase 3 — Typed graph and workflow runtime
 

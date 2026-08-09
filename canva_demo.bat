@@ -22,6 +22,8 @@ echo [TIP] Double-click a group header to collapse or expand its contents
 echo [TIP] Right-click a group to fit, export, or ungroup it
 echo [TIP] Drag from a port to see typed compatibility: green, purple conversion, red rejected
 echo [TIP] Inspect Camera/Detector ports to edit type, unit, limits and runtime status
+echo [TIP] Open View ^> Auto layout, or Ctrl+K and search "layout"
+echo [TIP] Select several nodes before arranging to limit the layout scope
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"
