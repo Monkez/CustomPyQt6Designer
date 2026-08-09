@@ -271,6 +271,13 @@ Updated: 2026-08-09
   review: card titles sit inside an uninterrupted border, spin controls use subtle
   integrated stepper surfaces, and icon-led segmented tabs have a flatter selected
   state with tighter, consistent spacing.
+- `MC-EDITOR-PANE-004` removes the remaining platform-dependent group-box
+  artifacts. Inspector/View/Save cards now use one DPI-stable custom painter with
+  inset titles, unbroken rounded borders and consistent padding. Spin controls
+  use borderless inset steppers; the named five-tab bar has larger vector icons,
+  one continuous segmented surface and explicit hover/selected outlines. Offscreen
+  visual QA covered the full pane and the Position / size card at 438x720; the
+  focused canvas document/widget suite contains 105 passing tests.
 - `MC-EDITOR-GROUP-001` makes frame, swimlane and subflow first-class scene
   objects with stable IDs, nested cycle validation, collapse, atomic group move,
   fit-to-contents, Inspector/Layers/Minimap integration and JSON-only reusable

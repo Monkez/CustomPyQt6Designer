@@ -2120,6 +2120,36 @@ class _CanvasPaletteTile(QFrame):
         layout.addWidget(star)
 
 
+class _CanvasCardGroup(QGroupBox):
+    """A platform-stable inspector card with its title inside the frame.
+
+    Native ``QGroupBox`` painting differs noticeably between Windows styles and
+    can cut the top border around the title.  The pane uses an inset title, so
+    painting the card ourselves keeps the approved visual language consistent
+    at every DPI while retaining QGroupBox semantics and accessibility.
+    """
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        card = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(QPen(QColor("#e5e1dc"), 1.0))
+        painter.setBrush(QColor("#fffefd"))
+        painter.drawRoundedRect(card, 13.0, 13.0)
+        if self.title():
+            font = QFont(self.font())
+            font.setPixelSize(11)
+            font.setWeight(QFont.Weight.DemiBold)
+            painter.setFont(font)
+            painter.setPen(QColor("#303941"))
+            painter.drawText(
+                QRectF(14.0, 10.0, max(0.0, self.width() - 28.0), 18.0),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                self.title(),
+            )
+
+
 class _CanvasCommandPalette(QDialog):
     """Keyboard-first, context-aware command launcher for one canvas."""
 
@@ -2377,7 +2407,8 @@ class _CanvasEditorToolbox(QDialog):
         self._tabs = QTabWidget()
         self._tabs.setObjectName("canvasEditorTabs")
         self._tabs.setDocumentMode(True)
-        self._tabs.setIconSize(QSize(14, 14))
+        self._tabs.setIconSize(QSize(16, 16))
+        self._tabs.tabBar().setObjectName("canvasEditorTabBar")
         self._tabs.tabBar().setExpanding(True)
         self._tabs.tabBar().setUsesScrollButtons(False)
         self._tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
@@ -2461,32 +2492,31 @@ class _CanvasEditorToolbox(QDialog):
             border-radius: 10px; padding: 9px;
         }
         QTabWidget#canvasEditorTabs::pane {
-            border: none; background: transparent; top: 5px;
+            border: none; background: transparent; top: 0px;
         }
-        QTabWidget#canvasEditorTabs > QTabBar {
-            background: #f3f1ee; border: none;
-            border-radius: 11px; padding: 3px;
+        QTabBar#canvasEditorTabBar {
+            background: #f3f1ee; border: none; border-radius: 12px;
+            padding: 4px; margin: 0px 0px 6px 0px;
         }
-        QTabWidget#canvasEditorTabs > QTabBar::tab {
-            color: #6e767c; background: transparent; border: none; border-radius: 8px;
-            min-height: 20px; padding: 5px 2px; margin: 2px 0px;
-            font-size: 9px; font-weight: 600;
+        QTabBar#canvasEditorTabBar::tab {
+            color: #667079; background: transparent; border: 1px solid transparent;
+            border-radius: 9px; min-height: 25px; padding: 5px 3px; margin: 0px;
+            font-size: 10px; font-weight: 600;
         }
-        QTabWidget#canvasEditorTabs > QTabBar::tab:selected {
-            color: #e95549; background: #fff7f5; border: none;
+        QTabBar#canvasEditorTabBar::tab:selected {
+            color: #e95549; background: #fffefd; border-color: #ebe5df;
         }
-        QTabWidget#canvasEditorTabs > QTabBar::tab:hover:!selected {
-            color: #3f474e; background: #f9f7f4;
+        QTabBar#canvasEditorTabBar::tab:hover:!selected {
+            color: #3f474e; background: #f9f7f4; border-color: #eee9e4;
         }
         QGroupBox {
-            color: #303941; background: #fffefd; border: 1px solid #e5e1dc;
-            border-radius: 13px; margin-top: 0px; padding: 31px 12px 12px 12px;
+            color: #303941; background: transparent; border: none;
+            margin: 0px; padding: 36px 12px 12px 12px;
             font-weight: 600;
         }
         QGroupBox::title {
-            color: #303941; background: transparent; subcontrol-origin: border;
-            subcontrol-position: top left; top: 11px; left: 14px; padding: 0px;
-            font-size: 10px; font-weight: 700;
+            color: transparent; background: transparent; border: none;
+            padding: 0px; margin: 0px;
         }
         QPushButton, QToolButton {
             color: #3b444b; background: #fffefd; border: 1px solid #ddd9d3;
@@ -2522,7 +2552,7 @@ class _CanvasEditorToolbox(QDialog):
         QLabel#canvasPaletteCount { color: #8c8984; font-size: 9px; }
         QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
             color: #303941; background: #fffefd; border: 1px solid #d9d6d1;
-            border-radius: 10px; padding: 4px 10px; min-height: 28px;
+            border-radius: 10px; padding: 4px 10px; min-height: 30px;
             selection-background-color: #ffd8d2;
         }
         QLineEdit:hover, QDoubleSpinBox:hover, QComboBox:hover { border-color: #c6c1bb; }
@@ -2540,18 +2570,16 @@ class _CanvasEditorToolbox(QDialog):
         QComboBox::down-arrow {
             image: url(__SPIN_DOWN__); width: 10px; height: 7px;
         }
-        QDoubleSpinBox { padding-right: 31px; }
+        QDoubleSpinBox { padding-right: 29px; }
         QDoubleSpinBox::up-button {
             subcontrol-origin: padding; subcontrol-position: top right;
-            background: #faf8f5; border: none; border-left: 1px solid #ebe7e2;
-            border-bottom: 1px solid #ebe7e2; border-top-right-radius: 9px;
-            width: 27px; height: 16px; margin: 1px 1px 0px 0px;
+            background: transparent; border: none; border-radius: 6px;
+            width: 24px; height: 14px; margin: 3px 3px 0px 0px;
         }
         QDoubleSpinBox::down-button {
             subcontrol-origin: padding; subcontrol-position: bottom right;
-            background: #faf8f5; border: none; border-left: 1px solid #ebe7e2;
-            border-bottom-right-radius: 9px;
-            width: 27px; height: 16px; margin: 0px 1px 1px 0px;
+            background: transparent; border: none; border-radius: 6px;
+            width: 24px; height: 14px; margin: 0px 3px 3px 0px;
         }
         QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
             background: #fff0ed;
@@ -2716,7 +2744,7 @@ class _CanvasEditorToolbox(QDialog):
         layout.setContentsMargins(4, 2, 4, 4)
         layout.setSpacing(7)
 
-        general = QGroupBox("Selection")
+        general = _CanvasCardGroup("Selection")
         form = QFormLayout(general)
         self._type_label = QLabel("No selection")
         self._type_label.setObjectName("canvasObjectType")
@@ -2730,7 +2758,7 @@ class _CanvasEditorToolbox(QDialog):
         form.addRow("", self._selection_hint)
         layout.addWidget(general)
 
-        self._multi_select_group = QGroupBox("Quick arrange")
+        self._multi_select_group = _CanvasCardGroup("Quick arrange")
         arrange_layout = QHBoxLayout(self._multi_select_group)
         arrange_layout.setContentsMargins(8, 10, 8, 8)
         arrange_layout.setSpacing(3)
@@ -2761,7 +2789,7 @@ class _CanvasEditorToolbox(QDialog):
         arrange_layout.addStretch(1)
         layout.addWidget(self._multi_select_group)
 
-        self._content_group = QGroupBox("Content")
+        self._content_group = _CanvasCardGroup("Content")
         content_form = QFormLayout(self._content_group)
         self._text_edit = QLineEdit()
         self._data_edit = QLineEdit()
@@ -2771,7 +2799,7 @@ class _CanvasEditorToolbox(QDialog):
         content_form.addRow(self._data_label, self._data_edit)
         layout.addWidget(self._content_group)
 
-        self._ports_group = QGroupBox("Node ports")
+        self._ports_group = _CanvasCardGroup("Node ports")
         ports_layout = QVBoxLayout(self._ports_group)
         self._ports_list = QListWidget()
         self._ports_list.setMaximumHeight(112)
@@ -2805,7 +2833,7 @@ class _CanvasEditorToolbox(QDialog):
         ports_layout.addLayout(port_actions)
         layout.addWidget(self._ports_group)
 
-        self._geometry_group = QGroupBox("Position / size")
+        self._geometry_group = _CanvasCardGroup("Position / size")
         geometry_form = QGridLayout(self._geometry_group)
         geometry_form.setContentsMargins(13, 20, 13, 13)
         geometry_form.setHorizontalSpacing(14)
@@ -2839,7 +2867,7 @@ class _CanvasEditorToolbox(QDialog):
             geometry_form.addWidget(field, row + 1, column)
         layout.addWidget(self._geometry_group)
 
-        self._group_properties_group = QGroupBox("Group / subflow")
+        self._group_properties_group = _CanvasCardGroup("Group / subflow")
         group_form = QFormLayout(self._group_properties_group)
         self._group_kind_combo = QComboBox()
         self._group_kind_combo.addItems(("Frame", "Swimlane", "Subflow"))
@@ -2881,7 +2909,7 @@ class _CanvasEditorToolbox(QDialog):
         group_form.addRow(group_actions)
         layout.insertWidget(layout.indexOf(self._geometry_group), self._group_properties_group)
 
-        self._media_group = QGroupBox("Media")
+        self._media_group = _CanvasCardGroup("Media")
         media_layout = QVBoxLayout(self._media_group)
         self._source_edit = QLineEdit()
         self._source_edit.setPlaceholderText("Image or animated GIF source")
@@ -2892,7 +2920,7 @@ class _CanvasEditorToolbox(QDialog):
         media_layout.addWidget(browse)
         layout.addWidget(self._media_group)
 
-        self._stroke_group = QGroupBox("Line / signal")
+        self._stroke_group = _CanvasCardGroup("Line / signal")
         stroke_form = QFormLayout(self._stroke_group)
         self._route_combo = QComboBox()
         self._route_combo.addItems(("Bezier", "Auto", "Orthogonal", "Straight", "Polyline"))
@@ -3068,7 +3096,7 @@ class _CanvasEditorToolbox(QDialog):
         stroke_form.addRow(self._waypoint_actions_label, self._waypoint_actions)
         layout.addWidget(self._stroke_group)
 
-        self._colors_group = QGroupBox("Appearance")
+        self._colors_group = _CanvasCardGroup("Appearance")
         colors = QGridLayout(self._colors_group)
         self._color_buttons: dict[str, QPushButton] = {}
         for column, (label, role) in enumerate(
@@ -3159,7 +3187,7 @@ class _CanvasEditorToolbox(QDialog):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 8, 4, 4)
         layout.setSpacing(8)
-        navigation = QGroupBox("Viewport")
+        navigation = _CanvasCardGroup("Viewport")
         navigation_layout = QGridLayout(navigation)
         actions = (
             ("Zoom out", "zoom_out", self.canvas.zoomOut, 0, 0),
@@ -3195,7 +3223,7 @@ class _CanvasEditorToolbox(QDialog):
         navigation_layout.addLayout(move_row, 2, 0, 1, 3)
         layout.addWidget(navigation)
 
-        grid_group = QGroupBox("Grid")
+        grid_group = _CanvasCardGroup("Grid")
         grid_layout = QGridLayout(grid_group)
         self._grid_visible_check = QCheckBox("Show grid")
         self._grid_visible_check.toggled.connect(self.canvas.setGridVisible)
@@ -3210,7 +3238,7 @@ class _CanvasEditorToolbox(QDialog):
         grid_layout.addWidget(grid_color, 1, 0, 1, 2)
         layout.addWidget(grid_group)
 
-        snapping = QGroupBox("Snapping & guides")
+        snapping = _CanvasCardGroup("Snapping & guides")
         snapping_layout = QGridLayout(snapping)
         self._snap_checks: dict[str, QCheckBox] = {}
         labels = {"grid": "Grid", "edges": "Edges", "centers": "Centers", "ports": "Ports"}
@@ -3230,7 +3258,7 @@ class _CanvasEditorToolbox(QDialog):
         snapping_layout.addWidget(self._snap_distance_field, 2, 1)
         layout.addWidget(snapping)
 
-        navigator = QGroupBox("Navigator")
+        navigator = _CanvasCardGroup("Navigator")
         navigator_layout = QGridLayout(navigator)
         self._minimap_check = QCheckBox("Show minimap")
         self._minimap_check.toggled.connect(self.canvas.setMinimapVisible)
@@ -3250,7 +3278,7 @@ class _CanvasEditorToolbox(QDialog):
         layout.addWidget(navigator)
         self.canvas.viewportBookmarksChanged.connect(self._sync_viewport_bookmarks)
 
-        background = QGroupBox("Canvas background")
+        background = _CanvasCardGroup("Canvas background")
         background_layout = QGridLayout(background)
         background_color = QPushButton("Background color")
         background_color.setIcon(_canvas_icon("color"))
@@ -3288,7 +3316,7 @@ class _CanvasEditorToolbox(QDialog):
         self._save_status.setObjectName("canvasSaveStatus")
         self._save_status.setWordWrap(True)
         layout.addWidget(self._save_status)
-        session = QGroupBox("Current app session")
+        session = _CanvasCardGroup("Current app session")
         session_layout = QVBoxLayout(session)
         save_session = QPushButton("Save session checkpoint")
         save_session.setIcon(_canvas_icon("save"))
@@ -3299,7 +3327,7 @@ class _CanvasEditorToolbox(QDialog):
         session_layout.addWidget(save_session)
         session_layout.addWidget(restore_session)
         layout.addWidget(session)
-        persistent = QGroupBox("Persistent across app restarts")
+        persistent = _CanvasCardGroup("Persistent across app restarts")
         persistent_layout = QVBoxLayout(persistent)
         save_persistent = QPushButton("Save persistent now")
         save_persistent.setObjectName("primaryAction")
@@ -3311,7 +3339,7 @@ class _CanvasEditorToolbox(QDialog):
         persistent_layout.addWidget(save_persistent)
         persistent_layout.addWidget(load_persistent)
         layout.addWidget(persistent)
-        history = QGroupBox("History")
+        history = _CanvasCardGroup("History")
         history_layout = QHBoxLayout(history)
         self._undo_button = QPushButton("Undo")
         self._undo_button.setIcon(_canvas_icon("undo"))

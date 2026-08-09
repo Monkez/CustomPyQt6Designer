@@ -47,6 +47,12 @@ hiện tám action căn trái/tâm/phải/trên/giữa/dưới và phân bố ng
 cố định nên không bị cuộn cùng Inspector. Badge chữ `EDIT` đã được bỏ; mọi action
 trong pane và floatbar dùng icon vector DPI-safe kèm tooltip.
 
+Card trong Control Pane được vẽ đồng nhất bởi editor thay vì phụ thuộc vào native
+`QGroupBox`, vì vậy title luôn nằm gọn bên trong card và không cắt đường viền trên
+Windows/High-DPI. Spinbox dùng stepper chìm, không còn các đường kẻ dày quanh mũi
+tên; thanh tab là một segmented control liền khối với icon 16 px, hover và selected
+state rõ ràng.
+
 Có thể phân bố đều từ ba element trở lên:
 
 ```python
