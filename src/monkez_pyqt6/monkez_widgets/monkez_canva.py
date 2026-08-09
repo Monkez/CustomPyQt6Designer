@@ -4440,7 +4440,7 @@ class _CanvasEditorToolbox(QDialog):
         layout.setContentsMargins(4, 2, 4, 4)
         layout.setSpacing(7)
 
-        general = _CanvasCardGroup("Selection")
+        general = _CanvasCardGroup("Selection", collapsed=True)
         form = QFormLayout(general)
         self._type_label = QLabel("No selection")
         self._type_label.setObjectName("canvasObjectType")
@@ -4454,7 +4454,7 @@ class _CanvasEditorToolbox(QDialog):
         form.addRow("", self._selection_hint)
         layout.addWidget(general)
 
-        self._multi_select_group = _CanvasCardGroup("Quick arrange")
+        self._multi_select_group = _CanvasCardGroup("Quick arrange", collapsed=True)
         arrange_layout = QHBoxLayout(self._multi_select_group)
         arrange_layout.setContentsMargins(8, 36, 8, 8)
         arrange_layout.setSpacing(3)
@@ -4485,7 +4485,7 @@ class _CanvasEditorToolbox(QDialog):
         arrange_layout.addStretch(1)
         layout.addWidget(self._multi_select_group)
 
-        self._content_group = _CanvasCardGroup("Content")
+        self._content_group = _CanvasCardGroup("Content", collapsed=True)
         content_form = QFormLayout(self._content_group)
         self._text_edit = QLineEdit()
         self._data_edit = QLineEdit()
@@ -4762,7 +4762,7 @@ class _CanvasEditorToolbox(QDialog):
         self._binding_apply_timer.setSingleShot(True)
         self._binding_apply_timer.timeout.connect(self._auto_update_selected_binding)
 
-        self._geometry_group = _CanvasCardGroup("Position / size")
+        self._geometry_group = _CanvasCardGroup("Position / size", collapsed=True)
         geometry_form = QGridLayout(self._geometry_group)
         geometry_form.setContentsMargins(13, 38, 13, 13)
         geometry_form.setHorizontalSpacing(14)
@@ -5027,7 +5027,7 @@ class _CanvasEditorToolbox(QDialog):
         stroke_form.addRow(self._waypoint_actions_label, self._waypoint_actions)
         layout.addWidget(self._stroke_group)
 
-        self._colors_group = _CanvasCardGroup("Appearance")
+        self._colors_group = _CanvasCardGroup("Appearance", collapsed=True)
         colors = QGridLayout(self._colors_group)
         self._color_buttons: dict[str, QPushButton] = {}
         for column, (label, role) in enumerate(
@@ -5132,7 +5132,7 @@ class _CanvasEditorToolbox(QDialog):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 8, 4, 4)
         layout.setSpacing(8)
-        navigation = _CanvasCardGroup("Viewport")
+        navigation = _CanvasCardGroup("Viewport", collapsed=True)
         navigation_layout = QGridLayout(navigation)
         actions = (
             ("Zoom out", "zoom_out", self.canvas.zoomOut, 0, 0),
@@ -5263,7 +5263,7 @@ class _CanvasEditorToolbox(QDialog):
         self._sync_auto_layout_strategy_controls()
         layout.addWidget(auto_layout)
 
-        grid_group = _CanvasCardGroup("Grid")
+        grid_group = _CanvasCardGroup("Grid", collapsed=True)
         grid_layout = QGridLayout(grid_group)
         self._grid_visible_check = QCheckBox("Show grid")
         self._grid_visible_check.toggled.connect(self.canvas.setGridVisible)
@@ -5356,7 +5356,7 @@ class _CanvasEditorToolbox(QDialog):
         self._save_status.setObjectName("canvasSaveStatus")
         self._save_status.setWordWrap(True)
         layout.addWidget(self._save_status)
-        session = _CanvasCardGroup("Current app session")
+        session = _CanvasCardGroup("Current app session", collapsed=True)
         session_layout = QVBoxLayout(session)
         save_session = QPushButton("Save session checkpoint")
         save_session.setIcon(_canvas_icon("save"))
@@ -5367,7 +5367,7 @@ class _CanvasEditorToolbox(QDialog):
         session_layout.addWidget(save_session)
         session_layout.addWidget(restore_session)
         layout.addWidget(session)
-        persistent = _CanvasCardGroup("Persistent across app restarts")
+        persistent = _CanvasCardGroup("Persistent across app restarts", collapsed=True)
         persistent_layout = QVBoxLayout(persistent)
         save_persistent = QPushButton("Save persistent now")
         save_persistent.setObjectName("primaryAction")

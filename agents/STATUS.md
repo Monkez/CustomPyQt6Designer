@@ -29,6 +29,8 @@ Updated: 2026-08-09
   stacked-page composite. Each tab page has an opaque styled surface and the
   stack repaints its background before showing a page, eliminating stale
   Add/Inspector pixels when switching tabs on Windows and fractional DPI.
+- Control Pane card groups now start collapsed by default; users can expand only
+  the section they need, keeping Inspector/View/Save compact on first launch.
 
 ## Current version
 
