@@ -167,6 +167,12 @@ Updated: 2026-08-09
   command. Native Windows QA at 448x710 and 520x430 confirmed clean two-column
   tiles, unclipped search/filter controls and complete keyboard focus styling.
 
+- `MC-EDITOR-SNAP-001` and `MC-EDITOR-CONTEXT-001` add deterministic Qt-free
+  grid/edge/center/port snapping, transient smart guides, portable snap settings,
+  context-aware blank/item/connector menus and atomic equal-size commands.
+  Right-click without movement opens the canvas menu; right-drag continues to
+  pan. The View pane is scroll-safe with compact icon viewport controls.
+
 - `MC-EDITOR-SELECTION-001` begins Phase 2 with a strict, versioned graph
   clipboard. Ctrl+C/X/V and public APIs preserve internal connectors, remap IDs,
   endpoints and waypoints, and make cut/paste/duplicate atomic in history.
@@ -247,7 +253,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 160 tests and covers all 36 public
+- The automated suite contains 165 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

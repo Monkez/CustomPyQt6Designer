@@ -109,6 +109,10 @@ portable favorites/recent history and a keyboard-first Ctrl+K command launcher.
 Commands are rebuilt from current selection, clipboard, history, registry and
 read-only state each time the launcher opens.
 
+Completed slice (2026-08-09): context-aware blank/item/connector menus while
+preserving right-drag viewport pan; equal width/height/both actions; portable
+grid/edge/center/port snap settings; and foreground smart alignment guides.
+
 - searchable palette with categories, favorites and recent items — complete;
 - command palette — complete; context-aware canvas menus remain;
 - copy, cut, paste and duplicate with internal connector preservation — complete;

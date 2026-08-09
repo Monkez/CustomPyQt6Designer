@@ -163,6 +163,25 @@ canvas.zoomToSelection()
 canvas.selectAllElements()
 ```
 
+## Menu ngữ cảnh, căn chỉnh và smart guides
+
+Click chuột phải trên vùng canvas trống để mở menu Add/Paste/View; giữ và kéo
+chuột phải vẫn pan viewport như trước. Click chuột phải trên item hoặc connector
+để Copy/Cut/Duplicate/Delete, đổi layer và zoom tới selection. Khi chọn từ hai
+element, submenu **Align** và **Match size** cho phép căn hoặc đồng bộ width,
+height hay cả hai; mỗi thao tác là một bước Undo duy nhất.
+
+Tab **View** có nhóm **Snapping & guides** để bật riêng Grid, Edges, Centers và
+Ports, đặt khoảng bắt dính 1-40 px và ẩn/hiện smart guides. Các tùy chọn này lưu
+trong scene của document nên tiếp tục hoạt động khi copy cả project sang máy khác.
+
+```python
+canvas.setSnapTargets(("grid", "edges", "centers", "ports"))
+canvas.setSnapDistance(8)
+canvas.setSmartGuidesVisible(True)
+canvas.matchSelectedSize("both")  # width | height | both
+```
+
 Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`, `connectorAdded(str)`,
 `connectorRemoved(str)`, `elementClicked(str)`, `connectorClicked(str)`,
 `objectClicked(str)`, `selectionChanged(str)`, `editModeChanged(bool)` và

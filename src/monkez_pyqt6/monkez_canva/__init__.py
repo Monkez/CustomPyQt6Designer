@@ -48,6 +48,17 @@ from .registry import (
     create_default_element_registry,
 )
 from .schema import DOCUMENT_JSON_SCHEMA, DocumentMigrationResult, migrate_document
+from .snapping import (
+    SMART_GUIDES_KEY,
+    SNAP_DISTANCE_KEY,
+    SNAP_TARGETS,
+    SNAP_TARGETS_KEY,
+    SnapGuide,
+    SnapRect,
+    SnapResult,
+    normalize_snap_targets,
+    snap_rect,
+)
 
 __all__ = [
     "CLIPBOARD_FORMAT",
@@ -60,6 +71,10 @@ __all__ = [
     "DOCUMENT_VERSION",
     "DOCUMENT_JSON_SCHEMA",
     "ASSET_MANIFEST_KEY",
+    "SMART_GUIDES_KEY",
+    "SNAP_DISTANCE_KEY",
+    "SNAP_TARGETS",
+    "SNAP_TARGETS_KEY",
     "AssetIntegrityIssue",
     "CanvasDocument",
     "BUILTIN_ELEMENT_DEFINITIONS",
@@ -74,6 +89,9 @@ __all__ = [
     "PortModel",
     "ResourceModel",
     "SceneModel",
+    "SnapGuide",
+    "SnapRect",
+    "SnapResult",
     "create_default_element_registry",
     "atomic_write_json",
     "backup_path",
@@ -83,9 +101,11 @@ __all__ = [
     "load_json_with_recovery",
     "migrate_document",
     "normalize_component_ids",
+    "normalize_snap_targets",
     "record_recent_component",
     "remap_selection_payload",
     "search_palette",
+    "snap_rect",
     "DocumentMigrationResult",
     "sha256_file",
     "verify_asset_manifest",

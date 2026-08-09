@@ -66,6 +66,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -97,6 +98,13 @@ from monkez_pyqt6.monkez_canva import (
     decode_selection_payload,
     remap_selection_payload,
     verify_asset_manifest,
+    SMART_GUIDES_KEY,
+    SNAP_DISTANCE_KEY,
+    SNAP_TARGETS,
+    SNAP_TARGETS_KEY,
+    SnapRect,
+    normalize_snap_targets,
+    snap_rect,
 )
 from monkez_pyqt6.monkez_canva.persistence import copy_asset_atomically
 from monkez_pyqt6.monkez_widgets._canva_commands import (
@@ -555,6 +563,30 @@ class _CanvasScene(QGraphicsScene):
     def __init__(self, canvas: "MonkezCanva") -> None:
         super().__init__(canvas)
         self.canvas = canvas
+        self._smart_guides: tuple[Any, ...] = ()
+
+    def setSmartGuides(self, guides) -> None:
+        normalized = tuple(guides) if self.canvas._smart_guides_visible else ()
+        if normalized != self._smart_guides:
+            self._smart_guides = normalized
+            self.invalidate(self.sceneRect(), QGraphicsScene.SceneLayer.ForegroundLayer)
+
+    def clearSmartGuides(self) -> None:
+        self.setSmartGuides(())
+
+    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
+        if not self._smart_guides:
+            return
+        painter.save()
+        pen = QPen(QColor("#ff6b5f"), 0, Qt.PenStyle.DashLine)
+        pen.setDashPattern((5, 4))
+        painter.setPen(pen)
+        for guide in self._smart_guides:
+            if guide.axis == "vertical":
+                painter.drawLine(QPointF(guide.value, rect.top()), QPointF(guide.value, rect.bottom()))
+            else:
+                painter.drawLine(QPointF(rect.left(), guide.value), QPointF(rect.right(), guide.value))
+        painter.restore()
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
         painter.fillRect(rect, self.canvas.backgroundColor)
@@ -1127,14 +1159,14 @@ class _CanvasElement(QGraphicsObject):
     def mouseReleaseEvent(self, event) -> None:
         self._resizing = False
         super().mouseReleaseEvent(event)
+        self.canvas._scene.clearSmartGuides()
         self.changed.emit(self.element_id)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             canvas = self.scene().canvas
-            if canvas.snapToGrid and canvas.editMode and not canvas._restoring:
-                size = canvas.gridSize
-                value = QPointF(round(value.x() / size) * size, round(value.y() / size) * size)
+            if canvas.editMode and not canvas._restoring:
+                value = canvas._snap_item_position(self, value)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.changed.emit(self.element_id)
         return super().itemChange(change, value)
@@ -1717,6 +1749,12 @@ class _CanvasCommandPalette(QDialog):
                 f"align_{alignment}", writable and len(selected_elements) >= 2,
                 lambda value=alignment: canvas.alignSelected(value),
             ))
+        for mode, label in (("width", "Match width"), ("height", "Match height"), ("both", "Match size")):
+            commands.append((
+                f"arrange:match-{mode}", label, "Arrange", "selection equal size",
+                "rectangle", writable and len(selected_elements) >= 2,
+                lambda value=mode: canvas.matchSelectedSize(value),
+            ))
         return commands
 
     def _refresh(self, _text: str = "") -> None:
@@ -1985,7 +2023,7 @@ class _CanvasEditorToolbox(QDialog):
         QListWidget::item:selected { color: #d94e43; background: #ffe9e5; }
         QListWidget::item:hover:!selected { background: #f5f2ee; }
         QScrollArea { background: transparent; border: none; }
-        QWidget#canvasInspectorBody { background: transparent; }
+        QWidget#canvasInspectorBody, QWidget#canvasViewBody { background: transparent; }
         QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
         QScrollBar::handle:vertical { background: #d8d4cf; border-radius: 4px; min-height: 28px; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
@@ -2154,6 +2192,9 @@ class _CanvasEditorToolbox(QDialog):
             ("align_bottom", "Align bottom", lambda: self.canvas.alignSelected("bottom")),
             ("distribute_horizontal", "Distribute horizontally", lambda: self.canvas.distributeSelected("horizontal")),
             ("distribute_vertical", "Distribute vertically", lambda: self.canvas.distributeSelected("vertical")),
+            ("rectangle", "Match width", self.canvas.matchSelectedWidth),
+            ("rectangle", "Match height", self.canvas.matchSelectedHeight),
+            ("rectangle", "Match width and height", self.canvas.matchSelectedDimensions),
         )
         self._arrange_buttons: list[QToolButton] = []
         for icon_name, tooltip, callback in arrange_actions:
@@ -2432,7 +2473,16 @@ class _CanvasEditorToolbox(QDialog):
 
     def _view_tab(self) -> QWidget:
         page = QWidget()
-        layout = QVBoxLayout(page)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setObjectName("canvasViewBody")
+        body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 8, 4, 4)
         layout.setSpacing(8)
         navigation = QGroupBox("Viewport")
@@ -2446,8 +2496,12 @@ class _CanvasEditorToolbox(QDialog):
             ("Pan mode", "pan", self.canvas.togglePanMode, 1, 2),
         )
         for label, icon, callback, row, column in actions:
-            button = QPushButton(label)
+            button = QToolButton()
             button.setIcon(_canvas_icon(icon))
+            button.setIconSize(QSize(18, 18))
+            button.setToolTip(label)
+            button.setFixedHeight(34)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             button.clicked.connect(callback)
             navigation_layout.addWidget(button, row, column)
         move_row = QHBoxLayout()
@@ -2482,6 +2536,26 @@ class _CanvasEditorToolbox(QDialog):
         grid_layout.addWidget(grid_color, 1, 0, 1, 2)
         layout.addWidget(grid_group)
 
+        snapping = QGroupBox("Snapping & guides")
+        snapping_layout = QGridLayout(snapping)
+        self._snap_checks: dict[str, QCheckBox] = {}
+        labels = {"grid": "Grid", "edges": "Edges", "centers": "Centers", "ports": "Ports"}
+        for index, target in enumerate(SNAP_TARGETS):
+            check = QCheckBox(labels[target])
+            check.toggled.connect(self._update_snap_targets)
+            snapping_layout.addWidget(check, index // 2, index % 2)
+            self._snap_checks[target] = check
+        self._smart_guides_check = QCheckBox("Show smart guides")
+        self._smart_guides_check.toggled.connect(self.canvas.setSmartGuidesVisible)
+        snapping_layout.addWidget(self._smart_guides_check, 2, 0)
+        self._snap_distance_field = QDoubleSpinBox()
+        self._snap_distance_field.setRange(1.0, 40.0)
+        self._snap_distance_field.setSuffix(" px")
+        self._snap_distance_field.setToolTip("Maximum distance before an item snaps")
+        self._snap_distance_field.valueChanged.connect(self.canvas.setSnapDistance)
+        snapping_layout.addWidget(self._snap_distance_field, 2, 1)
+        layout.addWidget(snapping)
+
         background = QGroupBox("Canvas background")
         background_layout = QGridLayout(background)
         background_color = QPushButton("Background color")
@@ -2506,6 +2580,8 @@ class _CanvasEditorToolbox(QDialog):
         background_layout.addWidget(clear_background, 2, 1)
         layout.addWidget(background)
         layout.addStretch(1)
+        scroll.setWidget(body)
+        page_layout.addWidget(scroll)
         self._sync_view_controls()
         return page
 
@@ -2662,13 +2738,26 @@ class _CanvasEditorToolbox(QDialog):
             self._grid_style_combo,
             self._background_path,
             self._background_mode_combo,
+            self._smart_guides_check,
+            self._snap_distance_field,
+            *self._snap_checks.values(),
         )
         blockers = [QSignalBlocker(widget) for widget in widgets]
         self._grid_visible_check.setChecked(self.canvas.gridVisible)
         self._grid_style_combo.setCurrentIndex(self.canvas.getGridStyle())
         self._background_path.setText(self.canvas.getBackgroundImage())
         self._background_mode_combo.setCurrentIndex(self.canvas.getBackgroundImageMode())
+        enabled_targets = set(self.canvas.snapTargets())
+        for target, check in self._snap_checks.items():
+            check.setChecked(target in enabled_targets)
+        self._smart_guides_check.setChecked(self.canvas.smartGuidesVisible())
+        self._snap_distance_field.setValue(self.canvas.snapDistance())
         del blockers
+
+    def _update_snap_targets(self, _checked: bool = False) -> None:
+        self.canvas.setSnapTargets(
+            target for target, check in self._snap_checks.items() if check.isChecked()
+        )
 
     def _browse_selected_media(self) -> None:
         item = self.canvas.element(self.canvas.selectedElementId())
@@ -3403,6 +3492,8 @@ class _CanvasView(QGraphicsView):
         self.setAcceptDrops(True)
         self._right_pan_active = False
         self._right_pan_origin = None
+        self._right_pan_start = None
+        self._right_pan_moved = False
         self._connection_origin: tuple[_CanvasElement, dict[str, Any]] | None = None
         self._connection_preview = QGraphicsPathItem()
         preview_pen = QPen(QColor("#2563eb"), 2.5, Qt.PenStyle.DashLine)
@@ -3454,6 +3545,8 @@ class _CanvasView(QGraphicsView):
         if event.button() == Qt.MouseButton.RightButton and self.itemAt(point) is None:
             self._right_pan_active = True
             self._right_pan_origin = point
+            self._right_pan_start = point
+            self._right_pan_moved = False
             self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
@@ -3478,6 +3571,8 @@ class _CanvasView(QGraphicsView):
         if self._right_pan_active and self._right_pan_origin is not None:
             point = event.position().toPoint()
             delta = point - self._right_pan_origin
+            if self._right_pan_start is not None and (point - self._right_pan_start).manhattanLength() > 4:
+                self._right_pan_moved = True
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
             self._right_pan_origin = point
@@ -3508,9 +3603,13 @@ class _CanvasView(QGraphicsView):
             event.accept()
             return
         if self._right_pan_active and event.button() == Qt.MouseButton.RightButton:
+            show_menu = not self._right_pan_moved
             self._right_pan_active = False
             self._right_pan_origin = None
+            self._right_pan_start = None
             self.viewport().unsetCursor()
+            if show_menu:
+                self.canvas.showContextMenu(event.globalPosition().toPoint())
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -3521,6 +3620,17 @@ class _CanvasView(QGraphicsView):
         elif isinstance(item, _CanvasConnector):
             self.canvas.connectorClicked.emit(item.connector_id)
             self.canvas.objectClicked.emit(item.connector_id)
+
+    def contextMenuEvent(self, event) -> None:
+        item = self.itemAt(event.pos())
+        if isinstance(item, (_CanvasElement, _CanvasConnector)):
+            if not item.isSelected():
+                self.scene().clearSelection()
+                item.setSelected(True)
+            self.canvas.showContextMenu(event.globalPos(), item.element_id)
+            event.accept()
+            return
+        event.ignore()
 
     def _port_at(self, view_position) -> tuple[_CanvasElement, dict[str, Any]] | None:
         item = self.itemAt(view_position)
@@ -3601,6 +3711,9 @@ class MonkezCanva(QWidget):
         self._grid_color = QColor("#e2e8f0")
         self._grid_visible = True
         self._snap_to_grid = True
+        self._snap_targets = SNAP_TARGETS
+        self._snap_distance = 8.0
+        self._smart_guides_visible = True
         self._grid_size = 20
         self._grid_style = 0
         self._background_image = ""
@@ -3896,6 +4009,71 @@ class MonkezCanva(QWidget):
             if connector.isSelected()
         )
         return selected
+
+    def createContextMenu(self, object_id: str = "") -> QMenu:
+        """Build a context-aware menu without displaying it (also useful to hosts/tests)."""
+        menu = QMenu(self)
+        writable = not self.isReadOnly()
+        selected = self.selectedObjectIds()
+        selected_elements = self.selectedElementIds()
+
+        def action(label: str, callback, *, enabled: bool = True, icon: str = ""):
+            entry = menu.addAction(_canvas_icon(icon), label) if icon else menu.addAction(label)
+            entry.setEnabled(enabled)
+            entry.triggered.connect(lambda _checked=False: callback())
+            return entry
+
+        if not object_id:
+            clipboard = QApplication.clipboard().mimeData()
+            can_paste = bool(clipboard and clipboard.hasFormat(CANVAS_CLIPBOARD_MIME_TYPE))
+            action("Paste", self.pasteSelection, enabled=writable and can_paste, icon="duplicate")
+            add_menu = menu.addMenu(_canvas_icon("rectangle"), "Add component")
+            for definition in self._element_registry.definitions():
+                entry = add_menu.addAction(_canvas_icon(definition.icon), definition.label)
+                entry.setEnabled(writable)
+                entry.triggered.connect(
+                    lambda _checked=False, kind=definition.type_id: self.addPaletteElement(kind)
+                )
+            menu.addSeparator()
+            action("Select all", self.selectAllElements, enabled=bool(self._elements))
+            action("Fit all content", self.fitContent, icon="fit")
+            action("Toggle grid", lambda: self.setGridVisible(not self.gridVisible), enabled=writable, icon="grid")
+            action("Command palette…", self.showCommandPalette, icon="command")
+            return menu
+
+        action("Copy", self.copySelection, enabled=bool(selected), icon="duplicate")
+        action("Cut", self.cutSelection, enabled=writable and bool(selected), icon="delete")
+        action("Duplicate", self.duplicateSelection, enabled=writable and bool(selected), icon="duplicate")
+        action("Delete", self.deleteSelected, enabled=writable and bool(selected), icon="delete")
+        if len(selected_elements) >= 2:
+            menu.addSeparator()
+            align_menu = menu.addMenu("Align")
+            for alignment, label in (
+                ("left", "Left"), ("hcenter", "Horizontal center"), ("right", "Right"),
+                ("top", "Top"), ("vcenter", "Vertical center"), ("bottom", "Bottom"),
+            ):
+                entry = align_menu.addAction(label)
+                entry.setEnabled(writable)
+                entry.triggered.connect(
+                    lambda _checked=False, value=alignment: self.alignSelected(value)
+                )
+            size_menu = menu.addMenu("Match size")
+            for mode, label in (("width", "Width"), ("height", "Height"), ("both", "Width and height")):
+                entry = size_menu.addAction(label)
+                entry.setEnabled(writable)
+                entry.triggered.connect(
+                    lambda _checked=False, value=mode: self.matchSelectedSize(value)
+                )
+        menu.addSeparator()
+        action("Bring to front", self.bringSelectedToFront, enabled=writable)
+        action("Send to back", self.sendSelectedToBack, enabled=writable)
+        action("Zoom to selection", self.zoomToSelection, enabled=bool(selected), icon="fit")
+        if object_id in self._connectors:
+            action("Send test message", lambda: self.send_a_message(object_id), enabled=writable)
+        return menu
+
+    def showContextMenu(self, global_position, object_id: str = "") -> None:
+        self.createContextMenu(object_id).exec(global_position)
 
     def selectionClipboardPayload(self) -> dict[str, Any]:
         """Return the selected subgraph without accessing the system clipboard."""
@@ -4336,6 +4514,43 @@ class MonkezCanva(QWidget):
 
     def distributeSelectedVertically(self) -> bool:
         return self.distributeSelected("vertical")
+
+    def matchSelectedSize(self, mode: str = "both") -> bool:
+        """Match selected element dimensions to the first selected element."""
+        normalized = str(mode).lower().replace("-", "").replace("_", "")
+        aliases = {"w": "width", "h": "height", "size": "both"}
+        normalized = aliases.get(normalized, normalized)
+        if normalized not in ("width", "height", "both"):
+            raise ValueError(f"Unsupported MonkezCanva size match: {mode}")
+        element_ids = self.selectedElementIds()
+        if len(element_ids) < 2:
+            return False
+        reference = self._document_model.element(element_ids[0]).to_dict()
+
+        def mutate(document: CanvasDocument) -> None:
+            changes = {}
+            if normalized in ("width", "both"):
+                changes["width"] = float(reference.get("width", 120.0))
+            if normalized in ("height", "both"):
+                changes["height"] = float(reference.get("height", 72.0))
+            for element_id in element_ids[1:]:
+                document.update_element(element_id, changes)
+
+        changed = self._push_document_mutation(mutate, f"Match {normalized}")
+        if changed:
+            self.diagnosticMessage.emit(
+                f"Matched {normalized} for {len(element_ids)} items"
+            )
+        return changed
+
+    def matchSelectedWidth(self) -> bool:
+        return self.matchSelectedSize("width")
+
+    def matchSelectedHeight(self) -> bool:
+        return self.matchSelectedSize("height")
+
+    def matchSelectedDimensions(self) -> bool:
+        return self.matchSelectedSize("both")
 
     def renameElement(self, element_id: str, new_id: str) -> str:
         if not self._restoring:
@@ -5398,6 +5613,9 @@ class MonkezCanva(QWidget):
                 "height": self._scene.sceneRect().height(),
                 "gridVisible": self._grid_visible,
                 "snapToGrid": self._snap_to_grid,
+                SNAP_TARGETS_KEY: list(self._snap_targets),
+                SNAP_DISTANCE_KEY: self._snap_distance,
+                SMART_GUIDES_KEY: self._smart_guides_visible,
                 "gridSize": self._grid_size,
                 "gridStyle": self._grid_style,
                 "gridColor": self._grid_color.name(QColor.NameFormat.HexArgb),
@@ -5530,6 +5748,15 @@ class MonkezCanva(QWidget):
         self._scene.setSceneRect(-width / 2, -height / 2, width, height)
         self._grid_visible = bool(scene.get("gridVisible", self._grid_visible))
         self._snap_to_grid = bool(scene.get("snapToGrid", self._snap_to_grid))
+        self._snap_targets = normalize_snap_targets(
+            scene.get(SNAP_TARGETS_KEY, self._snap_targets)
+        )
+        self._snap_distance = max(
+            1.0, min(40.0, float(scene.get(SNAP_DISTANCE_KEY, self._snap_distance)))
+        )
+        self._smart_guides_visible = bool(
+            scene.get(SMART_GUIDES_KEY, self._smart_guides_visible)
+        )
         self._grid_size = max(4, int(scene.get("gridSize", self._grid_size)))
         self._grid_style = max(
             0, min(len(_GRID_STYLES) - 1, int(scene.get("gridStyle", self._grid_style)))
@@ -5962,6 +6189,15 @@ class MonkezCanva(QWidget):
         self._scene.setSceneRect(-width / 2, -height / 2, width, height)
         self._grid_visible = bool(scene.get("gridVisible", self._grid_visible))
         self._snap_to_grid = bool(scene.get("snapToGrid", self._snap_to_grid))
+        self._snap_targets = normalize_snap_targets(
+            scene.get(SNAP_TARGETS_KEY, self._snap_targets)
+        )
+        self._snap_distance = max(
+            1.0, min(40.0, float(scene.get(SNAP_DISTANCE_KEY, self._snap_distance)))
+        )
+        self._smart_guides_visible = bool(
+            scene.get(SMART_GUIDES_KEY, self._smart_guides_visible)
+        )
         self._grid_size = max(4, int(scene.get("gridSize", self._grid_size)))
         self._grid_style = max(0, min(len(_GRID_STYLES) - 1, int(scene.get("gridStyle", self._grid_style))))
         self._grid_color = _color(scene.get("gridColor", self._grid_color), "#e2e8f0")
@@ -6157,6 +6393,80 @@ class MonkezCanva(QWidget):
         self._ensure_writable()
         self._snap_to_grid = enabled
         self.documentChanged.emit()
+
+    def snapTargets(self) -> tuple[str, ...]:
+        return self._snap_targets
+
+    def setSnapTargets(self, targets) -> None:
+        normalized = normalize_snap_targets(targets)
+        if normalized == self._snap_targets:
+            return
+        self._ensure_writable()
+        self._snap_targets = normalized
+        self.documentChanged.emit()
+
+    def snapDistance(self) -> float:
+        return self._snap_distance
+
+    def setSnapDistance(self, distance: float) -> None:
+        normalized = max(1.0, min(40.0, float(distance)))
+        if math.isclose(normalized, self._snap_distance):
+            return
+        self._ensure_writable()
+        self._snap_distance = normalized
+        self.documentChanged.emit()
+
+    def smartGuidesVisible(self) -> bool:
+        return self._smart_guides_visible
+
+    def setSmartGuidesVisible(self, visible: bool) -> None:
+        normalized = bool(visible)
+        if normalized == self._smart_guides_visible:
+            return
+        self._ensure_writable()
+        self._smart_guides_visible = normalized
+        if not normalized:
+            self._scene.clearSmartGuides()
+        self.documentChanged.emit()
+
+    def _snap_item_position(self, item: _CanvasElement, position: QPointF) -> QPointF:
+        targets = tuple(
+            target for target in self._snap_targets
+            if target != "grid" or self._snap_to_grid
+        )
+        if not targets:
+            self._scene.clearSmartGuides()
+            return position
+        selected = set(self.selectedElementIds())
+        candidates = [
+            SnapRect(other.pos().x(), other.pos().y(), other._rect.width(), other._rect.height())
+            for element_id, other in self._elements.items()
+            if element_id != item.element_id and element_id not in selected
+        ]
+        candidate_ports = [
+            (point.x(), point.y())
+            for element_id, other in self._elements.items()
+            if element_id != item.element_id and element_id not in selected
+            for port in other.ports
+            for point in (other.portScenePosition(port["id"]),)
+        ]
+        offset = position - item.pos()
+        moving_ports = [
+            (point.x() + offset.x(), point.y() + offset.y())
+            for port in item.ports
+            for point in (item.portScenePosition(port["id"]),)
+        ]
+        result = snap_rect(
+            SnapRect(position.x(), position.y(), item._rect.width(), item._rect.height()),
+            candidates,
+            targets=targets,
+            grid_size=self._grid_size,
+            threshold=self._snap_distance,
+            moving_ports=moving_ports,
+            candidate_ports=candidate_ports,
+        )
+        self._scene.setSmartGuides(result.guides)
+        return QPointF(result.x, result.y)
 
     def getGridSize(self) -> int:
         return self._grid_size

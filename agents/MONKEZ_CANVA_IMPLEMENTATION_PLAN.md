@@ -197,6 +197,18 @@ history and read-only state plus full arrow/Enter/Escape keyboard operation.
 Next: context-aware blank/item/connector menus, equal-size actions, smart guides
 and configurable grid/edge/center/port snapping.
 
+### Direct manipulation progress — 2026-08-09
+
+`MC-EDITOR-SNAP-001` adds a Qt-free deterministic snapping engine and portable
+scene preferences for target set, threshold and smart-guide visibility. Direct
+drag now resolves grid, edge, center and port candidates and paints transient
+foreground guides. `MC-EDITOR-CONTEXT-001` adds blank/item/connector menus without
+breaking right-button viewport pan, plus atomic match-width/height/both commands.
+The View tab is scroll-safe and uses compact icon navigation controls.
+
+Next: minimap, document outline, viewport bookmarks, lock/hide/isolate and
+editable connector waypoint handles.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

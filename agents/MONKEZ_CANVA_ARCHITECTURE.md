@@ -142,6 +142,19 @@ coherent user action. The command palette rebuilds on open from registry, select
 clipboard MIME, read-only state and history, and stores callbacks only in trusted
 runtime UI—not in JSON.
 
+## Snapping and contextual manipulation
+
+`monkez_canva/snapping.py` is Qt-free and accepts simple scene rectangles and
+port points. It resolves each axis independently within a bounded threshold and
+returns semantic guides; Qt owns only candidate collection and foreground
+painting. Scene keys `snapTargets`, `snapDistance` and `smartGuidesVisible` are
+portable document state. Grid eligibility remains compatible with `snapToGrid`.
+
+Context menus are constructed by `createContextMenu()` so hosts and tests can
+inspect the same availability rules used by the visible menu. Blank right-click
+opens it only when pointer movement stays below the pan threshold. Equal-size
+operations update canonical element records through one document command.
+
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading

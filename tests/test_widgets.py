@@ -1109,7 +1109,7 @@ class WidgetTests(unittest.TestCase):
         self.assertTrue(all(button.isEnabled() for button in canvas._quick_toolbar._align_buttons))
         self.assertEqual("3 selected", canvas._toolbox._pane_header._selection_badge.text())
         self.assertFalse(canvas._toolbox._multi_select_group.isHidden())
-        self.assertEqual(8, len(canvas._toolbox._arrange_buttons))
+        self.assertEqual(11, len(canvas._toolbox._arrange_buttons))
         self.assertTrue(all(not button.icon().isNull() for button in canvas._toolbox._arrange_buttons))
 
         canvas.element(first).setPos(0, 0)
@@ -2667,6 +2667,37 @@ class WidgetTests(unittest.TestCase):
         self.assertLessEqual(calendar.minimumSizeHint().width(), 120)
         self.assertLessEqual(calendar.minimumSizeHint().height(), 100)
         calendar.deleteLater()
+
+    def test_canva_context_menu_match_size_and_portable_snap_settings(self) -> None:
+        canvas = MonkezCanva()
+        canvas.setEditMode(True)
+        first = canvas.addElement("rectangle", 0, 0, 180, 90, element_id="first")
+        second = canvas.addElement("rectangle", 260, 20, 80, 44, element_id="second")
+        canvas.selectElements((first, second))
+
+        self.assertTrue(canvas.matchSelectedDimensions())
+        self.assertEqual(180, canvas.element(second)._rect.width())
+        self.assertEqual(90, canvas.element(second)._rect.height())
+        self.assertEqual("Match both", canvas.undoText())
+        canvas.undo()
+        self.assertEqual(80, canvas.element(second)._rect.width())
+
+        canvas.setSnapTargets(("edges", "centers", "ports"))
+        canvas.setSnapDistance(11)
+        canvas.setSmartGuidesVisible(False)
+        scene = canvas.toDocument()["scene"]
+        self.assertEqual(["edges", "centers", "ports"], scene["snapTargets"])
+        self.assertEqual(11, scene["snapDistance"])
+        self.assertFalse(scene["smartGuidesVisible"])
+
+        item_menu = canvas.createContextMenu(first)
+        texts = [entry.text() for entry in item_menu.actions()]
+        self.assertIn("Match size", texts)
+        self.assertIn("Zoom to selection", texts)
+        blank_menu = canvas.createContextMenu()
+        self.assertIn("Add component", [entry.text() for entry in blank_menu.actions()])
+        canvas.setEditMode(False)
+        canvas.deleteLater()
 
 
 if __name__ == "__main__":
