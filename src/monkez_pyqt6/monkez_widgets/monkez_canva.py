@@ -4023,13 +4023,17 @@ class _CanvasEditorToolbox(QDialog):
         self._sync_read_only_status(canvas.isReadOnly(), canvas.readOnlyReason())
 
     def _sync_active_tab(self, current: int) -> None:
-        """Synchronize tab chrome and force a clean page repaint on Windows."""
+        """Synchronize tab chrome and repaint the active stacked page.
+
+        Visibility is intentionally owned only by ``QStackedWidget``.  Calling
+        ``setVisible`` on each page here races the stack's own hide/show pass
+        and can leave a previously selected page composited on top of the new
+        one on Windows.
+        """
 
         for index, (icon_name, _label) in enumerate(self._tab_icons):
             color = "#ef5d50" if index == current else "#64707a"
             self._tabs.setTabIcon(index, _canvas_icon(icon_name, color))
-        for index, page in enumerate(self._tab_pages):
-            page.setVisible(index == current)
         page = self._tabs.widget(current) if 0 <= current < self._tabs.count() else None
         if page is not None:
             page.raise_()
