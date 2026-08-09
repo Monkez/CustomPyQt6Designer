@@ -18,7 +18,11 @@ class CanvasMinimap(QWidget):
         self._dragging = False
 
     def _content_bounds(self) -> QRectF:
-        items = [*self.canvas._elements.values(), *self.canvas._connectors.values()]
+        items = [
+            *self.canvas._elements.values(),
+            *self.canvas._connectors.values(),
+            *self.canvas._groups.values(),
+        ]
         bounds = QRectF()
         for item in items:
             item_bounds = item.sceneBoundingRect()
@@ -64,6 +68,14 @@ class CanvasMinimap(QWidget):
                 painter.drawLine(
                     self._map_scene_rect(QRectF(connector.source.sceneBoundingRect().center(), connector.source.sceneBoundingRect().center()), bounds).center(),
                     self._map_scene_rect(QRectF(connector.target.sceneBoundingRect().center(), connector.target.sceneBoundingRect().center()), bounds).center(),
+                )
+        painter.setPen(Qt.PenStyle.NoPen)
+        for group in self.canvas._groups.values():
+            if group.isVisible():
+                painter.setPen(QPen(QColor(group.color), 1))
+                painter.setBrush(QColor(100, 116, 139, 18))
+                painter.drawRoundedRect(
+                    self._map_scene_rect(group.sceneBoundingRect(), bounds), 2, 2
                 )
         painter.setPen(Qt.PenStyle.NoPen)
         for item in self.canvas._elements.values():

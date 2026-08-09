@@ -67,6 +67,13 @@ from .routing import (
     segment_intersection,
     simplify_collinear,
 )
+from .groups import (
+    GROUP_KINDS,
+    descendant_element_ids,
+    group_bounds,
+    normalize_group_kind,
+    validate_group_graph,
+)
 
 __all__ = [
     "CLIPBOARD_FORMAT",
@@ -116,6 +123,11 @@ __all__ = [
     "parallel_lane_offset",
     "segment_intersection",
     "simplify_collinear",
+    "GROUP_KINDS",
+    "descendant_element_ids",
+    "group_bounds",
+    "normalize_group_kind",
+    "validate_group_graph",
     "record_recent_component",
     "remap_selection_payload",
     "search_palette",

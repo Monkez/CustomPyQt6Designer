@@ -106,6 +106,9 @@ from monkez_pyqt6.monkez_canva import (
     normalize_snap_targets,
     snap_rect,
     deduplicate_points,
+    descendant_element_ids,
+    group_bounds,
+    normalize_group_kind,
     orthogonal_points,
     obstacle_avoiding_route,
     parallel_lane_offset,
@@ -137,6 +140,11 @@ _ELEMENT_STANDARD_PROPERTIES = {
     "flowSpeed", "flowDirection", "flowSpacing", "effectIntensity", "packetLoop",
     "packetDuration", "packetInterval", "packetIcon", "points", "ports", "opacity",
     "rotation", "z", "locked", "hidden",
+}
+_GROUP_STANDARD_PROPERTIES = {
+    "id", "members", "kind", "label", "text", "x", "y", "width", "height",
+    "color", "background", "headerColor", "padding", "collapsed", "lanes",
+    "orientation", "opacity", "rotation", "z", "locked", "hidden",
 }
 
 
@@ -1242,6 +1250,201 @@ class _CanvasElement(QGraphicsObject):
         return result
 
 
+class _CanvasGroup(QGraphicsObject):
+    """Selectable document-backed frame for nested groups and subflows."""
+
+    changed = pyqtSignal(str)
+
+    def __init__(self, canvas: "MonkezCanva", record: dict[str, Any]) -> None:
+        super().__init__()
+        self.canvas = canvas
+        self.group_id = str(record["id"])
+        self.element_id = self.group_id
+        self.kind = normalize_group_kind(record.get("kind", "frame"))
+        self.members = tuple(str(member) for member in record.get("members", ()))
+        self.text = str(record.get("label", record.get("text", "Group")))
+        self.color = _color(record.get("color", "#64748b"), "#64748b")
+        self.background = _color(record.get("background", "#f8fafc"), "#f8fafc")
+        self.header_color = _color(record.get("headerColor", self.color), "#64748b")
+        self.collapsed = bool(record.get("collapsed", False))
+        self.locked = bool(record.get("locked", False))
+        self.hidden = bool(record.get("hidden", False))
+        self.padding = max(0.0, min(120.0, float(record.get("padding", 28.0))))
+        self.lanes = tuple(str(value) for value in record.get("lanes", ()))
+        self.orientation = (
+            "vertical" if str(record.get("orientation", "horizontal")).lower() == "vertical"
+            else "horizontal"
+        )
+        self.custom_properties = {
+            key: value for key, value in record.items()
+            if key not in _GROUP_STANDARD_PROPERTIES
+        }
+        self._highlight = QColor()
+        self._rect = QRectF(
+            0,
+            0,
+            max(120.0, float(record.get("width", 320.0))),
+            max(54.0, float(record.get("height", 220.0))),
+        )
+        self._drag_start: QPointF | None = None
+        self._last_drag_position = QPointF()
+        self.setPos(float(record.get("x", 0.0)), float(record.get("y", 0.0)))
+        self.setZValue(float(record.get("z", -20.0)))
+        self.setOpacity(max(0.0, min(1.0, float(record.get("opacity", 1.0)))))
+        self.setRotation(float(record.get("rotation", 0.0)))
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+        self.setAcceptHoverEvents(True)
+        self.setEditable(canvas.editMode and not canvas.isReadOnly())
+
+    @property
+    def display_height(self) -> float:
+        return 46.0 if self.collapsed else self._rect.height()
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(0, 0, self._rect.width(), self.display_height).adjusted(-3, -3, 3, 3)
+
+    def shape(self) -> QPainterPath:
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, self._rect.width(), self.display_height), 13, 13)
+        return path
+
+    def setEditable(self, editable: bool) -> None:
+        movable = bool(editable) and not self.locked
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, movable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, bool(editable))
+        self.setCursor(Qt.CursorShape.SizeAllCursor if movable else Qt.CursorShape.ArrowCursor)
+
+    def paint(self, painter: QPainter, _option, _widget=None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(0, 0, self._rect.width(), self.display_height)
+        surface = QColor(self.background)
+        surface.setAlpha(226 if self.kind == "subflow" else 178)
+        border = (
+            QColor(self._highlight)
+            if self._highlight.isValid()
+            else QColor("#2563eb") if self.isSelected() else QColor(self.color)
+        )
+        pen = QPen(border, 2.2 if self.isSelected() else 1.4)
+        if self.kind == "frame":
+            pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(surface)
+        painter.drawRoundedRect(rect, 13, 13)
+
+        header_height = min(42.0, rect.height())
+        header = QPainterPath()
+        header.addRoundedRect(QRectF(0, 0, rect.width(), header_height), 13, 13)
+        header.addRect(QRectF(0, header_height / 2, rect.width(), header_height / 2))
+        header_fill = QColor(self.header_color)
+        header_fill.setAlpha(34 if self.kind == "frame" else 52)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(header_fill)
+        painter.drawPath(header)
+
+        painter.setPen(QColor("#27323a"))
+        font = QFont(painter.font())
+        font.setBold(True)
+        painter.setFont(font)
+        prefix = "◇  " if self.kind == "subflow" else "▦  " if self.kind == "swimlane" else ""
+        painter.drawText(
+            QRectF(14, 0, max(20.0, rect.width() - 58), header_height),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            f"{prefix}{self.text}",
+        )
+        painter.setPen(QPen(QColor("#64748b"), 1.7))
+        center = QPointF(rect.right() - 22, header_height / 2)
+        if self.collapsed:
+            painter.drawLine(center + QPointF(-4, -2), center + QPointF(0, 2))
+            painter.drawLine(center + QPointF(0, 2), center + QPointF(4, -2))
+        else:
+            painter.drawLine(center + QPointF(-4, 2), center + QPointF(0, -2))
+            painter.drawLine(center + QPointF(0, -2), center + QPointF(4, 2))
+
+        if self.kind == "swimlane" and not self.collapsed and self.lanes:
+            painter.setPen(QPen(QColor(self.color), 1, Qt.PenStyle.DashLine))
+            count = len(self.lanes)
+            for index, label in enumerate(self.lanes):
+                if self.orientation == "vertical":
+                    lane_width = rect.width() / count
+                    lane_rect = QRectF(index * lane_width, header_height, lane_width, rect.height() - header_height)
+                    if index:
+                        painter.drawLine(lane_rect.topLeft(), lane_rect.bottomLeft())
+                else:
+                    lane_height = (rect.height() - header_height) / count
+                    lane_rect = QRectF(0, header_height + index * lane_height, rect.width(), lane_height)
+                    if index:
+                        painter.drawLine(lane_rect.topLeft(), lane_rect.topRight())
+                painter.setPen(QColor("#64748b"))
+                painter.drawText(lane_rect.adjusted(8, 5, -8, -5), Qt.AlignmentFlag.AlignTop, label)
+                painter.setPen(QPen(QColor(self.color), 1, Qt.PenStyle.DashLine))
+
+        if self.kind == "subflow" and not self.collapsed:
+            painter.setPen(QPen(QColor(self.color), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(6, 6, -6, -6), 9, 9)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if not self.locked and self.canvas.editMode:
+            self.canvas.setGroupCollapsed(self.group_id, not self.collapsed)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and not self.locked:
+            self._drag_start = QPointF(self.pos())
+            self._last_drag_position = QPointF(self.pos())
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        start = self._drag_start
+        self._drag_start = None
+        super().mouseReleaseEvent(event)
+        if start is not None:
+            delta = self.pos() - start
+            if not math.isclose(delta.x(), 0.0) or not math.isclose(delta.y(), 0.0):
+                self.canvas._commit_group_move(self.group_id, delta)
+
+    def itemChange(self, change, value):
+        if (
+            change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
+            and self._drag_start is not None
+            and not self.canvas._restoring
+        ):
+            current = QPointF(value)
+            delta = current - self._last_drag_position
+            self._last_drag_position = current
+            self.canvas._preview_group_move(self.group_id, delta)
+        return super().itemChange(change, value)
+
+    def to_dict(self) -> dict[str, Any]:
+        result = {
+            "id": self.group_id,
+            "members": list(self.members),
+            "kind": self.kind,
+            "label": self.text,
+            "x": self.pos().x(),
+            "y": self.pos().y(),
+            "width": self._rect.width(),
+            "height": self._rect.height(),
+            "color": self.color.name(QColor.NameFormat.HexArgb),
+            "background": self.background.name(QColor.NameFormat.HexArgb),
+            "headerColor": self.header_color.name(QColor.NameFormat.HexArgb),
+            "padding": self.padding,
+            "collapsed": self.collapsed,
+            "lanes": list(self.lanes),
+            "orientation": self.orientation,
+            "opacity": self.opacity(),
+            "rotation": self.rotation(),
+            "z": self.zValue(),
+            "locked": self.locked,
+            "hidden": self.hidden,
+        }
+        result.update(self.custom_properties)
+        return result
+
+
 def _rounded_polyline_path(points: list[QPointF], radius: float) -> QPainterPath:
     points = [QPointF(x, y) for x, y in deduplicate_points((point.x(), point.y()) for point in points)]
     path = QPainterPath(points[0])
@@ -2028,6 +2231,9 @@ class _CanvasCommandPalette(QDialog):
         writable = not canvas.isReadOnly()
         selected = canvas.selectedObjectIds()
         selected_elements = canvas.selectedElementIds()
+        clipboard_objects = bool(selected) and all(
+            object_id not in canvas._groups for object_id in selected
+        )
         clipboard = QApplication.clipboard().mimeData()
         can_paste = bool(clipboard and clipboard.hasFormat(CANVAS_CLIPBOARD_MIME_TYPE))
         commands: list[tuple[str, str, str, str, str, bool, Callable[[], Any]]] = []
@@ -2038,10 +2244,10 @@ class _CanvasCommandPalette(QDialog):
                 lambda kind=definition.type_id: canvas.addPaletteElement(kind),
             ))
         commands.extend((
-            ("edit:copy", "Copy selection", "Edit", "clipboard", "duplicate", bool(selected), canvas.copySelection),
-            ("edit:cut", "Cut selection", "Edit", "clipboard", "delete", writable and bool(selected), canvas.cutSelection),
+            ("edit:copy", "Copy selection", "Edit", "clipboard", "duplicate", clipboard_objects, canvas.copySelection),
+            ("edit:cut", "Cut selection", "Edit", "clipboard", "delete", writable and clipboard_objects, canvas.cutSelection),
             ("edit:paste", "Paste", "Edit", "clipboard", "duplicate", writable and can_paste, canvas.pasteSelection),
-            ("edit:duplicate", "Duplicate selection", "Edit", "copy", "duplicate", writable and bool(selected), canvas.duplicateSelection),
+            ("edit:duplicate", "Duplicate selection", "Edit", "copy", "duplicate", writable and clipboard_objects, canvas.duplicateSelection),
             ("edit:delete", "Delete selection", "Edit", "remove", "delete", writable and bool(selected), canvas.deleteSelected),
             ("edit:select-all", "Select all elements", "Edit", "selection", "rectangle", bool(canvas.elements()), canvas.selectAllElements),
             ("history:undo", f"Undo {canvas.undoText()}".strip(), "History", "revert", "undo", writable and canvas.canUndo(), canvas.undo),
@@ -2051,6 +2257,7 @@ class _CanvasCommandPalette(QDialog):
             ("view:grid", "Toggle grid", "View", "background", "grid", writable, lambda: canvas.setGridVisible(not canvas.gridVisible)),
             ("view:minimap", "Toggle minimap", "View", "overview navigator", "focus", writable, lambda: canvas.setMinimapVisible(not canvas.minimapVisible())),
             ("save:project", "Save project workspace", "Save", "persistent durable", "save", writable, canvas.savePersistent),
+            ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
         ))
         if selected:
             all_locked = all(canvas.objectState(object_id)["locked"] for object_id in selected)
@@ -2058,6 +2265,20 @@ class _CanvasCommandPalette(QDialog):
                 ("object:lock", "Unlock selection" if all_locked else "Lock selection", "Object", "protect movement", "lock", writable, lambda: canvas.lockSelected(not all_locked)),
                 ("object:hide", "Hide selection", "Object", "visibility", "eye_off", writable, canvas.hideSelected),
                 ("object:isolate", "Isolate selection", "Object", "focus visibility", "focus", True, canvas.isolateSelection),
+            ))
+        if len(selected_elements) >= 2:
+            commands.extend((
+                ("group:frame", "Create frame from selection", "Group", "container", "front", writable, lambda: canvas.groupSelected(kind="frame")),
+                ("group:swimlane", "Create swimlane from selection", "Group", "container lanes", "grid", writable, lambda: canvas.groupSelected(kind="swimlane")),
+                ("group:subflow", "Create reusable subflow", "Group", "container workflow", "node", writable, lambda: canvas.groupSelected(kind="subflow")),
+            ))
+        if len(selected) == 1 and selected[0] in canvas._groups:
+            group_id = selected[0]
+            group = canvas._groups[group_id]
+            commands.extend((
+                ("group:collapse", "Expand group" if group.collapsed else "Collapse group", "Group", "contents visibility", "focus", writable, lambda: canvas.setGroupCollapsed(group_id, not group.collapsed)),
+                ("group:fit", "Fit group to contents", "Group", "resize bounds", "fit", writable and not group.collapsed, lambda: canvas.fitGroupToContents(group_id)),
+                ("group:remove", "Ungroup selection", "Group", "remove container", "delete", writable, lambda: canvas.removeGroup(group_id)),
             ))
         if canvas.isolatedObjectIds():
             commands.append(("object:clear-isolate", "Clear isolation", "Object", "visibility", "eye", True, canvas.clearIsolation))
@@ -2184,6 +2405,8 @@ class _CanvasEditorToolbox(QDialog):
         canvas.elementRemoved.connect(lambda _element_id: self.refreshLayers())
         canvas.connectorAdded.connect(lambda _connector_id: self.refreshLayers())
         canvas.connectorRemoved.connect(lambda _connector_id: self.refreshLayers())
+        canvas.groupAdded.connect(lambda _group_id: self.refreshLayers())
+        canvas.groupRemoved.connect(lambda _group_id: self.refreshLayers())
         canvas.selectionChanged.connect(self._sync_inspector)
         canvas.selectionSetChanged.connect(lambda _element_ids: self.refreshLayers())
         canvas.autoSaved.connect(self._show_save_status)
@@ -2615,6 +2838,48 @@ class _CanvasEditorToolbox(QDialog):
             geometry_form.addWidget(label_widget, row, column)
             geometry_form.addWidget(field, row + 1, column)
         layout.addWidget(self._geometry_group)
+
+        self._group_properties_group = QGroupBox("Group / subflow")
+        group_form = QFormLayout(self._group_properties_group)
+        self._group_kind_combo = QComboBox()
+        self._group_kind_combo.addItems(("Frame", "Swimlane", "Subflow"))
+        self._group_label_edit = QLineEdit()
+        self._group_label_edit.setPlaceholderText("Visible group title")
+        self._group_members_edit = QLineEdit()
+        self._group_members_edit.setPlaceholderText("node-a, node-b, nested-group")
+        self._group_collapsed_check = QCheckBox("Collapse member contents")
+        self._group_lanes_edit = QLineEdit()
+        self._group_lanes_edit.setPlaceholderText("Lane 1, Lane 2, Lane 3")
+        self._group_orientation_combo = QComboBox()
+        self._group_orientation_combo.addItems(("Horizontal", "Vertical"))
+        group_form.addRow("Type", self._group_kind_combo)
+        group_form.addRow("Title", self._group_label_edit)
+        group_form.addRow("Members", self._group_members_edit)
+        group_form.addRow(self._group_collapsed_check)
+        self._group_lanes_label = QLabel("Lanes")
+        group_form.addRow(self._group_lanes_label, self._group_lanes_edit)
+        self._group_orientation_label = QLabel("Direction")
+        group_form.addRow(self._group_orientation_label, self._group_orientation_combo)
+        group_actions = QWidget()
+        group_actions_layout = QHBoxLayout(group_actions)
+        group_actions_layout.setContentsMargins(0, 0, 0, 0)
+        group_actions_layout.setSpacing(6)
+        fit_group = QPushButton("Fit contents")
+        fit_group.setIcon(_canvas_icon("fit"))
+        fit_group.clicked.connect(self._fit_selected_group)
+        export_group = QPushButton("Export")
+        export_group.setIcon(_canvas_icon("save"))
+        export_group.setToolTip("Save this group as a reusable JSON subflow template")
+        export_group.clicked.connect(self._export_selected_group)
+        ungroup = QPushButton("Ungroup")
+        ungroup.setObjectName("dangerAction")
+        ungroup.setIcon(_canvas_icon("delete"))
+        ungroup.clicked.connect(self._ungroup_selected)
+        group_actions_layout.addWidget(fit_group)
+        group_actions_layout.addWidget(export_group)
+        group_actions_layout.addWidget(ungroup)
+        group_form.addRow(group_actions)
+        layout.insertWidget(layout.indexOf(self._geometry_group), self._group_properties_group)
 
         self._media_group = QGroupBox("Media")
         media_layout = QVBoxLayout(self._media_group)
@@ -3094,6 +3359,8 @@ class _CanvasEditorToolbox(QDialog):
             return
         if isinstance(item, _CanvasConnector):
             current = item.flow_color if role == "flow" else item.color
+        elif isinstance(item, _CanvasGroup):
+            current = item.background if role == "background" else item.color
         else:
             current = (
                 item.flow_color if role == "flow" and item.kind == "line"
@@ -3111,6 +3378,9 @@ class _CanvasEditorToolbox(QDialog):
                     if isinstance(target, _CanvasConnector):
                         key = "flowColor" if role == "flow" else "color"
                         self.canvas.updateConnector(target.connector_id, **{key: chosen})
+                    elif isinstance(target, _CanvasGroup):
+                        key = "background" if role in ("background", "surface") else "color"
+                        self.canvas.updateGroup(target.group_id, **{key: chosen})
                     else:
                         key = (
                             "flowColor" if role == "flow" and target.kind == "line"
@@ -3237,6 +3507,29 @@ class _CanvasEditorToolbox(QDialog):
             self._source_edit.setText(path)
             self._apply_inspector()
 
+    def _fit_selected_group(self) -> None:
+        item = self.canvas.canvasObject(self.canvas.selectedElementId())
+        if isinstance(item, _CanvasGroup):
+            self.canvas.fitGroupToContents(item.group_id)
+
+    def _ungroup_selected(self) -> None:
+        item = self.canvas.canvasObject(self.canvas.selectedElementId())
+        if isinstance(item, _CanvasGroup):
+            self.canvas.removeGroup(item.group_id)
+
+    def _export_selected_group(self) -> None:
+        item = self.canvas.canvasObject(self.canvas.selectedElementId())
+        if not isinstance(item, _CanvasGroup):
+            return
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export reusable subflow",
+            f"{item.group_id}.monkez-subflow.json",
+            "Monkez subflow (*.monkez-subflow.json *.json)",
+        )
+        if path:
+            self.canvas.saveSubflowTemplate(item.group_id, path)
+
     def _connect_inspector_auto_apply(self) -> None:
         for key, field in (
             ("text", self._text_edit), ("data", self._data_edit),
@@ -3244,6 +3537,9 @@ class _CanvasEditorToolbox(QDialog):
             ("packetIcon", self._packet_icon_edit),
             ("connectorLabel", self._connector_label_edit),
             ("busId", self._bus_id_edit),
+            ("groupLabel", self._group_label_edit),
+            ("groupMembers", self._group_members_edit),
+            ("groupLanes", self._group_lanes_edit),
         ):
             field.textEdited.connect(
                 lambda _text, name=key: self._schedule_inspector_apply(150, name)
@@ -3276,6 +3572,7 @@ class _CanvasEditorToolbox(QDialog):
             self._source_combo, self._target_combo, self._source_port_combo,
             self._target_port_combo, self._route_combo, self._line_style_combo,
             self._effect_combo, self._flow_direction_combo, self._bus_style_combo,
+            self._group_kind_combo, self._group_orientation_combo,
         ):
             combo.currentIndexChanged.connect(
                 lambda _index: self._schedule_inspector_apply(0, "choice")
@@ -3284,6 +3581,7 @@ class _CanvasEditorToolbox(QDialog):
             self._arrow_start_check, self._arrow_end_check, self._animated_check,
             self._packet_loop_check,
             self._bridge_crossings_check,
+            self._group_collapsed_check,
         ):
             check.toggled.connect(
                 lambda _checked: self._schedule_inspector_apply(0, "choice")
@@ -3335,6 +3633,47 @@ class _CanvasEditorToolbox(QDialog):
             return
         item = self.canvas.canvasObject(element_id)
         if item is None:
+            return
+        if isinstance(item, _CanvasGroup):
+            requested_id = self._id_edit.text().strip()
+            if requested_id and requested_id != item.group_id:
+                element_id = self.canvas.renameGroup(item.group_id, requested_id)
+                item = self.canvas.group(element_id)
+            lanes = [
+                value.strip()
+                for value in self._group_lanes_edit.text().split(",")
+                if value.strip()
+            ]
+            members = [
+                value.strip()
+                for value in self._group_members_edit.text().split(",")
+                if value.strip()
+            ]
+            values = {key: field.value() for key, field in self._number_fields.items()}
+            delta = QPointF(
+                values.pop("x") - item.pos().x(),
+                values.pop("y") - item.pos().y(),
+            )
+            moving = not math.isclose(delta.x(), 0.0) or not math.isclose(delta.y(), 0.0)
+            if moving:
+                self.canvas.beginCommandMacro("Edit group")
+            try:
+                if moving:
+                    self.canvas._commit_group_move(item.group_id, delta)
+                self.canvas.updateGroup(
+                item.group_id,
+                    kind=self._group_kind_combo.currentText().lower(),
+                    label=self._group_label_edit.text(),
+                    members=members,
+                    collapsed=self._group_collapsed_check.isChecked(),
+                    lanes=lanes,
+                    orientation=self._group_orientation_combo.currentText().lower(),
+                    **values,
+                )
+            finally:
+                if moving:
+                    self.canvas.endCommandMacro()
+            self.refreshLayers()
             return
         requested_id = self._id_edit.text().strip()
         if requested_id and requested_id != element_id:
@@ -3527,6 +3866,10 @@ class _CanvasEditorToolbox(QDialog):
             self._parallel_spacing_field, self._obstacle_clearance_field,
             self._bridge_crossings_check, self._bridge_size_field,
             self._bus_style_combo, self._bus_width_field, self._bus_id_edit,
+            self._group_kind_combo, self._group_label_edit,
+            self._group_members_edit,
+            self._group_collapsed_check, self._group_lanes_edit,
+            self._group_orientation_combo,
             *self._number_fields.values(),
         ]
         blockers = [QSignalBlocker(widget) for widget in widgets]
@@ -3553,7 +3896,9 @@ class _CanvasEditorToolbox(QDialog):
             self._media_group.hide()
             self._stroke_group.hide()
             self._colors_group.hide()
+            self._group_properties_group.hide()
         elif selected_count > 1:
+            self._group_properties_group.hide()
             self._sync_multi_inspector(items)
         else:
             self._id_edit.setEnabled(True)
@@ -3561,6 +3906,42 @@ class _CanvasEditorToolbox(QDialog):
             self._selection_hint.hide()
             self._type_label.setText(item.kind)
             self._id_edit.setText(item.element_id)
+            if isinstance(item, _CanvasGroup):
+                self._id_edit.setEnabled(True)
+                self._content_group.hide()
+                self._ports_group.hide()
+                self._media_group.hide()
+                self._stroke_group.hide()
+                self._group_properties_group.show()
+                self._geometry_group.show()
+                self._colors_group.show()
+                self._color_buttons["background"].show()
+                self._color_buttons["text"].hide()
+                self._color_buttons["flow"].hide()
+                self._group_kind_combo.setCurrentText(item.kind.title())
+                self._group_label_edit.setText(item.text)
+                self._group_members_edit.setText(", ".join(item.members))
+                self._group_collapsed_check.setChecked(item.collapsed)
+                self._group_lanes_edit.setText(", ".join(item.lanes))
+                self._group_orientation_combo.setCurrentText(item.orientation.title())
+                swimlane = item.kind == "swimlane"
+                self._group_lanes_label.setVisible(swimlane)
+                self._group_lanes_edit.setVisible(swimlane)
+                self._group_orientation_label.setVisible(swimlane)
+                self._group_orientation_combo.setVisible(swimlane)
+                values = {
+                    "x": item.pos().x(), "y": item.pos().y(),
+                    "width": item._rect.width(), "height": item._rect.height(),
+                    "rotation": item.rotation(), "opacity": item.opacity(), "z": item.zValue(),
+                }
+                for key, value in values.items():
+                    self._number_fields[key].setValue(value)
+                del blockers
+                self._sync_extension_inspector(None)
+                self._syncing_inspector = False
+                self._sync_packet_controls()
+                return
+            self._group_properties_group.hide()
             connector = isinstance(item, _CanvasConnector)
             definition = None if connector else self.canvas.elementRegistry().definition(item.kind)
             capabilities = (
@@ -3829,7 +4210,11 @@ class _CanvasEditorToolbox(QDialog):
         blocker = QSignalBlocker(self._layers)
         self._layers.clear()
         query = self._layer_search.text().casefold().strip()
-        objects = [*self.canvas._elements.values(), *self.canvas._connectors.values()]
+        objects = [
+            *self.canvas._elements.values(),
+            *self.canvas._connectors.values(),
+            *self.canvas._groups.values(),
+        ]
         for item in sorted(objects, key=lambda value: value.zValue(), reverse=True):
             description = getattr(item, "text", "")
             if query and query not in f"{item.element_id} {item.kind} {description}".casefold():
@@ -4272,6 +4657,8 @@ class MonkezCanva(QWidget):
     palettePreferencesChanged = pyqtSignal(list, list)
     viewportBookmarksChanged = pyqtSignal(list)
     objectStateChanged = pyqtSignal(str, bool, bool)
+    groupAdded = pyqtSignal(str)
+    groupRemoved = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -4314,6 +4701,7 @@ class MonkezCanva(QWidget):
         self._animations: dict[str, QPropertyAnimation] = {}
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
+        self._groups: dict[str, _CanvasGroup] = {}
         self._routing_revision = 0
         self._document_model: CanvasDocument | None = None
         self._document_subscription = ""
@@ -4560,9 +4948,17 @@ class MonkezCanva(QWidget):
     def element(self, element_id: str) -> _CanvasElement | None:
         return self._elements.get(str(element_id))
 
-    def canvasObject(self, object_id: str) -> _CanvasElement | _CanvasConnector | None:
+    def group(self, group_id: str) -> _CanvasGroup | None:
+        return self._groups.get(str(group_id))
+
+    def groups(self) -> list[str]:
+        return list(self._groups)
+
+    def canvasObject(
+        self, object_id: str
+    ) -> _CanvasElement | _CanvasConnector | _CanvasGroup | None:
         key = str(object_id)
-        return self._elements.get(key) or self._connectors.get(key)
+        return self._elements.get(key) or self._connectors.get(key) or self._groups.get(key)
 
     def elements(self) -> list[str]:
         return list(self._elements)
@@ -4585,6 +4981,9 @@ class MonkezCanva(QWidget):
             for connector_id, connector in self._connectors.items()
             if connector.isSelected()
         )
+        selected.extend(
+            group_id for group_id, group in self._groups.items() if group.isSelected()
+        )
         return selected
 
     def objectState(self, object_id: str) -> dict[str, bool]:
@@ -4603,6 +5002,8 @@ class MonkezCanva(QWidget):
                     document.update_element(object_id, {"locked": value})
                 elif document.connector(object_id) is not None:
                     document.update_connector(object_id, {"locked": value})
+                elif document.group(object_id) is not None:
+                    document.update_group(object_id, {"locked": value})
 
         changed = self._push_document_mutation(
             mutate, f"{'Lock' if value else 'Unlock'} {len(ids)} object{'s' if len(ids) != 1 else ''}"
@@ -4626,6 +5027,8 @@ class MonkezCanva(QWidget):
                     document.update_element(object_id, {"hidden": value})
                 elif document.connector(object_id) is not None:
                     document.update_connector(object_id, {"hidden": value})
+                elif document.group(object_id) is not None:
+                    document.update_group(object_id, {"hidden": value})
 
         changed = self._push_document_mutation(
             mutate, f"{'Hide' if value else 'Show'} {len(ids)} object{'s' if len(ids) != 1 else ''}"
@@ -4647,7 +5050,7 @@ class MonkezCanva(QWidget):
 
     def showAllObjects(self) -> bool:
         ids = [
-            object_id for object_id in (*self._elements, *self._connectors)
+            object_id for object_id in (*self._elements, *self._connectors, *self._groups)
             if self.canvasObject(object_id).hidden
         ]
         return self.setObjectsHidden(ids, False) if ids else False
@@ -4678,8 +5081,39 @@ class MonkezCanva(QWidget):
     def _sync_object_states(self) -> None:
         writable_edit = self._edit_mode and not self.isReadOnly()
         isolated = self._isolated_ids
+        group_records = {
+            model.id: model.to_dict() for model in self._document_model.groups
+        }
+        collapsed_elements: set[str] = set()
+        collapsed_groups: set[str] = set()
+        for group_id, record in group_records.items():
+            if not bool(record.get("collapsed", False)):
+                continue
+            collapsed_elements.update(
+                descendant_element_ids(group_id, group_records, self._elements)
+            )
+            pending = list(record.get("members", ()))
+            while pending:
+                member = str(pending.pop())
+                if member in group_records and member not in collapsed_groups:
+                    collapsed_groups.add(member)
+                    pending.extend(group_records[member].get("members", ()))
+        for group_id, item in self._groups.items():
+            visible = (
+                not item.hidden
+                and group_id not in collapsed_groups
+                and (not isolated or group_id in isolated)
+            )
+            item.setVisible(visible)
+            item.setEditable(writable_edit and visible)
+            if not visible:
+                item.setSelected(False)
         for element_id, item in self._elements.items():
-            visible = not item.hidden and (not isolated or element_id in isolated)
+            visible = (
+                not item.hidden
+                and element_id not in collapsed_elements
+                and (not isolated or element_id in isolated)
+            )
             item.setVisible(visible)
             item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, writable_edit and visible)
             item.setFlag(
@@ -4713,6 +5147,9 @@ class MonkezCanva(QWidget):
         writable = not self.isReadOnly()
         selected = self.selectedObjectIds()
         selected_elements = self.selectedElementIds()
+        clipboard_objects = bool(selected) and all(
+            object_id not in self._groups for object_id in selected
+        )
 
         def action(label: str, callback, *, enabled: bool = True, icon: str = ""):
             entry = menu.addAction(_canvas_icon(icon), label) if icon else menu.addAction(label)
@@ -4724,6 +5161,12 @@ class MonkezCanva(QWidget):
             clipboard = QApplication.clipboard().mimeData()
             can_paste = bool(clipboard and clipboard.hasFormat(CANVAS_CLIPBOARD_MIME_TYPE))
             action("Paste", self.pasteSelection, enabled=writable and can_paste, icon="duplicate")
+            action(
+                "Import subflow template…",
+                self.importSubflowFromDialog,
+                enabled=writable,
+                icon="folder",
+            )
             add_menu = menu.addMenu(_canvas_icon("rectangle"), "Add component")
             for definition in self._element_registry.definitions():
                 entry = add_menu.addAction(_canvas_icon(definition.icon), definition.label)
@@ -4740,9 +5183,9 @@ class MonkezCanva(QWidget):
             action("Command palette…", self.showCommandPalette, icon="command")
             return menu
 
-        action("Copy", self.copySelection, enabled=bool(selected), icon="duplicate")
-        action("Cut", self.cutSelection, enabled=writable and bool(selected), icon="delete")
-        action("Duplicate", self.duplicateSelection, enabled=writable and bool(selected), icon="duplicate")
+        action("Copy", self.copySelection, enabled=clipboard_objects, icon="duplicate")
+        action("Cut", self.cutSelection, enabled=writable and clipboard_objects, icon="delete")
+        action("Duplicate", self.duplicateSelection, enabled=writable and clipboard_objects, icon="duplicate")
         action("Delete", self.deleteSelected, enabled=writable and bool(selected), icon="delete")
         all_locked = bool(selected) and all(self.objectState(item_id)["locked"] for item_id in selected)
         action(
@@ -4754,6 +5197,17 @@ class MonkezCanva(QWidget):
         action("Isolate selection", self.isolateSelection, enabled=bool(selected), icon="focus")
         if len(selected_elements) >= 2:
             menu.addSeparator()
+            group_menu = menu.addMenu(_canvas_icon("front"), "Create group")
+            for kind, label in (
+                ("frame", "Frame"),
+                ("swimlane", "Swimlane"),
+                ("subflow", "Reusable subflow"),
+            ):
+                entry = group_menu.addAction(label)
+                entry.setEnabled(writable)
+                entry.triggered.connect(
+                    lambda _checked=False, value=kind: self.groupSelected(kind=value)
+                )
             align_menu = menu.addMenu("Align")
             for alignment, label in (
                 ("left", "Left"), ("hcenter", "Horizontal center"), ("right", "Right"),
@@ -4797,6 +5251,31 @@ class MonkezCanva(QWidget):
                     )
                 )
             action("Send test message", lambda: self.send_a_message(object_id), enabled=writable)
+        elif object_id in self._groups:
+            group = self._groups[object_id]
+            action(
+                "Expand group" if group.collapsed else "Collapse group",
+                lambda: self.setGroupCollapsed(object_id, not group.collapsed),
+                enabled=writable,
+            )
+            action(
+                "Fit frame to contents",
+                lambda: self.fitGroupToContents(object_id),
+                enabled=writable and not group.collapsed,
+                icon="fit",
+            )
+            action(
+                "Ungroup",
+                lambda: self.removeGroup(object_id),
+                enabled=writable,
+                icon="delete",
+            )
+            action(
+                "Export reusable subflow…",
+                lambda: self.exportSubflowToDialog(object_id),
+                enabled=True,
+                icon="save",
+            )
         return menu
 
     def showContextMenu(self, global_position, object_id: str = "") -> None:
@@ -6052,6 +6531,8 @@ class MonkezCanva(QWidget):
                     self.removeElement(item.element_id)
                 elif isinstance(item, _CanvasConnector):
                     self.removeConnector(item.connector_id)
+                elif isinstance(item, _CanvasGroup):
+                    self.removeGroup(item.group_id)
         finally:
             if use_macro:
                 self.endCommandMacro()
@@ -6088,12 +6569,18 @@ class MonkezCanva(QWidget):
 
     def clear(self) -> None:
         element_ids = list(self._elements)
-        use_macro = not self._restoring and len(element_ids) > 1
+        group_ids = list(self._groups)
+        use_macro = not self._restoring and len(element_ids) + len(group_ids) > 1
         if use_macro:
             self.beginCommandMacro("Clear canvas")
         try:
             for element_id in element_ids:
                 self.removeElement(element_id)
+            for group_id in group_ids:
+                if self._restoring:
+                    self._remove_group_graphics(group_id)
+                else:
+                    self.removeGroup(group_id)
         finally:
             if use_macro:
                 self.endCommandMacro()
@@ -6114,30 +6601,128 @@ class MonkezCanva(QWidget):
         **properties,
     ) -> str:
         group_id = str(group_id or uuid.uuid4().hex[:10])
+        member_ids = tuple(dict.fromkeys(str(member) for member in members))
+        rectangles = [
+            item.sceneBoundingRect()
+            for member in member_ids
+            for item in (self.canvasObject(member),)
+            if item is not None
+        ]
+        padding = max(0.0, min(120.0, float(properties.pop("padding", 28.0))))
+        default_x, default_y, default_width, default_height = group_bounds(
+            (
+                (rect.x(), rect.y(), rect.width(), rect.height())
+                for rect in rectangles
+            ),
+            padding=padding,
+        )
+        kind = normalize_group_kind(properties.pop("kind", "frame"))
         record = {
             "id": group_id,
-            "members": [str(member) for member in members],
+            "members": list(member_ids),
+            "kind": kind,
+            "label": str(properties.pop("label", properties.pop("text", "Group"))),
+            "x": float(properties.pop("x", default_x)),
+            "y": float(properties.pop("y", default_y)),
+            "width": max(120.0, float(properties.pop("width", default_width))),
+            "height": max(54.0, float(properties.pop("height", default_height))),
+            "padding": padding,
+            "collapsed": bool(properties.pop("collapsed", False)),
+            "color": _color(properties.pop("color", "#64748b"), "#64748b").name(
+                QColor.NameFormat.HexArgb
+            ),
+            "background": _color(
+                properties.pop("background", "#f8fafc"), "#f8fafc"
+            ).name(QColor.NameFormat.HexArgb),
+            "headerColor": _color(
+                properties.pop("headerColor", "#64748b"), "#64748b"
+            ).name(QColor.NameFormat.HexArgb),
+            "lanes": [str(value) for value in properties.pop("lanes", ())],
+            "orientation": (
+                "vertical"
+                if str(properties.pop("orientation", "horizontal")).lower() == "vertical"
+                else "horizontal"
+            ),
+            "opacity": max(0.0, min(1.0, float(properties.pop("opacity", 1.0)))),
+            "z": float(properties.pop("z", -20.0)),
+            "locked": bool(properties.pop("locked", False)),
+            "hidden": bool(properties.pop("hidden", False)),
             **self._model_values(properties),
         }
         self._push_document_mutation(
             lambda document: document.add_group(record), "Group objects"
         )
+        if self._edit_mode and group_id in self._groups:
+            self.selectElements((group_id,))
         return group_id
 
     def groupSelected(self, group_id: str | None = None, **properties) -> str:
-        members = self.selectedElementIds()
+        members = [
+            object_id
+            for object_id in self.selectedObjectIds()
+            if object_id in self._elements or object_id in self._groups
+        ]
         if not members:
             return ""
         return self.addGroup(members, group_id, **properties)
 
+    def addFrame(self, members, group_id: str | None = None, **properties) -> str:
+        properties["kind"] = "frame"
+        return self.addGroup(members, group_id, **properties)
+
+    def addSwimlane(
+        self,
+        members,
+        group_id: str | None = None,
+        *,
+        lanes=("Lane 1", "Lane 2"),
+        orientation: str = "horizontal",
+        **properties,
+    ) -> str:
+        properties.update(kind="swimlane", lanes=list(lanes), orientation=orientation)
+        return self.addGroup(members, group_id, **properties)
+
+    def addSubflow(self, members, group_id: str | None = None, **properties) -> str:
+        properties["kind"] = "subflow"
+        return self.addGroup(members, group_id, **properties)
+
     def updateGroup(self, group_id: str, **changes) -> "MonkezCanva":
         values = self._model_values(changes)
+        if "kind" in values:
+            values["kind"] = normalize_group_kind(values["kind"])
+        if "members" in values:
+            values["members"] = list(
+                dict.fromkeys(str(member) for member in values["members"])
+            )
+        if "width" in values:
+            values["width"] = max(120.0, float(values["width"]))
+        if "height" in values:
+            values["height"] = max(54.0, float(values["height"]))
+        if "opacity" in values:
+            values["opacity"] = max(0.0, min(1.0, float(values["opacity"])))
         self._push_document_mutation(
             lambda document: document.update_group(group_id, values),
             "Update group",
             merge_key=f"group:{group_id}",
         )
         return self
+
+    def renameGroup(self, group_id: str, new_id: str) -> str:
+        self._ensure_writable()
+        requested = str(new_id).strip()
+        candidate = CanvasDocument.from_dict(self._document_model.to_dict())
+        events = candidate.rename_group(str(group_id), requested)
+        if events:
+            self._undo_stack.push(
+                CanvasRenameCommand(
+                    self._document_model,
+                    str(group_id),
+                    requested,
+                    group=True,
+                )
+            )
+            return requested
+        return str(group_id)
 
     def removeGroup(self, group_id: str) -> bool:
         if self._document_model.group(group_id) is None:
@@ -6146,6 +6731,270 @@ class MonkezCanva(QWidget):
             lambda document: document.remove_group(group_id), "Ungroup objects"
         )
         return True
+
+    def setGroupCollapsed(self, group_id: str, collapsed: bool = True) -> "MonkezCanva":
+        return self.updateGroup(group_id, collapsed=bool(collapsed))
+
+    def moveGroup(self, group_id: str, x: float, y: float) -> bool:
+        item = self._groups.get(str(group_id))
+        if item is None:
+            raise KeyError(f"Unknown MonkezCanva group: {group_id}")
+        return self._commit_group_move(
+            str(group_id), QPointF(float(x) - item.pos().x(), float(y) - item.pos().y())
+        )
+
+    def fitGroupToContents(self, group_id: str) -> bool:
+        model = self._document_model.group(str(group_id))
+        if model is None:
+            return False
+        item = self._groups.get(str(group_id))
+        padding = item.padding if item is not None else float(model.properties.get("padding", 28.0))
+        rectangles = [
+            target.sceneBoundingRect()
+            for member in model.members
+            for target in (self.canvasObject(member),)
+            if target is not None
+        ]
+        x, y, width, height = group_bounds(
+            ((rect.x(), rect.y(), rect.width(), rect.height()) for rect in rectangles),
+            padding=padding,
+        )
+        return self._push_document_mutation(
+            lambda document: document.update_group(
+                str(group_id), {"x": x, "y": y, "width": width, "height": height}
+            ),
+            "Fit group to contents",
+        )
+
+    def _nested_group_ids(self, group_id: str) -> tuple[str, ...]:
+        records = {model.id: model.to_dict() for model in self._document_model.groups}
+        result: list[str] = []
+        pending = list(records.get(str(group_id), {}).get("members", ()))
+        while pending:
+            member = str(pending.pop(0))
+            if member in records and member not in result:
+                result.append(member)
+                pending.extend(records[member].get("members", ()))
+        return tuple(result)
+
+    def _preview_group_move(self, group_id: str, delta: QPointF) -> None:
+        if math.isclose(delta.x(), 0.0) and math.isclose(delta.y(), 0.0):
+            return
+        records = {model.id: model.to_dict() for model in self._document_model.groups}
+        elements = descendant_element_ids(str(group_id), records, self._elements)
+        previous = self._restoring
+        self._restoring = True
+        try:
+            for element_id in elements:
+                item = self._elements.get(element_id)
+                if item is not None:
+                    item.setPos(item.pos() + delta)
+            for nested_id in self._nested_group_ids(group_id):
+                item = self._groups.get(nested_id)
+                if item is not None:
+                    item.setPos(item.pos() + delta)
+            for connector in self._connectors.values():
+                connector.updatePath()
+        finally:
+            self._restoring = previous
+
+    def _commit_group_move(self, group_id: str, delta: QPointF) -> bool:
+        records = {model.id: model.to_dict() for model in self._document_model.groups}
+        elements = descendant_element_ids(str(group_id), records, self._elements)
+        nested_groups = self._nested_group_ids(group_id)
+
+        def mutate(document: CanvasDocument) -> None:
+            for element_id in elements:
+                model = document.element(element_id)
+                if model is not None:
+                    document.update_element(
+                        element_id,
+                        {
+                            "x": float(model.properties.get("x", 0.0)) + delta.x(),
+                            "y": float(model.properties.get("y", 0.0)) + delta.y(),
+                        },
+                    )
+            for nested_id in nested_groups:
+                model = document.group(nested_id)
+                if model is not None:
+                    document.update_group(
+                        nested_id,
+                        {
+                            "x": float(model.properties.get("x", 0.0)) + delta.x(),
+                            "y": float(model.properties.get("y", 0.0)) + delta.y(),
+                        },
+                    )
+            model = document.group(str(group_id))
+            if model is not None:
+                document.update_group(
+                    str(group_id),
+                    {
+                        "x": float(model.properties.get("x", 0.0)) + delta.x(),
+                        "y": float(model.properties.get("y", 0.0)) + delta.y(),
+                    },
+                )
+
+        return self._push_document_mutation(mutate, "Move group")
+
+    def exportSubflow(self, group_id: str) -> dict[str, Any]:
+        """Return a portable JSON-only template for one group and its descendants."""
+
+        key = str(group_id)
+        root = self._document_model.group(key)
+        if root is None:
+            raise KeyError(f"Unknown MonkezCanva group: {key}")
+        group_records = {
+            model.id: model.to_dict() for model in self._document_model.groups
+        }
+        element_ids = descendant_element_ids(key, group_records, self._elements)
+        nested_ids = self._nested_group_ids(key)
+        included_groups = (key, *nested_ids)
+        origin_x = float(root.properties.get("x", 0.0))
+        origin_y = float(root.properties.get("y", 0.0))
+        elements: list[dict[str, Any]] = []
+        for element_id in element_ids:
+            model = self._document_model.element(element_id)
+            if model is None:
+                continue
+            record = model.to_dict()
+            record["x"] = float(record.get("x", 0.0)) - origin_x
+            record["y"] = float(record.get("y", 0.0)) - origin_y
+            elements.append(record)
+        element_set = set(element_ids)
+        connectors: list[dict[str, Any]] = []
+        for model in self._document_model.connectors:
+            if model.source not in element_set or model.target not in element_set:
+                continue
+            record = model.to_dict()
+            record["waypoints"] = [
+                [float(point[0]) - origin_x, float(point[1]) - origin_y]
+                for point in record.get("waypoints", ())
+            ]
+            connectors.append(record)
+        groups: list[dict[str, Any]] = []
+        for current_id in included_groups:
+            record = dict(group_records[current_id])
+            record["x"] = float(record.get("x", 0.0)) - origin_x
+            record["y"] = float(record.get("y", 0.0)) - origin_y
+            groups.append(record)
+        return {
+            "format": "monkez-subflow",
+            "version": 1,
+            "root": key,
+            "elements": elements,
+            "connectors": connectors,
+            "groups": groups,
+        }
+
+    def importSubflow(
+        self,
+        payload: dict[str, Any],
+        x: float | None = None,
+        y: float | None = None,
+    ) -> str:
+        """Instantiate a reusable subflow template with collision-safe IDs."""
+
+        self._ensure_writable()
+        data = json.loads(json.dumps(payload, ensure_ascii=False, allow_nan=False))
+        if data.get("format") != "monkez-subflow" or int(data.get("version", 0)) != 1:
+            raise ValueError("Unsupported MonkezCanva subflow template")
+        records = [*data.get("elements", ()), *data.get("connectors", ()), *data.get("groups", ())]
+        source_ids = [str(record.get("id", "")).strip() for record in records]
+        if any(not value for value in source_ids) or len(source_ids) != len(set(source_ids)):
+            raise ValueError("Subflow template IDs must be non-empty and unique")
+        occupied = set(self._elements) | set(self._connectors) | set(self._groups)
+        mapping: dict[str, str] = {}
+        for source_id in source_ids:
+            candidate = source_id
+            while candidate in occupied or candidate in mapping.values():
+                candidate = f"{source_id}-{uuid.uuid4().hex[:6]}"
+            mapping[source_id] = candidate
+        center = self._view.mapToScene(self._view.viewport().rect().center())
+        offset_x = center.x() if x is None else float(x)
+        offset_y = center.y() if y is None else float(y)
+        prepared_elements: list[dict[str, Any]] = []
+        for raw in data.get("elements", ()):
+            record = dict(raw)
+            record["id"] = mapping[str(record["id"])]
+            record["x"] = float(record.get("x", 0.0)) + offset_x
+            record["y"] = float(record.get("y", 0.0)) + offset_y
+            prepared_elements.append(self._element_registry.prepare_record(record))
+        prepared_connectors: list[dict[str, Any]] = []
+        for raw in data.get("connectors", ()):
+            record = dict(raw)
+            record["id"] = mapping[str(record["id"])]
+            record["source"] = mapping[str(record["source"])]
+            record["target"] = mapping[str(record["target"])]
+            record["waypoints"] = [
+                [float(point[0]) + offset_x, float(point[1]) + offset_y]
+                for point in record.get("waypoints", ())
+            ]
+            prepared_connectors.append(record)
+        prepared_groups: list[dict[str, Any]] = []
+        for raw in data.get("groups", ()):
+            record = dict(raw)
+            record["id"] = mapping[str(record["id"])]
+            record["members"] = [mapping[str(member)] for member in record.get("members", ())]
+            record["x"] = float(record.get("x", 0.0)) + offset_x
+            record["y"] = float(record.get("y", 0.0)) + offset_y
+            prepared_groups.append(record)
+
+        def mutate(document: CanvasDocument) -> None:
+            for record in prepared_elements:
+                document.add_element(record)
+            for record in prepared_connectors:
+                document.add_connector(record)
+            pending = list(prepared_groups)
+            while pending:
+                progress = False
+                for record in tuple(pending):
+                    if all(
+                        document.element(str(member)) is not None
+                        or document.group(str(member)) is not None
+                        for member in record.get("members", ())
+                    ):
+                        document.add_group(record)
+                        pending.remove(record)
+                        progress = True
+                if not progress:
+                    raise ValueError("Subflow template contains invalid nested groups")
+
+        self._push_document_mutation(mutate, "Import subflow")
+        root_id = mapping.get(str(data.get("root", "")), "")
+        if root_id and self._edit_mode:
+            self.selectElements((root_id,))
+        return root_id
+
+    def saveSubflowTemplate(self, group_id: str, path: str | Path) -> Path:
+        target = Path(path)
+        atomic_write_json(target, self.exportSubflow(group_id))
+        return target
+
+    def loadSubflowTemplate(
+        self, path: str | Path, x: float | None = None, y: float | None = None
+    ) -> str:
+        source = Path(path)
+        return self.importSubflow(json.loads(source.read_text(encoding="utf-8")), x, y)
+
+    def exportSubflowToDialog(self, group_id: str) -> str:
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self.window(),
+            "Export reusable subflow",
+            f"{group_id}.monkez-subflow.json",
+            "Monkez subflow (*.monkez-subflow.json *.json)",
+        )
+        if not path:
+            return ""
+        return str(self.saveSubflowTemplate(group_id, path))
+
+    def importSubflowFromDialog(self) -> str:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self.window(),
+            "Import reusable subflow",
+            "",
+            "Monkez subflow (*.monkez-subflow.json *.json)",
+        )
+        return self.loadSubflowTemplate(path) if path else ""
 
     def addResource(
         self, kind: str, uri: str, resource_id: str | None = None, **properties
@@ -6506,6 +7355,11 @@ class MonkezCanva(QWidget):
             },
             "elements": [item.to_dict() for item in self._elements.values()],
             "connectors": [item.to_dict() for item in self._connectors.values()],
+            "groups": [item.to_dict() for item in self._groups.values()],
+            "resources": (
+                [model.to_dict() for model in self._document_model.resources]
+                if self._document_model is not None else []
+            ),
         }
 
     def _sync_document_from_graphics(self) -> tuple[OperationEvent, ...]:
@@ -6568,6 +7422,7 @@ class MonkezCanva(QWidget):
     def _sync_graphics_record_order(self) -> None:
         element_order = [model.id for model in self._document_model.elements]
         connector_order = [model.id for model in self._document_model.connectors]
+        group_order = [model.id for model in self._document_model.groups]
         self._elements = {
             element_id: self._elements[element_id]
             for element_id in element_order
@@ -6577,6 +7432,11 @@ class MonkezCanva(QWidget):
             connector_id: self._connectors[connector_id]
             for connector_id in connector_order
             if connector_id in self._connectors
+        }
+        self._groups = {
+            group_id: self._groups[group_id]
+            for group_id in group_order
+            if group_id in self._groups
         }
 
     def _apply_document_operation(self, event: OperationEvent) -> None:
@@ -6620,6 +7480,23 @@ class MonkezCanva(QWidget):
                 self.renameConnector(old_id, str(current.get("id", event.target_id)))
         elif action == "connector.removed":
             self.removeConnector(event.target_id)
+        elif action == "group.added":
+            self._add_group_record(current)
+        elif action == "group.updated":
+            if event.target_id in self._groups:
+                self._apply_group_record(event.target_id, current)
+            else:
+                self._add_group_record(current)
+        elif action == "group.renamed":
+            old_id = str(previous.get("id", ""))
+            item = self._groups.pop(old_id, None)
+            if item is not None:
+                item.group_id = str(current.get("id", event.target_id))
+                item.element_id = item.group_id
+                self._groups[item.group_id] = item
+                self.itemIdChanged.emit(old_id, item.group_id)
+        elif action == "group.removed":
+            self._remove_group_graphics(event.target_id)
 
     def _apply_scene_record(self, scene: dict[str, Any]) -> None:
         width = max(100.0, float(scene.get("width", self._scene.sceneRect().width())))
@@ -6763,6 +7640,55 @@ class MonkezCanva(QWidget):
         values.pop("id", None)
         values.pop("type", None)
         self.updateConnector(connector_id, **values)
+
+    def _add_group_record(self, entry: dict[str, Any]) -> str:
+        item = _CanvasGroup(self, dict(entry))
+        self._scene.addItem(item)
+        self._groups[item.group_id] = item
+        self._sync_object_states()
+        self.groupAdded.emit(item.group_id)
+        return item.group_id
+
+    def _apply_group_record(self, group_id: str, entry: dict[str, Any]) -> None:
+        item = self._groups[str(group_id)]
+        item.prepareGeometryChange()
+        item.kind = normalize_group_kind(entry.get("kind", item.kind))
+        item.members = tuple(str(member) for member in entry.get("members", item.members))
+        item.text = str(entry.get("label", entry.get("text", item.text)))
+        item.color = _color(entry.get("color", item.color), "#64748b")
+        item.background = _color(entry.get("background", item.background), "#f8fafc")
+        item.header_color = _color(entry.get("headerColor", item.header_color), "#64748b")
+        item.padding = max(0.0, min(120.0, float(entry.get("padding", item.padding))))
+        item.collapsed = bool(entry.get("collapsed", item.collapsed))
+        item.lanes = tuple(str(value) for value in entry.get("lanes", item.lanes))
+        item.orientation = (
+            "vertical" if str(entry.get("orientation", item.orientation)).lower() == "vertical"
+            else "horizontal"
+        )
+        item.locked = bool(entry.get("locked", item.locked))
+        item.hidden = bool(entry.get("hidden", item.hidden))
+        item.custom_properties = {
+            key: value for key, value in entry.items()
+            if key not in _GROUP_STANDARD_PROPERTIES
+        }
+        item._rect.setWidth(max(120.0, float(entry.get("width", item._rect.width()))))
+        item._rect.setHeight(max(54.0, float(entry.get("height", item._rect.height()))))
+        item.setPos(float(entry.get("x", item.pos().x())), float(entry.get("y", item.pos().y())))
+        item.setZValue(float(entry.get("z", item.zValue())))
+        item.setOpacity(max(0.0, min(1.0, float(entry.get("opacity", item.opacity())))))
+        item.setRotation(float(entry.get("rotation", item.rotation())))
+        item.update()
+        self._sync_object_states()
+
+    def _remove_group_graphics(self, group_id: str) -> bool:
+        item = self._groups.pop(str(group_id), None)
+        if item is None:
+            return False
+        self._scene.removeItem(item)
+        item.deleteLater()
+        self.groupRemoved.emit(str(group_id))
+        self._sync_object_states()
+        return True
 
     def toDocument(self) -> dict[str, Any]:
         # Graphics-originated edits reconcile synchronously through
@@ -7124,6 +8050,12 @@ class MonkezCanva(QWidget):
             self._add_element_record(dict(entry))
         for entry in data.get("connectors", []):
             self._add_connector_record(dict(entry))
+        for group in tuple(self._groups.values()):
+            self._scene.removeItem(group)
+            group.deleteLater()
+        self._groups.clear()
+        for entry in data.get("groups", []):
+            self._add_group_record(dict(entry))
         self._restoring = previous
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         if not previous:
@@ -7545,8 +8477,10 @@ class MonkezCanva(QWidget):
             raise KeyError(f"Unknown MonkezCanva connector: {connector_id}")
         return connector
 
-    def _clear_highlight(self, item: _CanvasElement | _CanvasConnector) -> None:
-        if item.element_id in self._elements:
+    def _clear_highlight(
+        self, item: _CanvasElement | _CanvasConnector | _CanvasGroup
+    ) -> None:
+        if self.canvasObject(item.element_id) is item:
             item._highlight = QColor()
             item.update()
 

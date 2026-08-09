@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping
 from uuid import uuid4
+
+from .groups import validate_group_graph
 from weakref import WeakMethod
 
 from .operations import OperationEvent, changed_fields
@@ -580,9 +582,9 @@ class CanvasDocument:
         self._ensure_writable()
         model = group if isinstance(group, GroupModel) else GroupModel.from_dict(group)
         self._ensure_available_id(model.id)
-        missing = [member for member in model.members if member not in self._elements and member not in self._groups]
-        if missing:
-            raise ValueError(f"Group {model.id!r} contains missing members: {missing}")
+        candidate_groups = {key: value.to_dict() for key, value in self._groups.items()}
+        candidate_groups[model.id] = model.to_dict()
+        validate_group_graph(candidate_groups, self._elements)
         self._groups[model.id] = model
         return self._commit("group.added", "group", model.id, current=model.to_dict(), origin=origin)
 
@@ -597,14 +599,68 @@ class CanvasDocument:
         current.update(_json_copy(dict(changes)))
         current["id"] = key
         model = GroupModel.from_dict(current)
-        missing = [member for member in model.members if member not in self._elements and member not in self._groups]
-        if missing:
-            raise ValueError(f"Group {model.id!r} contains missing members: {missing}")
+        candidate_groups = {group_key: value.to_dict() for group_key, value in self._groups.items()}
+        candidate_groups[key] = model.to_dict()
+        validate_group_graph(candidate_groups, self._elements)
         self._groups[key] = model
         return self._commit(
             "group.updated", "group", key, changed_fields(previous, model.to_dict()),
             previous, model.to_dict(), origin,
         )
+
+    def rename_group(
+        self, group_id: str, new_id: str, *, origin: Any = None
+    ) -> tuple[OperationEvent, ...]:
+        self._ensure_writable()
+        old_id = str(group_id)
+        requested = _required_id(new_id, "group")
+        model = self._groups.get(old_id)
+        if model is None:
+            raise KeyError(f"Unknown MonkezCanva group: {old_id}")
+        if requested == old_id:
+            return ()
+        self._ensure_available_id(requested)
+        data = model.to_dict()
+        data["id"] = requested
+        renamed = GroupModel.from_dict(data)
+        ordered: dict[str, GroupModel] = {}
+        for key, entry in self._groups.items():
+            ordered[requested if key == old_id else key] = renamed if key == old_id else entry
+        self._groups = ordered
+        changed_parents: list[tuple[GroupModel, GroupModel]] = []
+        for key, parent in tuple(self._groups.items()):
+            if key == requested or old_id not in parent.members:
+                continue
+            parent_data = parent.to_dict()
+            parent_data["members"] = [
+                requested if member == old_id else member for member in parent.members
+            ]
+            updated = GroupModel.from_dict(parent_data)
+            self._groups[key] = updated
+            changed_parents.append((parent, updated))
+        validate_group_graph(
+            {key: value.to_dict() for key, value in self._groups.items()}, self._elements
+        )
+        self._revision += 1
+        operation_id = uuid4().hex
+        events = [
+            OperationEvent(
+                "group.renamed", "group", requested, self._revision,
+                {"id": requested}, model.to_dict(), renamed.to_dict(),
+                operation_id, origin=origin,
+            )
+        ]
+        events.extend(
+            OperationEvent(
+                "group.updated", "group", current.id, self._revision,
+                changed_fields(previous.to_dict(), current.to_dict()),
+                previous.to_dict(), current.to_dict(), operation_id, origin=origin,
+            )
+            for previous, current in changed_parents
+        )
+        committed = tuple(events)
+        self._emit(committed)
+        return committed
 
     def remove_group(self, group_id: str, *, origin: Any = None) -> OperationEvent:
         self._ensure_writable()
@@ -759,8 +815,7 @@ class CanvasDocument:
             raise ValueError("MonkezCanva object IDs must be globally unique")
         for connector in self._connectors.values():
             self._validate_connector(connector)
-        known = set(self._elements) | set(self._groups)
-        for group in self._groups.values():
-            missing = [member for member in group.members if member not in known]
-            if missing:
-                raise ValueError(f"Group {group.id!r} contains missing members: {missing}")
+        validate_group_graph(
+            {group_id: group.to_dict() for group_id, group in self._groups.items()},
+            self._elements,
+        )

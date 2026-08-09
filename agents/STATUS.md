@@ -271,7 +271,11 @@ Updated: 2026-08-09
   review: card titles sit inside an uninterrupted border, spin controls use subtle
   integrated stepper surfaces, and icon-led segmented tabs have a flatter selected
   state with tighter, consistent spacing.
-- The automated suite contains 174 tests and covers all 36 public
+- `MC-EDITOR-GROUP-001` makes frame, swimlane and subflow first-class scene
+  objects with stable IDs, nested cycle validation, collapse, atomic group move,
+  fit-to-contents, Inspector/Layers/Minimap integration and JSON-only reusable
+  templates with collision-safe import. Group rename preserves graphics identity.
+- The automated suite contains 179 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

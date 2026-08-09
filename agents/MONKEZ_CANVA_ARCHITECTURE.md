@@ -189,6 +189,26 @@ reruns when element geometry changes. Bridge caches are keyed by a canvas-wide
 routing revision. `busStyle=trunk|double` changes only projection stroke layers;
 `busId` remains portable semantic metadata for later runtime bus grouping.
 
+## Groups, swimlanes and subflows
+
+Group records are projected by `_CanvasGroup`, a low-Z selectable graphics object
+that never becomes canonical state. `kind=frame|swimlane|subflow` selects only the
+projection style; members remain stable element or nested-group IDs. The Qt-free
+`groups.py` layer computes padded bounds, flattens descendants and rejects missing
+references, unsupported kinds and direct/indirect cycles.
+
+Collapsed visibility is derived centrally in `_sync_object_states()`: descendants
+and their connectors hide without overwriting each object's own `hidden` property.
+Moving a frame previews all descendant graphics, then commits group and element
+positions as one patch-based Undo command. Nested group frames move once and shared
+descendant IDs are de-duplicated.
+
+Reusable subflows use the JSON-only `monkez-subflow` version-1 envelope. Export
+normalizes element/group coordinates relative to the root group and includes only
+internal connectors. Import collision-remaps every object/member/endpoint ID,
+restores nested groups in dependency order and commits the instance atomically.
+No document field names a Python module or callable.
+
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading

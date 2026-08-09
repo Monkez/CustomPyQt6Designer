@@ -2889,6 +2889,102 @@ class WidgetTests(unittest.TestCase):
         canvas.clear()
         canvas.deleteLater()
 
+    def test_canva_groups_swimlanes_collapse_move_and_subflow_round_trip(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(1000, 700)
+        canvas.show()
+        source = canvas.addNode("Source", -260, 0, element_id="source")
+        target = canvas.addNode("Target", 120, 40, element_id="target")
+        edge = canvas.connectElements(source, target, connector_id="edge")
+        canvas.setEditMode(True)
+        canvas.selectElements((source, target))
+        group_id = canvas.groupSelected(
+            group_id="pipeline",
+            kind="swimlane",
+            label="Main pipeline",
+            lanes=("Ingress", "Egress"),
+            metadata={"owner": "runtime"},
+        )
+        group = canvas.group(group_id)
+        self.assertIsNotNone(group)
+        self.assertEqual("swimlane", group.kind)
+        self.assertEqual(("Ingress", "Egress"), group.lanes)
+        self.assertEqual([group_id], canvas.selectedObjectIds())
+        self.assertLess(group.zValue(), canvas.element(source).zValue())
+        record = canvas.documentModel().group(group_id)
+        self.assertEqual("runtime", record.properties["metadata"]["owner"])
+
+        canvas.setGroupCollapsed(group_id, True)
+        self.app.processEvents()
+        self.assertTrue(group.isVisible())
+        self.assertFalse(canvas.element(source).isVisible())
+        self.assertFalse(canvas.connector(edge).isVisible())
+        canvas.undo()
+        self.app.processEvents()
+        self.assertTrue(canvas.element(source).isVisible())
+
+        old_group = QPointF(group.pos())
+        old_source = QPointF(canvas.element(source).pos())
+        self.assertTrue(canvas.moveGroup(group_id, old_group.x() + 80, old_group.y() + 30))
+        self.assertEqual(old_source + QPointF(80, 30), canvas.element(source).pos())
+        canvas.undo()
+        self.assertEqual(old_source, canvas.element(source).pos())
+
+        template = canvas.exportSubflow(group_id)
+        self.assertEqual("monkez-subflow", template["format"])
+        imported = canvas.importSubflow(template, 500, 200)
+        self.assertNotEqual(group_id, imported)
+        self.assertEqual(4, len(canvas.elements()))
+        self.assertEqual(2, len(canvas.groups()))
+        self.assertEqual(2, len(canvas.toDocument()["connectors"]))
+        imported_group = canvas.documentModel().group(imported)
+        self.assertEqual("runtime", imported_group.properties["metadata"]["owner"])
+
+        renamed = canvas.renameGroup(imported, "pipeline-copy")
+        self.assertEqual("pipeline-copy", renamed)
+        self.assertIsNotNone(canvas.group(renamed))
+        canvas.undo()
+        self.assertIsNotNone(canvas.group(imported))
+
+        canvas.selectElements((group_id,))
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(group_id)
+        self.assertTrue(toolbox._group_properties_group.isVisible())
+        self.assertEqual("Main pipeline", toolbox._group_label_edit.text())
+        menu = canvas.createContextMenu(group_id)
+        labels = {action.text() for action in menu.actions()}
+        self.assertIn("Collapse group", labels)
+        self.assertIn("Fit frame to contents", labels)
+        self.assertIn("Ungroup", labels)
+
+        canvas.updateElement(source, x=-180)
+        group_record = next(
+            item for item in canvas.toDocument()["groups"] if item["id"] == group_id
+        )
+        self.assertEqual("runtime", group_record["metadata"]["owner"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            template_path = Path(directory) / "pipeline.monkez-subflow.json"
+            self.assertEqual(
+                template_path, canvas.saveSubflowTemplate(group_id, template_path)
+            )
+            template_canvas = MonkezCanva()
+            loaded_group = template_canvas.loadSubflowTemplate(template_path, 40, 60)
+            self.assertIsNotNone(template_canvas.group(loaded_group))
+            self.assertEqual(2, len(template_canvas.elements()))
+            template_canvas.deleteLater()
+
+        restored = MonkezCanva()
+        restored.setDocumentModel(CanvasDocument.from_dict(canvas.toDocument()))
+        self.assertEqual("swimlane", restored.group(group_id).kind)
+        self.assertEqual(("Ingress", "Egress"), restored.group(group_id).lanes)
+
+        canvas.setEditMode(False)
+        canvas.close()
+        restored.deleteLater()
+        canvas.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

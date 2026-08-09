@@ -232,8 +232,14 @@ proper crossing detection with cached bridge rendering and semantic bus styles
 (`trunk`, `double`, width and ID). Inspector, context actions and public APIs use
 the same canonical connector fields and remain undoable.
 
-Next: group/frame, swimlane, collapsible groups and reusable subflows, followed
-by typed port compatibility and auto-layout adapters.
+`MC-EDITOR-GROUP-001` adds canonical frame/swimlane/subflow projection, nested
+cycle validation, collapse-derived visibility, group movement, object-specific
+Inspector/context/command actions and Layers/Minimap integration. Portable
+`monkez-subflow` templates export relative coordinates and atomically import with
+collision-safe ID, member, endpoint and waypoint remapping.
+
+Next: typed port compatibility, data type/cardinality diagnostics and auto-layout
+adapters.
 
 ## Backlog tracking
 

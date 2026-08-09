@@ -40,6 +40,8 @@ def main() -> int:
     canvas.editModeChanged.connect(lambda enabled: logger.info("editModeChanged -> %s", enabled))
     canvas.elementAdded.connect(lambda element_id: logger.info("elementAdded -> %s", element_id))
     canvas.connectorAdded.connect(lambda connector_id: logger.info("connectorAdded -> %s", connector_id))
+    canvas.groupAdded.connect(lambda group_id: logger.info("groupAdded -> %s", group_id))
+    canvas.groupRemoved.connect(lambda group_id: logger.info("groupRemoved -> %s", group_id))
     canvas.elementClicked.connect(lambda element_id: logger.info("elementClicked -> %s", element_id))
     canvas.connectorClicked.connect(lambda connector_id: logger.info("connectorClicked -> %s", connector_id))
     canvas.objectClicked.connect(lambda object_id: logger.info("objectClicked -> %s", object_id))
@@ -80,6 +82,21 @@ def main() -> int:
         )
         splitter = canvas.addSplitter(390, 150, output_count=2, element_id="result-splitter")
         monitor = canvas.addNode("Event log", 650, 170, color="#db2777", element_id="event-log")
+        canvas.addSwimlane(
+            (camera, detector, decision, chart),
+            "vision-flow",
+            label="Vision inference pipeline",
+            lanes=("Capture", "Inference", "Decision"),
+            color="#0f9f8f",
+            background="#f0fdfa",
+        )
+        canvas.addSubflow(
+            (splitter, monitor),
+            "result-delivery",
+            label="Reusable result delivery",
+            color="#7c3aed",
+            background="#faf5ff",
+        )
         canvas.connectElements(
             camera, detector, connector_id="camera-to-detector",
             sourcePort="video", targetPort="frames",

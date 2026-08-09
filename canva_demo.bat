@@ -18,6 +18,8 @@ if not exist ".venv311\Scripts\python.exe" (
 echo [RUN] Starting demo with live logs...
 echo [KEY] Option 1: Ctrl+D, release Ctrl, then E
 echo [KEY] Option 2: Hold Ctrl, press D, then E
+echo [TIP] Double-click a group header to collapse or expand its contents
+echo [TIP] Right-click a group to fit, export, or ungroup it
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

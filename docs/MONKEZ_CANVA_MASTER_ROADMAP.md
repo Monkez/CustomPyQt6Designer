@@ -1,6 +1,6 @@
 # MonkezCanva master roadmap
 
-Updated: 2026-08-08
+Updated: 2026-08-09
 
 ## Product target
 
@@ -128,11 +128,11 @@ connectors. Routing parameters are portable, undoable and Inspector-editable.
 - configurable snap targets: grid, center, edge and port — complete;
 - mixed-value multi-selection Inspector — common-property slice complete;
 - minimap, document outline, viewport bookmarks and zoom-to-selection — complete;
-- lock, hide and isolate item — complete; group state remains;
+- lock, hide and isolate item/group — complete;
 - editable connector waypoints, rounded orthogonal corners and reroute points — complete;
 - edge labels, self-loops, parallel edges, crossing bridges and visual buses — complete;
 - obstacle-aware Manhattan routing with configurable clearance — complete;
-- group/frame, swimlane, collapsible group and reusable subflow;
+- group/frame, swimlane, nested/collapsible group and reusable JSON subflow — complete;
 - automatic layout adapter with layered, tree, force and radial strategies.
 
 ## Phase 3 — Typed graph and workflow runtime

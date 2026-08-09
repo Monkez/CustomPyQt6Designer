@@ -179,15 +179,21 @@ class CanvasRenameCommand(QUndoCommand):
         new_id: str,
         *,
         connector: bool = False,
+        group: bool = False,
     ) -> None:
-        super().__init__("Rename connector" if connector else "Rename element")
+        super().__init__(
+            "Rename group" if group else "Rename connector" if connector else "Rename element"
+        )
         self.document = document
         self.old_id = str(old_id)
         self.new_id = str(new_id)
         self.connector = bool(connector)
+        self.group = bool(group)
 
     def _rename(self, old_id: str, new_id: str) -> None:
-        if self.connector:
+        if self.group:
+            self.document.rename_group(old_id, new_id)
+        elif self.connector:
             self.document.rename_connector(old_id, new_id)
         else:
             self.document.rename_element(old_id, new_id)

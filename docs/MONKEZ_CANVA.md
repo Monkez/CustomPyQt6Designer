@@ -348,6 +348,44 @@ shape có content/geometry/appearance; line có stroke, arrow và points; node c
 port editor; connector có endpoint/port, route, flow animation, waypoint, opacity
 và layer Z.
 
+## Frame, swimlane và reusable subflow
+
+Group là object document-backed có ID ổn định, không phải lớp trang trí tạm. Nó
+xuất hiện trong Layers và Minimap, có Inspector riêng, Undo/Redo, lock/hide,
+collapse, lồng group và di chuyển toàn bộ thành viên trong một command. Model từ
+chối group tham chiếu thiếu hoặc tạo cycle.
+
+```python
+frame = canvas.addFrame(("source", "processor"), label="Processing")
+lanes = canvas.addSwimlane(
+    ("source", "processor", "sink"),
+    "main-pipeline",
+    label="Main pipeline",
+    lanes=("Ingress", "Compute", "Delivery"),
+    orientation="horizontal",
+)
+subflow = canvas.addSubflow(
+    ("retry", "dead-letter"),
+    label="Recovery policy",
+)
+
+canvas.setGroupCollapsed(subflow, True)
+canvas.moveGroup(lanes, 240, 120)
+canvas.fitGroupToContents(lanes)
+canvas.renameGroup(lanes, "production-pipeline")
+```
+
+Double-click header để collapse/expand. Right-click cho phép tạo group từ nhiều
+node, fit lại frame, ungroup hoặc export JSON template. Template không chứa Python
+code; import remap toàn bộ element, connector và nested-group ID để tránh collision:
+
+```python
+canvas.saveSubflowTemplate(subflow, "recovery.monkez-subflow.json")
+new_group = canvas.loadSubflowTemplate(
+    "recovery.monkez-subflow.json", x=800, y=240
+)
+```
+
 ## Lưu và đọc tài liệu
 
 ```python
@@ -378,7 +416,8 @@ document.subscribe(lambda event: print(event.action, event.revision))
 ```
 
 Các API `addElement`, `updateElement`, `removeElement`, `renameElement`,
-`connectElements`, `updateConnector`, `removeConnector` và `renameConnector` ghi
+`connectElements`, `updateConnector`, `removeConnector`, `renameConnector`,
+`addGroup`, `updateGroup`, `removeGroup` và `renameGroup` ghi
 vào model trước. Mỗi view chỉ render operation liên quan thay vì dựng lại toàn bộ
 scene; selection, zoom, viewport và identity của item được giữ nguyên khi model
 được cập nhật từ code hoặc từ một view khác.
