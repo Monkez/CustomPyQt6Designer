@@ -3,6 +3,29 @@
   "$id": "https://monkez.dev/schemas/monkez-canva/document-v1.json",
   "title": "MonkezCanva document",
   "type": "object",
+  "$defs": {
+    "port": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "mode": {"enum": ["input", "output", "free"]},
+        "side": {"enum": ["left", "right", "top", "bottom"]},
+        "label": {"type": "string"},
+        "position": {"type": "number", "minimum": 0, "maximum": 1},
+        "dataType": {"type": "string", "minLength": 1},
+        "unit": {"type": "string"},
+        "required": {"type": "boolean"},
+        "defaultValue": {},
+        "maxConnections": {"type": "integer", "minimum": 0},
+        "acceptedTypes": {"type": "array", "items": {"type": "string"}},
+        "acceptedUnits": {"type": "array", "items": {"type": "string"}},
+        "convertsTo": {"type": "array", "items": {"type": "string"}},
+        "tooltip": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
   "required": ["format", "version", "scene", "elements", "connectors"],
   "properties": {
     "format": {"const": "monkez-canva"},
@@ -16,7 +39,11 @@
         "properties": {
           "id": {"type": "string", "minLength": 1},
           "type": {"type": "string", "minLength": 1},
-          "componentVersion": {"type": "integer", "minimum": 1}
+          "componentVersion": {"type": "integer", "minimum": 1},
+          "ports": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/port"}
+          }
         },
         "additionalProperties": true
       }

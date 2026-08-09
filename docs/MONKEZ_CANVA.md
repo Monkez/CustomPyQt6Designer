@@ -328,22 +328,58 @@ Mỗi node có thể có số lượng port tùy ý. Port có ID ổn định v�
 pump = canvas.addNode(
     "Pump", 0, 0, element_id="pump",
     ports=[
-        {"id": "power", "mode": "input", "side": "left", "label": "Power"},
-        {"id": "water-out", "mode": "output", "side": "right", "label": "Water"},
+        {
+            "id": "power", "mode": "input", "side": "left", "label": "Power",
+            "dataType": "float", "unit": "V", "required": True,
+            "defaultValue": 0.0, "maxConnections": 1,
+            "acceptedTypes": ["int"], "acceptedUnits": ["mV"],
+            "tooltip": "Điện áp cấp cho bơm",
+        },
+        {
+            "id": "water-out", "mode": "output", "side": "right", "label": "Water",
+            "dataType": "float", "unit": "L/min", "convertsTo": ["str"],
+        },
         {"id": "service", "mode": "free", "side": "bottom", "label": "Service"},
     ],
 )
-canvas.addNodePort(pump, "alarm", "output", "top", "Alarm")
+canvas.addNodePort(
+    pump, "alarm", "output", "top", "Alarm",
+    dataType="bool", maxConnections=4, tooltip="Cảnh báo đang hoạt động",
+)
 canvas.removeNodePort(pump, "service")
 ports = canvas.nodePorts(pump)
 
 edge = canvas.connectPorts("pump", "water-out", "tank", "water-in")
+result = canvas.portCompatibility("pump", "water-out", "tank", "water-in")
 ```
 
-Trong Inspector của node, danh sách port có form Add/Update/Remove cho ID, label,
-mode và side. Connector Inspector có selector source/target port tương ứng. Khi
-kéo nối ngược từ input sang output, editor tự đảo chiều; cặp input-input hoặc
-output-output bị từ chối và ghi lý do vào `diagnosticMessage`.
+Mỗi port có `dataType`, `unit`, `required`, `defaultValue`, `maxConnections`
+(`0` là không giới hạn), `acceptedTypes`, `acceptedUnits`, `convertsTo` và
+`tooltip`. Các trường mở rộng vẫn được bảo toàn trong JSON. Compatibility engine
+dùng cùng một contract cho model, API, reconnect, Inspector và kéo chuột; document
+từ chối connector sai hướng, vượt cardinality, khác type/unit không có conversion.
+
+Trong Inspector của node, danh sách port hiển thị type, unit và số connection;
+toàn bộ contract phía trên có thể sửa trực tiếp và tự apply. Connector Inspector
+có selector source/target port kèm type/unit. Khi kéo nối ngược từ input sang
+output, editor tự đảo chiều. Candidate hợp lệ có halo xanh, candidate cần conversion
+có halo tím, candidate không hợp lệ có halo đỏ; preview và `diagnosticMessage`
+giải thích cùng một lý do. Nhấn `Esc` để hủy kéo nối.
+
+Runtime value là trạng thái tạm thời để code/runtime và Inspector quan sát, không
+được serialize hoặc làm document dirty:
+
+```python
+canvas.portRuntimeValueChanged.connect(on_port_value)
+canvas.setPortRuntimeValue("pump", "water-out", 42.5)
+value = canvas.portRuntimeValue("pump", "water-out")
+state = canvas.portRuntimeState("pump", "water-out")
+canvas.clearPortRuntimeValue("pump", "water-out")
+```
+
+`setPortRuntimeValue()` kiểm tra type mặc định; truyền `validate=False` nếu runtime
+adapter cần đưa giá trị lỗi vào Inspector để chẩn đoán. Nếu chưa có runtime value,
+`portRuntimeValue()` trả `defaultValue` khi port khai báo giá trị mặc định.
 
 Các trường Inspector tự apply: combo/check áp dụng ngay, số học debounce ngắn và
 text/points áp dụng sau khoảng gõ rất ngắn. Dữ liệu points chưa hoàn chỉnh trong

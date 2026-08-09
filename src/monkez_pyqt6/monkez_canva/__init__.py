@@ -74,6 +74,19 @@ from .groups import (
     normalize_group_kind,
     validate_group_graph,
 )
+from .typed_ports import (
+    PORT_MODES,
+    PORT_SIDES,
+    PortCompatibility,
+    PortSpec,
+    PortValueValidation,
+    evaluate_directed_ports,
+    evaluate_port_pair,
+    infer_data_type,
+    normalize_data_type,
+    normalize_port_record,
+    validate_port_value,
+)
 
 __all__ = [
     "CLIPBOARD_FORMAT",
@@ -128,6 +141,17 @@ __all__ = [
     "group_bounds",
     "normalize_group_kind",
     "validate_group_graph",
+    "PORT_MODES",
+    "PORT_SIDES",
+    "PortCompatibility",
+    "PortSpec",
+    "PortValueValidation",
+    "evaluate_directed_ports",
+    "evaluate_port_pair",
+    "infer_data_type",
+    "normalize_data_type",
+    "normalize_port_record",
+    "validate_port_value",
     "record_recent_component",
     "remap_selection_payload",
     "search_palette",

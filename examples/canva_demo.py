@@ -49,6 +49,11 @@ def main() -> int:
     canvas.persistentSaved.connect(lambda path: logger.info("persistentSaved -> %s", path))
     canvas.messageSent.connect(lambda edge, message: logger.info("messageSent -> %s via %s", message, edge))
     canvas.messageArrived.connect(lambda edge, message: logger.info("messageArrived -> %s at %s", message, edge))
+    canvas.portRuntimeValueChanged.connect(
+        lambda element, port, value: logger.info(
+            "portRuntimeValueChanged -> %s.%s = %r", element, port, value
+        )
+    )
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
 
@@ -56,24 +61,50 @@ def main() -> int:
         camera = canvas.addNode(
             "Camera", -360, -50, color="#0ea5e9", element_id="camera",
             ports=[
-                {"id": "video", "mode": "output", "side": "right", "label": "Video"},
-                {"id": "trigger", "mode": "input", "side": "left", "label": "Trigger"},
+                {
+                    "id": "video", "mode": "output", "side": "right", "label": "Video",
+                    "dataType": "dict", "unit": "frame", "maxConnections": 1,
+                    "tooltip": "Decoded camera frame and capture metadata",
+                },
+                {
+                    "id": "trigger", "mode": "input", "side": "left", "label": "Trigger",
+                    "dataType": "bool", "required": True, "defaultValue": False,
+                },
             ],
         )
         detector = canvas.addNode(
             "Object detector", -90, -50, color="#7c3aed", element_id="detector",
             ports=[
-                {"id": "frames", "mode": "input", "side": "left", "label": "Frames"},
-                {"id": "objects", "mode": "output", "side": "right", "label": "Objects"},
-                {"id": "debug", "mode": "free", "side": "bottom", "label": "Debug"},
+                {
+                    "id": "frames", "mode": "input", "side": "left", "label": "Frames",
+                    "dataType": "dict", "unit": "frame", "required": True,
+                    "maxConnections": 1,
+                },
+                {
+                    "id": "objects", "mode": "output", "side": "right", "label": "Objects",
+                    "dataType": "list", "unit": "detections",
+                },
+                {
+                    "id": "debug", "mode": "free", "side": "bottom", "label": "Debug",
+                    "dataType": "dict",
+                },
             ],
         )
         decision = canvas.addNode(
             "Decision", 180, -50, color="#f97316", element_id="decision",
             ports=[
-                {"id": "input", "mode": "input", "side": "left", "label": "Input"},
-                {"id": "yes", "mode": "output", "side": "right", "label": "Yes"},
-                {"id": "no", "mode": "output", "side": "bottom", "label": "No"},
+                {
+                    "id": "input", "mode": "input", "side": "left", "label": "Input",
+                    "dataType": "list", "unit": "detections", "required": True,
+                },
+                {
+                    "id": "yes", "mode": "output", "side": "right", "label": "Yes",
+                    "dataType": "dict", "unit": "decision",
+                },
+                {
+                    "id": "no", "mode": "output", "side": "bottom", "label": "No",
+                    "dataType": "dict", "unit": "decision",
+                },
             ],
         )
         chart = canvas.addChart(
@@ -134,6 +165,12 @@ def main() -> int:
         canvas.addPolyline(
             [[0, 80], [90, 10], [190, 90]], 80, 190,
             element_id="pipeline", lineWidth=4, arrowEnd=True,
+        )
+        canvas.setPortRuntimeValue(
+            camera, "video", {"width": 1920, "height": 1080, "sequence": 1}
+        )
+        canvas.setPortRuntimeValue(
+            detector, "objects", [{"label": "vehicle", "confidence": 0.94}]
         )
     canvas.objectClicked.connect(lambda object_id: canvas.highlightObject(object_id))
     window.resize(1180, 680)

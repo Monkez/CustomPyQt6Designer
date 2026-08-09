@@ -143,6 +143,14 @@ Ports gain data type, unit, optional/required, default value, connection count,
 accepted conversions, tooltip and runtime value. Compatible targets highlight
 during connection; invalid targets explain the reason.
 
+Completed (2026-08-09): `MC-RUNTIME-TYPED-PORTS-001` adds the Qt-free canonical
+port normalizer and compatibility/value validators; mode orientation, cardinality,
+type/unit conversion and detailed reasons are enforced by `CanvasDocument`, code
+APIs, reconnect and drag gestures. The node Inspector edits the complete contract
+with immediate updates. Green/purple/red port halos and preview colors distinguish
+direct, converted and rejected targets. Runtime values/signals stay view-local and
+never enter portable JSON. The public v1 schema now documents the port contract.
+
 ### Runtime components
 
 - routing: Junction, Reroute, Merge, Splitter, Switch, Router, Multiplexer,

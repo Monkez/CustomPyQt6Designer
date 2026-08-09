@@ -282,7 +282,14 @@ Updated: 2026-08-09
   objects with stable IDs, nested cycle validation, collapse, atomic group move,
   fit-to-contents, Inspector/Layers/Minimap integration and JSON-only reusable
   templates with collision-safe import. Group rename preserves graphics identity.
-- The automated suite contains 179 tests and covers all 36 public
+- `MC-RUNTIME-TYPED-PORTS-001` completes the first Phase 3 slice. A shared Qt-free
+  engine normalizes and enforces mode, data type, unit, required/default,
+  cardinality and declared conversions. Model/API/reconnect/drag paths share its
+  diagnostic result; green/purple/red candidate halos and preview pens expose
+  direct/conversion/rejected targets. The Inspector edits every typed-port field
+  and shows transient runtime state; runtime values emit signals but never persist.
+  Schema, demo, public API tests and visual QA cover the new contract.
+- The automated suite contains 184 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

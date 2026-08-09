@@ -189,6 +189,26 @@ reruns when element geometry changes. Bridge caches are keyed by a canvas-wide
 routing revision. `busStyle=trunk|double` changes only projection stroke layers;
 `busId` remains portable semantic metadata for later runtime bus grouping.
 
+## Typed port contract and transient values
+
+`monkez_canva/typed_ports.py` is the Qt-free authority for port normalization,
+orientation, cardinality, type/unit compatibility and runtime value validation.
+`PortModel` stores the normalized contract; `CanvasDocument` revalidates attached
+connectors when element ports change and rolls an invalid update back before it
+can emit an operation. Connector updates exclude their own ID from counts.
+
+The graphics layer calls the same functions through `portCompatibility()`.
+Connection drag feedback is projection-only state held by `_CanvasElement`; it is
+cleared on release or Escape and never enters `to_dict()`. Green means a direct
+match, purple a declared conversion, red a rejected target and blue the origin.
+The preview pen and diagnostic text use the exact returned compatibility result.
+
+`_port_runtime_values[(element_id, port_id)]` is intentionally canvas-local.
+Rename remaps its keys; port/element removal and clear discard it. Public setters
+validate values and emit `portRuntimeValueChanged`, while serialization contains
+only `defaultValue`, never the current runtime value. This boundary is required
+for shared documents, Undo and durable save to remain deterministic.
+
 ## Groups, swimlanes and subflows
 
 Group records are projected by `_CanvasGroup`, a low-Z selectable graphics object

@@ -238,8 +238,18 @@ Inspector/context/command actions and Layers/Minimap integration. Portable
 `monkez-subflow` templates export relative coordinates and atomically import with
 collision-safe ID, member, endpoint and waypoint remapping.
 
-Next: typed port compatibility, data type/cardinality diagnostics and auto-layout
-adapters.
+### Typed graph progress — 2026-08-09
+
+`MC-RUNTIME-TYPED-PORTS-001` adds `typed_ports.py` as the Qt-free source of truth
+for canonical port records, direction, cardinality, type/unit conversion and
+runtime value diagnostics. Document operations roll invalid element-port edits
+back; code, reconnect and direct manipulation consume the same result. The
+Inspector exposes the full contract with immediate updates and visual drag QA
+distinguishes direct, converted and rejected targets. Runtime values remain
+transient and are cleaned up on rename/removal/clear.
+
+Next: automatic layout adapters, followed by workflow runtime components and
+packet runtime v2/debugging.
 
 ## Backlog tracking
 

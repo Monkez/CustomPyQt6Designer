@@ -9,6 +9,7 @@ from typing import Any, Callable, Iterable, Mapping
 from uuid import uuid4
 
 from .groups import validate_group_graph
+from .typed_ports import evaluate_directed_ports, normalize_port_record
 from weakref import WeakMethod
 
 from .operations import OperationEvent, changed_fields
@@ -16,10 +17,6 @@ from .schema import DOCUMENT_FORMAT, DOCUMENT_VERSION, migrate_document
 
 
 _KNOWN_TOP_LEVEL = {"format", "version", "scene", "elements", "connectors", "groups", "resources"}
-_PORT_MODES = {"input", "output", "free"}
-_PORT_SIDES = {"left", "right", "top", "bottom"}
-
-
 def _plain_json(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(key): _plain_json(item) for key, item in value.items()}
@@ -67,16 +64,10 @@ class PortModel:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PortModel":
-        raw = _json_copy(dict(data))
+        raw = normalize_port_record(_json_copy(dict(data)))
         port_id = _required_id(raw.pop("id", ""), "port")
-        mode = str(raw.pop("mode", "free")).lower().strip()
-        mode = {"in": "input", "out": "output", "io": "free", "bidirectional": "free"}.get(mode, mode)
-        if mode not in _PORT_MODES:
-            raise ValueError(f"Unsupported MonkezCanva port mode: {mode}")
-        default_side = "left" if mode == "input" else "right" if mode == "output" else "bottom"
-        side = str(raw.pop("side", default_side)).lower().strip()
-        if side not in _PORT_SIDES:
-            raise ValueError(f"Unsupported MonkezCanva port side: {side}")
+        mode = str(raw.pop("mode"))
+        side = str(raw.pop("side"))
         label = str(raw.pop("label", port_id))
         position_value = raw.pop("position", None)
         position = None if position_value is None else max(0.0, min(1.0, float(position_value)))
@@ -417,7 +408,15 @@ class CanvasDocument:
         updated.update(_json_copy(dict(changes)))
         updated["id"] = key
         model = ElementModel.from_dict(updated)
+        previous_model = self._elements[key]
         self._elements[key] = model
+        try:
+            for connector in self._connectors.values():
+                if key in (connector.source, connector.target):
+                    self._validate_connector(connector, exclude=connector.id)
+        except Exception:
+            self._elements[key] = previous_model
+            raise
         return self._commit(
             "element.updated", "element", key, changed_fields(previous, model.to_dict()), previous, model.to_dict(), origin
         )
@@ -477,7 +476,7 @@ class CanvasDocument:
         updated.update(_json_copy(dict(changes)))
         updated["id"] = key
         model = ConnectorModel.from_dict(updated)
-        self._validate_connector(model)
+        self._validate_connector(model, exclude=key)
         self._connectors[key] = model
         return self._commit(
             "connector.updated", "connector", key,
@@ -797,7 +796,22 @@ class CanvasDocument:
             raise KeyError(f"Unknown MonkezCanva element: {element_id}")
         return model
 
-    def _validate_connector(self, connector: ConnectorModel) -> None:
+    def _port_connection_count(
+        self, element_id: str, port_id: str, *, exclude: str = ""
+    ) -> int:
+        return sum(
+            1
+            for candidate in self._connectors.values()
+            if candidate.id != exclude
+            and (
+                candidate.source == element_id and candidate.source_port == port_id
+                or candidate.target == element_id and candidate.target_port == port_id
+            )
+        )
+
+    def _validate_connector(
+        self, connector: ConnectorModel, *, exclude: str = ""
+    ) -> None:
         source = self._elements.get(connector.source)
         target = self._elements.get(connector.target)
         if source is None or target is None:
@@ -808,13 +822,35 @@ class CanvasDocument:
             raise ValueError(f"Connector {connector.id!r} refers to missing source port {connector.source_port!r}")
         if connector.target_port and connector.target_port not in target_ports:
             raise ValueError(f"Connector {connector.id!r} refers to missing target port {connector.target_port!r}")
+        if connector.source_port and connector.target_port:
+            source_port = next(
+                port.to_dict() for port in source.ports if port.id == connector.source_port
+            )
+            target_port = next(
+                port.to_dict() for port in target.ports if port.id == connector.target_port
+            )
+            compatibility = evaluate_directed_ports(
+                source_port,
+                target_port,
+                source_connections=self._port_connection_count(
+                    connector.source, connector.source_port, exclude=exclude
+                ),
+                target_connections=self._port_connection_count(
+                    connector.target, connector.target_port, exclude=exclude
+                ),
+            )
+            if not compatibility.compatible:
+                raise ValueError(
+                    f"Connector {connector.id!r} has incompatible ports: "
+                    f"{compatibility.reason}"
+                )
 
     def _validate(self) -> None:
         ids = [*self._elements, *self._connectors, *self._groups]
         if len(ids) != len(set(ids)):
             raise ValueError("MonkezCanva object IDs must be globally unique")
         for connector in self._connectors.values():
-            self._validate_connector(connector)
+            self._validate_connector(connector, exclude=connector.id)
         validate_group_graph(
             {group_id: group.to_dict() for group_id, group in self._groups.items()},
             self._elements,

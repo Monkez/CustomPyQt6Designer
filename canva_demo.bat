@@ -20,6 +20,8 @@ echo [KEY] Option 1: Ctrl+D, release Ctrl, then E
 echo [KEY] Option 2: Hold Ctrl, press D, then E
 echo [TIP] Double-click a group header to collapse or expand its contents
 echo [TIP] Right-click a group to fit, export, or ungroup it
+echo [TIP] Drag from a port to see typed compatibility: green, purple conversion, red rejected
+echo [TIP] Inspect Camera/Detector ports to edit type, unit, limits and runtime status
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

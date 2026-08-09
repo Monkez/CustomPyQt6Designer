@@ -82,6 +82,7 @@ from monkez_pyqt6.monkez_canva import (
     ElementDefinition,
     ElementRegistry,
     OperationEvent,
+    PortCompatibility,
     PALETTE_FAVORITES_KEY,
     PALETTE_RECENT_KEY,
     PaletteEntry,
@@ -111,6 +112,10 @@ from monkez_pyqt6.monkez_canva import (
     normalize_group_kind,
     orthogonal_points,
     obstacle_avoiding_route,
+    evaluate_directed_ports,
+    evaluate_port_pair,
+    normalize_port_record,
+    validate_port_value,
     parallel_lane_offset,
     segment_intersection,
 )
@@ -162,27 +167,11 @@ def _normalize_node_ports(raw_ports: Any) -> list[dict[str, Any]]:
     for index, raw in enumerate(raw_ports):
         if not isinstance(raw, dict):
             raise TypeError("Each node port must be a dictionary")
-        port_id = str(raw.get("id", f"port-{index + 1}")).strip()
+        port = normalize_port_record(raw, index)
+        port_id = port["id"]
         if not port_id or port_id in used:
             raise ValueError(f"Node port ID must be unique and non-empty: {port_id!r}")
         used.add(port_id)
-        mode = str(raw.get("mode", "free")).lower().strip()
-        mode = {"in": "input", "out": "output", "io": "free", "bidirectional": "free"}.get(mode, mode)
-        if mode not in ("input", "output", "free"):
-            raise ValueError(f"Unsupported node port mode: {mode}")
-        default_side = "left" if mode == "input" else "right" if mode == "output" else "bottom"
-        side = str(raw.get("side", default_side)).lower().strip()
-        if side not in ("left", "right", "top", "bottom"):
-            raise ValueError(f"Unsupported node port side: {side}")
-        position = raw.get("position")
-        port = {
-            "id": port_id,
-            "mode": mode,
-            "side": side,
-            "label": str(raw.get("label", port_id)),
-        }
-        if position is not None:
-            port["position"] = max(0.0, min(1.0, float(position)))
         ports.append(port)
     return ports
 
@@ -749,6 +738,7 @@ class _CanvasElement(QGraphicsObject):
         self._pixmap = QPixmap()
         self._movie: QMovie | None = None
         self._highlight = QColor()
+        self._port_feedback: dict[str, tuple[str, str]] = {}
         self._resizing = False
         self._resize_origin = QPointF()
         self._line_phase = 0.0
@@ -944,6 +934,19 @@ class _CanvasElement(QGraphicsObject):
             point = self.portLocalPosition(port["id"])
             mode = port["mode"]
             color = colors[mode]
+            feedback = self._port_feedback.get(port["id"])
+            if feedback is not None:
+                feedback_color = {
+                    "origin": QColor("#2563eb"),
+                    "compatible": QColor("#10b981"),
+                    "conversion": QColor("#8b5cf6"),
+                    "incompatible": QColor("#ef4444"),
+                }.get(feedback[0], QColor("#64748b"))
+                halo = QColor(feedback_color)
+                halo.setAlpha(45)
+                painter.setPen(QPen(feedback_color, 2.0))
+                painter.setBrush(halo)
+                painter.drawEllipse(point, 10.0, 10.0)
             painter.setPen(QPen(QColor("#ffffff"), 1.8))
             painter.setBrush(color)
             if mode in ("input", "output"):
@@ -955,6 +958,12 @@ class _CanvasElement(QGraphicsObject):
                 path.lineTo(QPointF(point.x() - 7, point.y()))
                 path.closeSubpath()
                 painter.drawPath(path)
+
+            runtime_key = (self.element_id, port["id"])
+            if runtime_key in self.canvas._port_runtime_values:
+                painter.setPen(QPen(QColor("#ffffff"), 1.0))
+                painter.setBrush(QColor("#0f9f8f"))
+                painter.drawEllipse(point, 2.7, 2.7)
 
             label = port.get("label", "")
             if not label:
@@ -974,6 +983,20 @@ class _CanvasElement(QGraphicsObject):
                 label_rect = QRectF(point.x() - 36, point.y() - 23, 72, 16)
                 alignment = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
             painter.drawText(label_rect, alignment, label)
+            data_type = str(port.get("dataType", "any"))
+            if data_type != "any" and (self.isSelected() or feedback is not None):
+                painter.setPen(QColor("#64748b"))
+                type_rect = QRectF(label_rect)
+                type_rect.translate(0, 10 if side in ("left", "right", "top") else -10)
+                painter.drawText(type_rect, alignment, data_type)
+
+    def setPortFeedback(self, feedback: dict[str, tuple[str, str]]) -> None:
+        if feedback != self._port_feedback:
+            self._port_feedback = dict(feedback)
+            self.update()
+
+    def clearPortFeedback(self) -> None:
+        self.setPortFeedback({})
 
     @staticmethod
     def _port_triangle_path(point: QPointF, side: str) -> QPainterPath:
@@ -1198,6 +1221,36 @@ class _CanvasElement(QGraphicsObject):
         super().mouseReleaseEvent(event)
         self.canvas._scene.clearSmartGuides()
         self.changed.emit(self.element_id)
+
+    def hoverMoveEvent(self, event) -> None:
+        port = self.portAt(self.mapToScene(event.pos())) if self.supports_ports else None
+        if port is None:
+            self.setToolTip("")
+        else:
+            lines = [
+                f"{port.get('label', port['id'])} ({port['id']})",
+                f"{port['mode']} · {port.get('dataType', 'any')}",
+            ]
+            if port.get("unit"):
+                lines[-1] += f" · {port['unit']}"
+            if port.get("maxConnections"):
+                lines.append(f"Maximum connections: {port['maxConnections']}")
+            if port.get("tooltip"):
+                lines.append(str(port["tooltip"]))
+            state = self.canvas.portRuntimeState(self.element_id, port["id"])
+            if state["source"] != "unset":
+                lines.append(
+                    f"Runtime ({state['source']}): {state['value']!r} · {state['actualType']}"
+                )
+            feedback = self._port_feedback.get(port["id"])
+            if feedback is not None:
+                lines.append(feedback[1])
+            self.setToolTip("\n".join(lines))
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:
+        self.setToolTip("")
+        super().hoverLeaveEvent(event)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
@@ -2376,6 +2429,7 @@ class _CanvasEditorToolbox(QDialog):
         self.canvas = canvas
         self._syncing_layers = False
         self._syncing_inspector = False
+        self._syncing_port_editor = False
         self._pending_inspector_fields: set[str] = set()
         self._inspector_apply_timer = QTimer(self)
         self._inspector_apply_timer.setSingleShot(True)
@@ -2444,6 +2498,11 @@ class _CanvasEditorToolbox(QDialog):
         canvas.documentModifiedChanged.connect(self._sync_modified_status)
         canvas.readOnlyChanged.connect(self._sync_read_only_status)
         canvas.documentChanged.connect(self._sync_view_controls)
+        canvas.portRuntimeValueChanged.connect(
+            lambda _element_id, _port_id, _value: self._sync_inspector(
+                canvas.selectedElementId()
+            )
+        )
         self._sync_inspector(canvas.selectedElementId())
         self.refreshLayers()
         self._sync_modified_status(canvas.isDocumentModified())
@@ -2486,6 +2545,10 @@ class _CanvasEditorToolbox(QDialog):
         QLabel#autoApplyStatus {
             color: #0f9f8f; background: #effbf8; border: 1px solid #c6eee7;
             border-radius: 9px; padding: 6px 9px; font-size: 9px; font-weight: 600;
+        }
+        QLabel#canvasPortRuntimeStatus {
+            color: #5f6b73; background: #f7f5f2; border: 1px solid #e7e2dc;
+            border-radius: 8px; padding: 6px 8px; font-size: 9px;
         }
         QLabel#canvasSaveStatus {
             color: #087f72; background: #effbf8; border: 1px solid #c6eee7;
@@ -2816,21 +2879,79 @@ class _CanvasEditorToolbox(QDialog):
         self._port_mode_combo.addItems(("Input", "Output", "Free"))
         self._port_side_combo = QComboBox()
         self._port_side_combo.addItems(("Left", "Right", "Top", "Bottom"))
+        self._port_data_type_combo = QComboBox()
+        self._port_data_type_combo.setEditable(True)
+        self._port_data_type_combo.addItems(
+            ("any", "bool", "int", "float", "str", "dict", "list", "bytes")
+        )
+        self._port_unit_edit = QLineEdit()
+        self._port_unit_edit.setPlaceholderText("Unit, e.g. V or °C")
+        self._port_required_check = QCheckBox("Required")
+        self._port_max_connections_field = QDoubleSpinBox()
+        self._port_max_connections_field.setDecimals(0)
+        self._port_max_connections_field.setRange(0, 10000)
+        self._port_max_connections_field.setSpecialValueText("Unlimited")
+        self._port_max_connections_field.setToolTip("0 allows unlimited connectors")
+        self._port_accepted_types_edit = QLineEdit()
+        self._port_accepted_types_edit.setPlaceholderText("Accepted source types")
+        self._port_converts_to_edit = QLineEdit()
+        self._port_converts_to_edit.setPlaceholderText("Can convert to…")
+        self._port_accepted_units_edit = QLineEdit()
+        self._port_accepted_units_edit.setPlaceholderText("Accepted source units")
+        self._port_default_edit = QLineEdit()
+        self._port_default_edit.setPlaceholderText("Default JSON value")
+        self._port_tooltip_edit = QLineEdit()
+        self._port_tooltip_edit.setPlaceholderText("Port description / usage hint")
+        self._port_runtime_status = QLabel("Runtime · unset")
+        self._port_runtime_status.setObjectName("canvasPortRuntimeStatus")
         port_form.addWidget(self._port_id_edit, 0, 0)
         port_form.addWidget(self._port_label_edit, 0, 1)
         port_form.addWidget(self._port_mode_combo, 1, 0)
         port_form.addWidget(self._port_side_combo, 1, 1)
+        port_form.addWidget(QLabel("Data type"), 2, 0)
+        port_form.addWidget(QLabel("Unit"), 2, 1)
+        port_form.addWidget(self._port_data_type_combo, 3, 0)
+        port_form.addWidget(self._port_unit_edit, 3, 1)
+        port_form.addWidget(self._port_required_check, 4, 0)
+        port_form.addWidget(self._port_max_connections_field, 4, 1)
+        port_form.addWidget(self._port_accepted_types_edit, 5, 0)
+        port_form.addWidget(self._port_converts_to_edit, 5, 1)
+        port_form.addWidget(self._port_accepted_units_edit, 6, 0)
+        port_form.addWidget(self._port_default_edit, 6, 1)
+        port_form.addWidget(self._port_tooltip_edit, 7, 0, 1, 2)
+        port_form.addWidget(self._port_runtime_status, 8, 0, 1, 2)
         ports_layout.addLayout(port_form)
         port_actions = QHBoxLayout()
         add_port = QPushButton("Add / update")
         add_port.setIcon(_canvas_icon("check"))
-        add_port.clicked.connect(self._upsert_port)
+        add_port.clicked.connect(self._safe_upsert_port)
         remove_port = QPushButton("Remove")
         remove_port.setIcon(_canvas_icon("delete"))
         remove_port.clicked.connect(self._remove_port_from_editor)
         port_actions.addWidget(add_port)
         port_actions.addWidget(remove_port)
         ports_layout.addLayout(port_actions)
+        for field in (
+            self._port_label_edit,
+            self._port_unit_edit,
+            self._port_accepted_types_edit,
+            self._port_accepted_units_edit,
+            self._port_converts_to_edit,
+            self._port_default_edit,
+            self._port_tooltip_edit,
+        ):
+            field.editingFinished.connect(self._auto_update_selected_port)
+        for combo in (
+            self._port_mode_combo, self._port_side_combo, self._port_data_type_combo
+        ):
+            combo.activated.connect(self._auto_update_selected_port)
+        self._port_data_type_combo.lineEdit().editingFinished.connect(
+            self._auto_update_selected_port
+        )
+        self._port_required_check.toggled.connect(self._auto_update_selected_port)
+        self._port_max_connections_field.valueChanged.connect(
+            self._auto_update_selected_port
+        )
         layout.addWidget(self._ports_group)
 
         self._geometry_group = _CanvasCardGroup("Position / size")
@@ -3880,6 +4001,11 @@ class _CanvasEditorToolbox(QDialog):
             self._id_edit, self._text_edit, self._data_edit, self._source_edit,
             self._ports_list, self._port_id_edit, self._port_label_edit,
             self._port_mode_combo, self._port_side_combo,
+            self._port_data_type_combo, self._port_unit_edit,
+            self._port_required_check, self._port_max_connections_field,
+            self._port_accepted_types_edit, self._port_accepted_units_edit,
+            self._port_converts_to_edit, self._port_default_edit,
+            self._port_tooltip_edit,
             self._source_combo, self._target_combo,
             self._source_port_combo, self._target_port_combo, self._route_combo,
             self._line_style_combo, self._line_width_field,
@@ -4138,15 +4264,34 @@ class _CanvasEditorToolbox(QDialog):
         return [[float(point[0]), float(point[1])] for point in values]
 
     def _set_ports_editor(self, ports: list[dict[str, Any]]) -> None:
+        selected = self._ports_list.currentItem()
+        selected_id = "" if selected is None else str(
+            selected.data(Qt.ItemDataRole.UserRole).get("id", "")
+        )
         blocker = QSignalBlocker(self._ports_list)
         self._ports_list.clear()
+        element_id = self.canvas.selectedElementId()
         for port in ports:
+            data_type = str(port.get("dataType", "any"))
+            unit = f" [{port['unit']}]" if port.get("unit") else ""
+            count = self.canvas.portConnectionCount(element_id, port["id"]) if element_id else 0
+            limit = int(port.get("maxConnections", 0))
+            cardinality = f"{count}/{limit}" if limit else str(count)
             item = QListWidgetItem(
-                f"{port['id']}  ·  {port['mode']}  ·  {port['side']}  ·  {port.get('label', '')}"
+                f"{port['id']}  ·  {port['mode']}  ·  {data_type}{unit}  ·  {cardinality} links"
             )
             item.setData(Qt.ItemDataRole.UserRole, dict(port))
+            item.setToolTip(
+                f"{port.get('label', port['id'])}\n{port['mode']} · {port['side']}\n"
+                f"Type: {data_type}{unit}\nConnections: {cardinality}"
+            )
             self._ports_list.addItem(item)
+            if port["id"] == selected_id:
+                self._ports_list.setCurrentItem(item)
+        if self._ports_list.currentItem() is None and self._ports_list.count():
+            self._ports_list.setCurrentRow(0)
         del blocker
+        self._load_selected_port()
 
     def _ports_from_editor(self) -> list[dict[str, Any]]:
         return [
@@ -4158,29 +4303,102 @@ class _CanvasEditorToolbox(QDialog):
         selected = self._ports_list.selectedItems()
         if not selected:
             return
+        self._syncing_port_editor = True
         port = dict(selected[0].data(Qt.ItemDataRole.UserRole))
         self._port_id_edit.setText(port["id"])
         self._port_label_edit.setText(port.get("label", ""))
         self._port_mode_combo.setCurrentText(port["mode"].title())
         self._port_side_combo.setCurrentText(port["side"].title())
+        self._port_data_type_combo.setCurrentText(str(port.get("dataType", "any")))
+        self._port_unit_edit.setText(str(port.get("unit", "")))
+        self._port_required_check.setChecked(bool(port.get("required", False)))
+        self._port_max_connections_field.setValue(int(port.get("maxConnections", 0)))
+        self._port_accepted_types_edit.setText(", ".join(port.get("acceptedTypes", ())))
+        self._port_accepted_units_edit.setText(", ".join(port.get("acceptedUnits", ())))
+        self._port_converts_to_edit.setText(", ".join(port.get("convertsTo", ())))
+        self._port_default_edit.setText(
+            json.dumps(port["defaultValue"], ensure_ascii=False)
+            if "defaultValue" in port else ""
+        )
+        self._port_tooltip_edit.setText(str(port.get("tooltip", "")))
+        element_id = self.canvas.selectedElementId()
+        canvas_item = self.canvas.element(element_id) if element_id else None
+        if canvas_item is not None and canvas_item.port(port["id"]) is not None:
+            state = self.canvas.portRuntimeState(element_id, port["id"])
+            color = "#0f9f8f" if state["valid"] else "#d94e43"
+            self._port_runtime_status.setText(
+                f"Runtime · {state['source']} · {state['actualType']} · {state['reason']}"
+            )
+            self._port_runtime_status.setStyleSheet(f"color: {color};")
+        else:
+            self._port_runtime_status.setText("Runtime · pending port update")
+            self._port_runtime_status.setStyleSheet("color: #8b8179;")
+        self._syncing_port_editor = False
+
+    def _auto_update_selected_port(self, _value: Any = None) -> None:
+        if (
+            self._syncing_port_editor
+            or self._syncing_inspector
+            or self._ports_list.currentItem() is None
+        ):
+            return
+        self._safe_upsert_port()
+
+    def _safe_upsert_port(self, _value: Any = None) -> None:
+        try:
+            self._upsert_port()
+        except (TypeError, ValueError) as error:
+            self._port_runtime_status.setText(f"Port contract rejected · {error}")
+            self._port_runtime_status.setStyleSheet("color: #d94e43;")
+            self.canvas.diagnosticMessage.emit(f"Port contract rejected: {error}")
+
+    @staticmethod
+    def _parse_default_value(text: str) -> Any:
+        value = text.strip()
+        if not value:
+            raise ValueError("No default value")
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
 
     def _upsert_port(self) -> None:
         port_id = self._port_id_edit.text().strip()
         if not port_id:
             return
-        normalized = _normalize_node_ports([{
+        selected = self._ports_list.currentItem()
+        base = (
+            dict(selected.data(Qt.ItemDataRole.UserRole)) if selected is not None else {}
+        )
+        base.update({
             "id": port_id,
             "label": self._port_label_edit.text().strip() or port_id,
             "mode": self._port_mode_combo.currentText().lower(),
             "side": self._port_side_combo.currentText().lower(),
-        }])[0]
-        ports = self._ports_from_editor()
-        for index, port in enumerate(ports):
-            if port["id"] == port_id:
-                ports[index] = normalized
-                break
+            "dataType": self._port_data_type_combo.currentText(),
+            "unit": self._port_unit_edit.text(),
+            "required": self._port_required_check.isChecked(),
+            "maxConnections": int(self._port_max_connections_field.value()),
+            "acceptedTypes": self._port_accepted_types_edit.text(),
+            "acceptedUnits": self._port_accepted_units_edit.text(),
+            "convertsTo": self._port_converts_to_edit.text(),
+            "tooltip": self._port_tooltip_edit.text(),
+        })
+        if self._port_default_edit.text().strip():
+            base["defaultValue"] = self._parse_default_value(self._port_default_edit.text())
         else:
-            ports.append(normalized)
+            base.pop("defaultValue", None)
+        normalized = _normalize_node_ports([base])[0]
+        ports = self._ports_from_editor()
+        if selected is not None:
+            ports[self._ports_list.row(selected)] = normalized
+        else:
+            for index, port in enumerate(ports):
+                if port["id"] == port_id:
+                    ports[index] = normalized
+                    break
+            else:
+                ports.append(normalized)
         self._set_ports_editor(ports)
         self._schedule_inspector_apply(0)
 
@@ -4216,7 +4434,12 @@ class _CanvasEditorToolbox(QDialog):
             allowed = ("output", "free") if source else ("input", "free")
             for port in item.ports:
                 if port["mode"] in allowed:
-                    combo.addItem(f"{port['label']}  ·  {port['mode']}", port["id"])
+                    unit = f" [{port['unit']}]" if port.get("unit") else ""
+                    combo.addItem(
+                        f"{port['label']}  ·  {port['mode']}  ·  "
+                        f"{port.get('dataType', 'any')}{unit}",
+                        port["id"],
+                    )
         index = combo.findData(current)
         combo.setCurrentIndex(max(0, index))
         del blocker
@@ -4470,6 +4693,7 @@ class _CanvasView(QGraphicsView):
         self._right_pan_start = None
         self._right_pan_moved = False
         self._connection_origin: tuple[_CanvasElement, dict[str, Any]] | None = None
+        self._connection_hover_key: tuple[str, str] | None = None
         self._connection_preview = QGraphicsPathItem()
         preview_pen = QPen(QColor("#2563eb"), 2.5, Qt.PenStyle.DashLine)
         preview_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -4515,6 +4739,7 @@ class _CanvasView(QGraphicsView):
                 preview.lineTo(start)
                 self._connection_preview.setPath(preview)
                 self._connection_preview.show()
+                self._show_connection_candidates(endpoint[0], endpoint[1])
                 self.viewport().setCursor(Qt.CursorShape.CrossCursor)
                 self.canvas.diagnosticMessage.emit(
                     f"Connector drag started: {endpoint[0].element_id}.{endpoint[1]['id']}"
@@ -4536,6 +4761,7 @@ class _CanvasView(QGraphicsView):
             source, port = self._connection_origin
             start = source.portScenePosition(port["id"])
             end = self.mapToScene(event.position().toPoint())
+            self._update_connection_hover(self._port_at(event.position().toPoint()))
             delta = max(40.0, abs(end.x() - start.x()) * 0.45)
             direction = 1 if end.x() >= start.x() else -1
             preview = QPainterPath(start)
@@ -4565,6 +4791,7 @@ class _CanvasView(QGraphicsView):
             self._connection_origin = None
             self._connection_preview.hide()
             target = self._port_at(event.position().toPoint())
+            self._clear_connection_feedback()
             self.viewport().unsetCursor()
             if target is not None and (target[0] is not source or target[1]["id"] != source_port["id"]):
                 try:
@@ -4599,6 +4826,88 @@ class _CanvasView(QGraphicsView):
         elif isinstance(item, _CanvasConnector):
             self.canvas.connectorClicked.emit(item.connector_id)
             self.canvas.objectClicked.emit(item.connector_id)
+
+    def keyPressEvent(self, event) -> None:
+        if self._connection_origin is not None and event.key() == Qt.Key.Key_Escape:
+            self._connection_origin = None
+            self._connection_preview.hide()
+            self._clear_connection_feedback()
+            self.viewport().unsetCursor()
+            self.canvas.diagnosticMessage.emit("Connector drag cancelled")
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _set_connection_preview_state(self, state: str) -> None:
+        color = {
+            "compatible": "#10b981",
+            "conversion": "#8b5cf6",
+            "incompatible": "#ef4444",
+        }.get(state, "#2563eb")
+        pen = QPen(QColor(color), 2.5, Qt.PenStyle.DashLine)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        self._connection_preview.setPen(pen)
+
+    def _show_connection_candidates(
+        self, origin: _CanvasElement, origin_port: dict[str, Any]
+    ) -> None:
+        for item in self.canvas._elements.values():
+            feedback: dict[str, tuple[str, str]] = {}
+            for port in item.ports:
+                if item is origin and port["id"] == origin_port["id"]:
+                    feedback[port["id"]] = ("origin", "Connection origin")
+                    continue
+                compatibility = self.canvas.portCompatibility(
+                    origin.element_id,
+                    origin_port["id"],
+                    item.element_id,
+                    port["id"],
+                )
+                state = (
+                    "conversion" if compatibility.compatible and compatibility.conversion
+                    else "compatible" if compatibility.compatible
+                    else "incompatible"
+                )
+                feedback[port["id"]] = (state, compatibility.reason)
+            item.setPortFeedback(feedback)
+        self._connection_hover_key = None
+        self._set_connection_preview_state("origin")
+
+    def _update_connection_hover(
+        self, target: tuple[_CanvasElement, dict[str, Any]] | None
+    ) -> None:
+        if self._connection_origin is None:
+            return
+        key = None if target is None else (target[0].element_id, target[1]["id"])
+        if key == self._connection_hover_key:
+            return
+        self._connection_hover_key = key
+        if target is None:
+            self._set_connection_preview_state("origin")
+            return
+        origin, origin_port = self._connection_origin
+        if target[0] is origin and target[1]["id"] == origin_port["id"]:
+            compatibility = PortCompatibility(False, "Choose a different target port")
+        else:
+            compatibility = self.canvas.portCompatibility(
+                origin.element_id,
+                origin_port["id"],
+                target[0].element_id,
+                target[1]["id"],
+            )
+        state = (
+            "conversion" if compatibility.compatible and compatibility.conversion
+            else "compatible" if compatibility.compatible
+            else "incompatible"
+        )
+        self._set_connection_preview_state(state)
+        self.canvas.diagnosticMessage.emit(compatibility.reason)
+
+    def _clear_connection_feedback(self) -> None:
+        for item in self.canvas._elements.values():
+            item.clearPortFeedback()
+        self._connection_hover_key = None
+        self._set_connection_preview_state("origin")
 
     def contextMenuEvent(self, event) -> None:
         item = self.itemAt(event.pos())
@@ -4687,6 +4996,7 @@ class MonkezCanva(QWidget):
     objectStateChanged = pyqtSignal(str, bool, bool)
     groupAdded = pyqtSignal(str)
     groupRemoved = pyqtSignal(str)
+    portRuntimeValueChanged = pyqtSignal(str, str, object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -4707,6 +5017,7 @@ class MonkezCanva(QWidget):
         self._minimap_visible = True
         self._isolated_ids: set[str] = set()
         self._message_payloads: dict[str, dict[str, Any]] = {}
+        self._port_runtime_values: dict[tuple[str, str], Any] = {}
         self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
         self._background_pixmap = QPixmap()
@@ -5544,14 +5855,142 @@ class MonkezCanva(QWidget):
             raise TypeError(f"Element {element_id!r} does not support ports")
         return [dict(port) for port in item.ports]
 
+    def portConnectionCount(
+        self, element_id: str, port_id: str, exclude_connector: str = ""
+    ) -> int:
+        """Return the number of connectors currently attached to one port."""
+
+        element_id, port_id = str(element_id), str(port_id)
+        return sum(
+            1
+            for connector in self._connectors.values()
+            if connector.connector_id != str(exclude_connector)
+            and (
+                connector.source.element_id == element_id
+                and connector.source_port == port_id
+                or connector.target.element_id == element_id
+                and connector.target_port == port_id
+            )
+        )
+
+    def portCompatibility(
+        self,
+        first_element_id: str,
+        first_port_id: str,
+        second_element_id: str,
+        second_port_id: str,
+        exclude_connector: str = "",
+    ) -> PortCompatibility:
+        """Evaluate orientation, cardinality, type and unit compatibility."""
+
+        first = self._required_element(first_element_id)
+        second = self._required_element(second_element_id)
+        first_port = first.port(first_port_id)
+        second_port = second.port(second_port_id)
+        if first_port is None or second_port is None:
+            raise KeyError("Both node ports must exist")
+        return evaluate_port_pair(
+            first_port,
+            second_port,
+            first_connections=self.portConnectionCount(
+                first.element_id, first_port["id"], exclude_connector
+            ),
+            second_connections=self.portConnectionCount(
+                second.element_id, second_port["id"], exclude_connector
+            ),
+        )
+
+    def setPortRuntimeValue(
+        self, element_id: str, port_id: str, value: Any, validate: bool = True
+    ) -> "MonkezCanva":
+        """Set a transient, non-persistent value for runtime visualization."""
+
+        item = self._required_element(element_id)
+        port = item.port(port_id)
+        if port is None:
+            raise KeyError(f"Unknown port {port_id!r} on {element_id!r}")
+        validation = validate_port_value(port, value)
+        if validate and not validation.valid:
+            self.diagnosticMessage.emit(validation.reason)
+            raise TypeError(validation.reason)
+        key = (item.element_id, port["id"])
+        self._port_runtime_values[key] = value
+        item.update()
+        self.portRuntimeValueChanged.emit(key[0], key[1], value)
+        return self
+
+    def portRuntimeValue(
+        self, element_id: str, port_id: str, use_default: bool = True
+    ) -> Any:
+        item = self._required_element(element_id)
+        port = item.port(port_id)
+        if port is None:
+            raise KeyError(f"Unknown port {port_id!r} on {element_id!r}")
+        key = (item.element_id, port["id"])
+        if key in self._port_runtime_values:
+            return self._port_runtime_values[key]
+        return port.get("defaultValue") if use_default else None
+
+    def portRuntimeState(self, element_id: str, port_id: str) -> dict[str, Any]:
+        item = self._required_element(element_id)
+        port = item.port(port_id)
+        if port is None:
+            raise KeyError(f"Unknown port {port_id!r} on {element_id!r}")
+        key = (item.element_id, port["id"])
+        source = "runtime" if key in self._port_runtime_values else (
+            "default" if "defaultValue" in port else "unset"
+        )
+        value = self.portRuntimeValue(element_id, port_id)
+        validation = validate_port_value(port, value)
+        return {
+            "value": value,
+            "source": source,
+            "valid": validation.valid,
+            "reason": validation.reason,
+            "actualType": validation.actual_type,
+        }
+
+    def clearPortRuntimeValue(self, element_id: str, port_id: str) -> bool:
+        item = self._required_element(element_id)
+        if item.port(port_id) is None:
+            raise KeyError(f"Unknown port {port_id!r} on {element_id!r}")
+        key = (item.element_id, str(port_id))
+        if key not in self._port_runtime_values:
+            return False
+        self._port_runtime_values.pop(key)
+        item.update()
+        self.portRuntimeValueChanged.emit(key[0], key[1], None)
+        return True
+
     def setNodePorts(self, element_id: str, ports) -> "MonkezCanva":
-        if not self._restoring:
-            self._ensure_writable()
         item = self._required_element(element_id)
         if not item.supports_ports:
             raise TypeError(f"Element {element_id!r} does not support ports")
+        if not self._restoring:
+            self._ensure_writable()
+            normalized = _normalize_node_ports(ports)
+            valid_ids = {port["id"] for port in normalized}
+
+            def mutate(document: CanvasDocument) -> None:
+                for connector in tuple(document.connectors):
+                    changes: dict[str, str] = {}
+                    if connector.source == str(element_id) and connector.source_port not in valid_ids:
+                        changes["sourcePort"] = ""
+                    if connector.target == str(element_id) and connector.target_port not in valid_ids:
+                        changes["targetPort"] = ""
+                    if changes:
+                        document.update_connector(connector.id, changes)
+                document.update_element(str(element_id), {"ports": normalized})
+
+            self._push_document_mutation(
+                mutate, "Edit node ports", merge_key=f"element:{element_id}"
+            )
+            return self
         item.ports = _normalize_node_ports(ports)
         valid_ids = {port["id"] for port in item.ports}
+        for key in tuple(self._port_runtime_values):
+            if key[0] == item.element_id and key[1] not in valid_ids:
+                self._port_runtime_values.pop(key, None)
         for connector in self._connectors.values():
             if connector.source is item and connector.source_port not in valid_ids:
                 connector.source_port = ""
@@ -5570,9 +6009,12 @@ class MonkezCanva(QWidget):
         side: str | None = None,
         label: str = "",
         position: float | None = None,
+        **properties,
     ) -> "MonkezCanva":
         ports = self.nodePorts(element_id)
-        port: dict[str, Any] = {"id": port_id, "mode": mode, "label": label or port_id}
+        port: dict[str, Any] = {
+            "id": port_id, "mode": mode, "label": label or port_id, **properties
+        }
         if side is not None:
             port["side"] = side
         if position is not None:
@@ -5814,6 +6256,9 @@ class MonkezCanva(QWidget):
         self._elements[requested] = item
         if element_id in self._animations:
             self._animations[requested] = self._animations.pop(element_id)
+        for key in tuple(self._port_runtime_values):
+            if key[0] == element_id:
+                self._port_runtime_values[(requested, key[1])] = self._port_runtime_values.pop(key)
         self.itemIdChanged.emit(element_id, requested)
         self.documentChanged.emit()
         return requested
@@ -5969,10 +6414,43 @@ class MonkezCanva(QWidget):
             raise KeyError("Both connector endpoints must exist")
         source_port = str(options.get("sourcePort", ""))
         target_port = str(options.get("targetPort", ""))
+        if source.supports_ports and target.supports_ports and (
+            not source_port or not target_port
+        ):
+            source_candidates = (
+                [source.port(source_port)] if source_port
+                else [port for port in source.ports if port["mode"] in ("output", "free")]
+            )
+            target_candidates = (
+                [target.port(target_port)] if target_port
+                else [port for port in target.ports if port["mode"] in ("input", "free")]
+            )
+            for source_candidate in filter(None, source_candidates):
+                for target_candidate in filter(None, target_candidates):
+                    compatibility = evaluate_directed_ports(
+                        source_candidate,
+                        target_candidate,
+                        source_connections=self.portConnectionCount(
+                            source.element_id, source_candidate["id"]
+                        ),
+                        target_connections=self.portConnectionCount(
+                            target.element_id, target_candidate["id"]
+                        ),
+                    )
+                    if compatibility.compatible:
+                        source_port = source_candidate["id"]
+                        target_port = target_candidate["id"]
+                        break
+                if source_port and target_port:
+                    break
         if source.supports_ports and not source_port:
-            source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
+            source_port = next(
+                (port["id"] for port in source.ports if port["mode"] in ("output", "free")), ""
+            )
         if target.supports_ports and not target_port:
-            target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
+            target_port = next(
+                (port["id"] for port in target.ports if port["mode"] in ("input", "free")), ""
+            )
         self._validate_connection_ports(source, source_port, target, target_port)
         options["sourcePort"] = source_port
         options["targetPort"] = target_port
@@ -6002,12 +6480,13 @@ class MonkezCanva(QWidget):
         self.documentChanged.emit()
         return connector_id
 
-    @staticmethod
     def _validate_connection_ports(
+        self,
         source: _CanvasElement,
         source_port: str,
         target: _CanvasElement,
         target_port: str,
+        exclude_connector: str = "",
     ) -> None:
         source_config = source.port(source_port) if source_port else None
         target_config = target.port(target_port) if target_port else None
@@ -6015,9 +6494,22 @@ class MonkezCanva(QWidget):
             raise KeyError(f"Unknown source port {source_port!r} on {source.element_id!r}")
         if target_port and target_config is None:
             raise KeyError(f"Unknown target port {target_port!r} on {target.element_id!r}")
-        if source_config and source_config["mode"] == "input":
+        if source_config and target_config:
+            compatibility = evaluate_directed_ports(
+                source_config,
+                target_config,
+                source_connections=self.portConnectionCount(
+                    source.element_id, source_port, exclude_connector
+                ),
+                target_connections=self.portConnectionCount(
+                    target.element_id, target_port, exclude_connector
+                ),
+            )
+            if not compatibility.compatible:
+                raise ValueError(compatibility.reason)
+        elif source_config and source_config["mode"] == "input":
             raise ValueError("A connector cannot start from an input port")
-        if target_config and target_config["mode"] == "output":
+        elif target_config and target_config["mode"] == "output":
             raise ValueError("A connector cannot end at an output port")
 
     def connectPorts(
@@ -6035,9 +6527,12 @@ class MonkezCanva(QWidget):
         second_port = second.port(second_port_id)
         if first_port is None or second_port is None:
             raise KeyError("Both node ports must exist")
-        if first_port["mode"] == "input" or second_port["mode"] == "output":
-            if second_port["mode"] not in ("output", "free") or first_port["mode"] not in ("input", "free"):
-                raise ValueError("Ports are incompatible; connect output/free to input/free")
+        compatibility = self.portCompatibility(
+            first.element_id, first_port["id"], second.element_id, second_port["id"]
+        )
+        if not compatibility.compatible:
+            raise ValueError(compatibility.reason)
+        if not compatibility.source_is_first:
             first, second = second, first
             first_port, second_port = second_port, first_port
         options["sourcePort"] = first_port["id"]
@@ -6080,7 +6575,9 @@ class MonkezCanva(QWidget):
             source_port = next((port["id"] for port in source.ports if port["mode"] in ("output", "free")), "")
         if target.supports_ports and not target_port:
             target_port = next((port["id"] for port in target.ports if port["mode"] in ("input", "free")), "")
-        self._validate_connection_ports(source, source_port, target, target_port)
+        self._validate_connection_ports(
+            source, source_port, target, target_port, connector.connector_id
+        )
         if (
             connector.source is source and connector.target is target
             and connector.source_port == source_port and connector.target_port == target_port
@@ -6577,6 +7074,9 @@ class MonkezCanva(QWidget):
         item = self._elements.pop(str(element_id), None)
         if item is None:
             return False
+        for key in tuple(self._port_runtime_values):
+            if key[0] == str(element_id):
+                self._port_runtime_values.pop(key, None)
         animation = self._animations.pop(str(element_id), None)
         if animation is not None:
             animation.stop()
@@ -6613,6 +7113,7 @@ class MonkezCanva(QWidget):
             if use_macro:
                 self.endCommandMacro()
         self._message_payloads.clear()
+        self._port_runtime_values.clear()
 
     def documentModel(self) -> CanvasDocument:
         """Return the canonical Qt-free document shared by this canvas view."""
@@ -7153,6 +7654,7 @@ class MonkezCanva(QWidget):
             document.reconcile(prepared, origin=self)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
+        self._port_runtime_values.clear()
         self._document_model = document
         self._document_subscription = document.subscribe(self._on_document_operation)
         self._last_rendered_document_revision = document.revision

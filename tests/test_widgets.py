@@ -1072,6 +1072,98 @@ class WidgetTests(unittest.TestCase):
         window.close()
         window.deleteLater()
 
+    def test_canva_typed_ports_runtime_inspector_and_drag_feedback(self) -> None:
+        window = QDialog()
+        layout = QVBoxLayout(window)
+        canvas = MonkezCanva()
+        layout.addWidget(canvas)
+        source = canvas.addNode(
+            "Source", 0, 0, element_id="typed-source",
+            ports=[{
+                "id": "voltage", "mode": "output", "side": "right",
+                "dataType": "float", "unit": "V", "maxConnections": 1,
+                "tooltip": "Measured voltage",
+            }],
+        )
+        compatible = canvas.addNode(
+            "Display", 240, 0, element_id="typed-display",
+            ports=[{
+                "id": "reading", "mode": "input", "side": "left",
+                "dataType": "str", "unit": "mV", "acceptedTypes": ["float"],
+                "acceptedUnits": ["V"],
+            }],
+        )
+        incompatible = canvas.addNode(
+            "Gate", 240, 150, element_id="typed-gate",
+            ports=[{
+                "id": "enabled", "mode": "input", "side": "left",
+                "dataType": "bool",
+            }],
+        )
+        window.resize(900, 520)
+        window.show()
+        canvas.setEditMode(True)
+        self.app.processEvents()
+
+        view = canvas.view()
+        start = view.mapFromScene(canvas.element(source).portScenePosition("voltage"))
+        bad_target = view.mapFromScene(canvas.element(incompatible).portScenePosition("enabled"))
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        self.app.processEvents()
+        self.assertEqual(
+            "conversion", canvas.element(compatible)._port_feedback["reading"][0]
+        )
+        self.assertEqual(
+            "incompatible", canvas.element(incompatible)._port_feedback["enabled"][0]
+        )
+        QTest.mouseMove(view.viewport(), bad_target, delay=10)
+        self.app.processEvents()
+        self.assertEqual("#ef4444", view._connection_preview.pen().color().name())
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(20, 20))
+        self.assertFalse(canvas.element(source)._port_feedback)
+
+        self.assertTrue(canvas.portCompatibility(source, "voltage", compatible, "reading").conversion)
+        edge = canvas.connectPorts(source, "voltage", compatible, "reading")
+        with self.assertRaisesRegex(ValueError, "connection limit"):
+            canvas.connectPorts(source, "voltage", compatible, "reading")
+
+        changed = []
+        canvas.portRuntimeValueChanged.connect(
+            lambda element_id, port_id, value: changed.append((element_id, port_id, value))
+        )
+        canvas.setPortRuntimeValue(source, "voltage", 12.5)
+        self.assertEqual(12.5, canvas.portRuntimeValue(source, "voltage"))
+        self.assertEqual("runtime", canvas.portRuntimeState(source, "voltage")["source"])
+        self.assertEqual((source, "voltage", 12.5), changed[-1])
+        source_record = next(
+            item for item in canvas.toDocument()["elements"] if item["id"] == source
+        )
+        self.assertNotIn("runtimeValue", source_record["ports"][0])
+
+        canvas.selectElement(source)
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(source)
+        self.assertEqual("float", toolbox._port_data_type_combo.currentText())
+        self.assertEqual("V", toolbox._port_unit_edit.text())
+        self.assertEqual(1, toolbox._port_max_connections_field.value())
+        self.assertIn("runtime", toolbox._port_runtime_status.text().lower())
+        toolbox._port_tooltip_edit.setText("Updated immediately")
+        toolbox._port_tooltip_edit.editingFinished.emit()
+        self.app.processEvents()
+        self.assertEqual(
+            "Updated immediately", canvas.nodePorts(source)[0]["tooltip"]
+        )
+
+        self.assertTrue(canvas.removeConnector(edge))
+        self.assertTrue(canvas.clearPortRuntimeValue(source, "voltage"))
+        canvas.setPortRuntimeValue(source, "voltage", 9.0)
+        canvas.setDocumentModel(CanvasDocument.from_dict(canvas.toDocument()))
+        self.assertEqual("unset", canvas.portRuntimeState(source, "voltage")["source"])
+        canvas.setEditMode(False)
+        window.close()
+        window.deleteLater()
+
     def test_canva_edit_mode_controls_item_interaction(self) -> None:
         canvas = MonkezCanva()
         element_id = canvas.addElement("rectangle", 10, 10)
