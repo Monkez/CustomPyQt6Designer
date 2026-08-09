@@ -6753,11 +6753,26 @@ class _CanvasRuntimeDebugger(QDialog):
         workflow_cancel = QPushButton("Cancel")
         workflow_cancel.setIcon(_canvas_icon("delete"))
         workflow_cancel.clicked.connect(canvas.cancelWorkflow)
+        workflow_clock = QPushButton("Clock")
+        workflow_clock.setCheckable(True)
+        workflow_clock.setIcon(_canvas_icon("arrow"))
+        workflow_clock.setToolTip("Drive recurring schedules from the wall clock")
+        workflow_clock.clicked.connect(
+            lambda checked: canvas.startWorkflowClock() if checked else canvas.stopWorkflowClock()
+        )
+        workflow_advance = QPushButton("+1 s")
+        workflow_advance.setToolTip("Advance the deterministic workflow clock by one second")
+        workflow_advance.clicked.connect(lambda: canvas.advanceWorkflow(1.0))
         workflow_actions.addWidget(workflow_run)
         workflow_actions.addWidget(workflow_step)
         workflow_actions.addWidget(workflow_cancel)
+        workflow_actions.addWidget(workflow_clock)
+        workflow_actions.addWidget(workflow_advance)
         workflow_actions.addStretch(1)
         workflow_layout.addLayout(workflow_actions)
+        self._workflow_status = QLabel()
+        self._workflow_status.setObjectName("runtimeState")
+        workflow_layout.addWidget(self._workflow_status)
         self._workflow = QListWidget()
         workflow_layout.addWidget(self._workflow, 1)
         self._tabs.addTab(self._messages, "Messages")
@@ -6816,6 +6831,9 @@ class _CanvasRuntimeDebugger(QDialog):
         canvas.workflowNodeStateChanged.connect(
             lambda _node_id, _state: self._refresh_workflow()
         )
+        canvas.workflowPressureChanged.connect(lambda _stats: self._refresh_workflow())
+        canvas.workflowScheduleChanged.connect(lambda _schedules: self._refresh_workflow())
+        canvas.workflowClockChanged.connect(workflow_clock.setChecked)
         canvas.dataBindingEvent.connect(lambda _event: self._refresh_bindings())
         canvas.dataBindingStateChanged.connect(
             lambda _binding_id, _state: self._refresh_bindings()
@@ -6885,7 +6903,24 @@ class _CanvasRuntimeDebugger(QDialog):
             )
 
     def _refresh_workflow(self) -> None:
+        stats = self.canvas.workflowQueueStats()
+        schedules = self.canvas.workflowSchedules()
+        clock = " · clock" if self.canvas.workflowClockRunning() else ""
+        self._workflow_status.setText(
+            f"Queue {stats['queued']}/{stats['capacity']}  ·  "
+            f"{stats['utilization'] * 100:.0f}%  ·  "
+            f"dropped {stats['dropped']}  ·  "
+            f"schedules {len(schedules)}{clock}"
+        )
         self._workflow.clear()
+        if schedules:
+            for schedule in schedules:
+                self._workflow.addItem(
+                    f"⏱ {schedule['scheduleId']}  ·  {schedule['nodeId']}  ·  "
+                    f"{schedule['state']}  ·  {schedule['emitted']} emitted  ·  "
+                    f"{schedule['skipped']} skipped"
+                )
+            self._workflow.addItem("— trace —")
         for event in reversed(self.canvas.workflowTrace(limit=400)):
             detail = event.get("detail") or {}
             suffix = ""
@@ -7600,6 +7635,9 @@ class MonkezCanva(QWidget):
     workflowTraceEvent = pyqtSignal(dict)
     workflowNodeStateChanged = pyqtSignal(str, str)
     workflowFinished = pyqtSignal(dict)
+    workflowPressureChanged = pyqtSignal(dict)
+    workflowScheduleChanged = pyqtSignal(list)
+    workflowClockChanged = pyqtSignal(bool)
     dataBindingEvent = pyqtSignal(dict)
     dataBindingStateChanged = pyqtSignal(str, dict)
     dataBindingBatchApplied = pyqtSignal(list)
@@ -7654,6 +7692,10 @@ class MonkezCanva(QWidget):
         self._workflow_trace: list[dict[str, Any]] = []
         self._workflow_visualize = True
         self._workflow_finish_emitted = False
+        self._workflow_clock_timer = QTimer(self)
+        self._workflow_clock_timer.setInterval(50)
+        self._workflow_clock_timer.timeout.connect(self._workflow_clock_tick)
+        self._workflow_clock_last = 0.0
         self._port_runtime_values: dict[tuple[str, str], Any] = {}
         self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
@@ -11627,6 +11669,8 @@ class MonkezCanva(QWidget):
         *,
         handlers: Mapping[str, Callable] | None = None,
         max_steps: int = 100_000,
+        max_queue_size: int = 10_000,
+        backpressure_policy: str = "reject_new",
         visualize: bool = True,
     ) -> WorkflowExecutor:
         graph = WorkflowGraph.from_document(self.toDocument())
@@ -11634,6 +11678,8 @@ class MonkezCanva(QWidget):
             graph,
             event_sink=self._on_workflow_event,
             max_steps=max_steps,
+            max_queue_size=max_queue_size,
+            backpressure_policy=backpressure_policy,
         )
         for key, handler in dict(handlers or {}).items():
             executor.register_handler(
@@ -11647,6 +11693,7 @@ class MonkezCanva(QWidget):
             item = self._elements.get(node_id)
             if item is not None:
                 item.update()
+        self._emit_workflow_runtime_state()
         return executor
 
     def startWorkflow(
@@ -11658,10 +11705,14 @@ class MonkezCanva(QWidget):
         priority: int = 0,
         token_id: str | None = None,
         handlers: Mapping[str, Callable] | None = None,
+        max_queue_size: int = 10_000,
+        backpressure_policy: str = "reject_new",
         visualize: bool = True,
     ) -> str:
         executor = self.createWorkflowExecutor(
-            handlers=handlers, visualize=visualize
+            handlers=handlers, visualize=visualize,
+            max_queue_size=max_queue_size,
+            backpressure_policy=backpressure_policy,
         )
         return executor.start(
             source_id, payload, metadata=metadata, priority=priority,
@@ -11679,9 +11730,13 @@ class MonkezCanva(QWidget):
         handlers: Mapping[str, Callable] | None = None,
         visualize: bool = True,
         max_steps: int = 100_000,
+        max_queue_size: int = 10_000,
+        backpressure_policy: str = "reject_new",
     ) -> dict[str, Any]:
         executor = self.createWorkflowExecutor(
-            handlers=handlers, max_steps=max_steps, visualize=visualize
+            handlers=handlers, max_steps=max_steps, visualize=visualize,
+            max_queue_size=max_queue_size,
+            backpressure_policy=backpressure_policy,
         )
         executor.start(
             source_id, payload, metadata=metadata, priority=priority,
@@ -11719,6 +11774,126 @@ class MonkezCanva(QWidget):
             return self._emit_workflow_finished(result)
         return self._workflow_result_dict(result)
 
+    def scheduleWorkflow(
+        self,
+        element_id: str,
+        payload: Any = None,
+        *,
+        interval: float | None = None,
+        initial_delay: float | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        priority: int = 0,
+        max_occurrences: int | None = None,
+        catch_up: str | None = None,
+        max_burst: int = 1000,
+        schedule_id: str | None = None,
+        handlers: Mapping[str, Callable] | None = None,
+        visualize: bool = True,
+        start_clock: bool = False,
+    ) -> str:
+        """Create a logical recurring schedule for a Timer/workflow node.
+
+        Schedule state is runtime-only. It never dirties the canvas document;
+        callers can drive it deterministically with :meth:`advanceWorkflow` or
+        opt into the Qt wall-clock adapter with ``start_clock=True``.
+        """
+
+        config = self.workflowConfig(element_id)
+        executor = self._workflow_executor
+        if executor is None or executor.state in ("completed", "failed", "cancelled"):
+            executor = self.createWorkflowExecutor(
+                handlers=handlers, visualize=visualize,
+                max_queue_size=int(config.get("maxQueueSize", 10_000)),
+                backpressure_policy=str(config.get("overflow", "reject_new")),
+            )
+        every = float(config.get("interval", 1.0) if interval is None else interval)
+        delay = config.get("initialDelay") if initial_delay is None else initial_delay
+        limit = config.get("maxOccurrences") if max_occurrences is None else max_occurrences
+        policy = str(config.get("catchUp", "latest") if catch_up is None else catch_up)
+        schedule = executor.schedule_recurring(
+            element_id, payload,
+            interval=every, initial_delay=delay, metadata=metadata,
+            priority=priority, max_occurrences=limit, catch_up=policy,
+            max_burst=max_burst, schedule_id=schedule_id,
+        )
+        if start_clock:
+            self.startWorkflowClock()
+        self._emit_workflow_runtime_state()
+        return schedule
+
+    def workflowQueueStats(self) -> dict[str, Any]:
+        if self._workflow_executor is None:
+            return {
+                "queued": 0, "capacity": 0, "utilization": 0.0,
+                "highWatermark": 0, "accepted": 0, "rejected": 0,
+                "dropped": 0, "policy": "reject_new",
+            }
+        return self._workflow_executor.pressure().to_dict()
+
+    def workflowSchedules(self) -> list[dict[str, Any]]:
+        if self._workflow_executor is None:
+            return []
+        return [snapshot.to_dict() for snapshot in self._workflow_executor.schedules()]
+
+    def pauseWorkflowSchedule(self, schedule_id: str) -> bool:
+        if self._workflow_executor is None:
+            return False
+        changed = self._workflow_executor.pause_schedule(schedule_id)
+        if changed:
+            self._emit_workflow_runtime_state()
+        return changed
+
+    def resumeWorkflowSchedule(self, schedule_id: str) -> bool:
+        if self._workflow_executor is None:
+            return False
+        changed = self._workflow_executor.resume_schedule(schedule_id)
+        if changed:
+            self._emit_workflow_runtime_state()
+        return changed
+
+    def cancelWorkflowSchedule(self, schedule_id: str) -> bool:
+        if self._workflow_executor is None:
+            return False
+        changed = self._workflow_executor.cancel_schedule(schedule_id)
+        if changed:
+            self._emit_workflow_runtime_state()
+        return changed
+
+    def startWorkflowClock(self, interval_ms: int = 50) -> bool:
+        if self._workflow_executor is None:
+            return False
+        self._workflow_clock_timer.setInterval(max(16, int(interval_ms)))
+        self._workflow_clock_last = time.monotonic()
+        was_active = self._workflow_clock_timer.isActive()
+        self._workflow_clock_timer.start()
+        if not was_active:
+            self.workflowClockChanged.emit(True)
+        return True
+
+    def stopWorkflowClock(self) -> bool:
+        if not self._workflow_clock_timer.isActive():
+            return False
+        self._workflow_clock_timer.stop()
+        self._workflow_clock_last = 0.0
+        self.workflowClockChanged.emit(False)
+        return True
+
+    def workflowClockRunning(self) -> bool:
+        return self._workflow_clock_timer.isActive()
+
+    def _workflow_clock_tick(self) -> None:
+        if self._workflow_executor is None:
+            self.stopWorkflowClock()
+            return
+        now = time.monotonic()
+        elapsed = max(0.0, now - (self._workflow_clock_last or now))
+        self._workflow_clock_last = now
+        result = self._workflow_executor.advance(elapsed)
+        self._emit_workflow_runtime_state()
+        if result.state in ("completed", "failed", "cancelled"):
+            self.stopWorkflowClock()
+            self._emit_workflow_finished(result)
+
     def pauseWorkflow(self) -> bool:
         return bool(self._workflow_executor and self._workflow_executor.pause())
 
@@ -11736,6 +11911,7 @@ class MonkezCanva(QWidget):
             return False
         changed = self._workflow_executor.cancel()
         if changed:
+            self.stopWorkflowClock()
             self._emit_workflow_finished(self._workflow_executor.result())
         return changed
 
@@ -11752,6 +11928,7 @@ class MonkezCanva(QWidget):
         )
 
     def clearWorkflowRuntime(self) -> None:
+        self.stopWorkflowClock()
         self._workflow_executor = None
         self._workflow_trace.clear()
         old_ids = tuple(self._workflow_node_states)
@@ -11761,6 +11938,10 @@ class MonkezCanva(QWidget):
             if item is not None:
                 item.update()
         self.diagnosticMessage.emit("Workflow runtime state cleared")
+
+    def _emit_workflow_runtime_state(self) -> None:
+        self.workflowPressureChanged.emit(self.workflowQueueStats())
+        self.workflowScheduleChanged.emit(self.workflowSchedules())
 
     def _on_workflow_event(self, event: WorkflowTraceEvent) -> None:
         record = event.to_dict()
@@ -11779,6 +11960,7 @@ class MonkezCanva(QWidget):
             if item is not None:
                 item.update()
             self.workflowNodeStateChanged.emit(event.node_id, state)
+        self._emit_workflow_runtime_state()
         if (
             event.event == "connector_emitted"
             and getattr(self, "_workflow_visualize", True)
@@ -14759,6 +14941,7 @@ class MonkezCanva(QWidget):
     autoSaveDelay = pyqtProperty(int, getAutoSaveDelay, setAutoSaveDelay)
 
     def closeEvent(self, event) -> None:
+        self.stopWorkflowClock()
         if self._autosave_timer.isActive():
             self._autosave_timer.stop()
             self._flush_autosave()

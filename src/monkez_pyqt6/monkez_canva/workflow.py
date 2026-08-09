@@ -22,6 +22,15 @@ WORKFLOW_COMPONENT_TYPES = (
     "wf_counter", "wf_state_machine",
 )
 WORKFLOW_TERMINAL_STATES = frozenset(("completed", "failed", "cancelled"))
+WORKFLOW_BACKPRESSURE_POLICIES = frozenset(
+    ("reject_new", "drop_newest", "drop_oldest")
+)
+WORKFLOW_CATCH_UP_POLICIES = frozenset(("all", "latest", "skip"))
+WORKFLOW_FAILURE_PORTS = ("error", "failure")
+
+
+class WorkflowBackpressureError(RuntimeError):
+    """A bounded workflow queue rejected a new work item."""
 
 
 def _plain(value: Any) -> Any:
@@ -147,6 +156,21 @@ class WorkflowEmission:
 class WorkflowNodeResult:
     emissions: tuple[WorkflowEmission, ...] = ()
     output: Any = None
+    failure: Mapping[str, Any] | None = None
+
+    @classmethod
+    def failed(
+        cls,
+        message: str,
+        *,
+        code: str = "workflow_failure",
+        detail: Mapping[str, Any] | None = None,
+    ) -> "WorkflowNodeResult":
+        return cls(failure={
+            "message": str(message),
+            "code": str(code),
+            "detail": _plain(dict(detail or {})),
+        })
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +205,55 @@ class WorkflowRunResult:
     node_states: Mapping[str, str]
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowPressureSnapshot:
+    queued: int
+    capacity: int
+    high_watermark: int
+    accepted: int
+    rejected: int
+    dropped: int
+    policy: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "queued": self.queued,
+            "capacity": self.capacity,
+            "utilization": self.queued / max(1, self.capacity),
+            "highWatermark": self.high_watermark,
+            "accepted": self.accepted,
+            "rejected": self.rejected,
+            "dropped": self.dropped,
+            "policy": self.policy,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowScheduleSnapshot:
+    schedule_id: str
+    node_id: str
+    interval: float
+    next_due: float
+    emitted: int
+    skipped: int
+    max_occurrences: int | None
+    catch_up: str
+    state: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scheduleId": self.schedule_id,
+            "nodeId": self.node_id,
+            "interval": self.interval,
+            "nextDue": self.next_due,
+            "emitted": self.emitted,
+            "skipped": self.skipped,
+            "maxOccurrences": self.max_occurrences,
+            "catchUp": self.catch_up,
+            "state": self.state,
+        }
+
+
 @dataclass(slots=True)
 class WorkflowContext:
     executor: "WorkflowExecutor"
@@ -207,6 +280,23 @@ class _WorkItem:
     generation: int = field(compare=False, default=0)
 
 
+@dataclass(slots=True)
+class _RecurringSchedule:
+    schedule_id: str
+    node_id: str
+    payload: Any
+    metadata: dict[str, Any]
+    priority: int
+    interval: float
+    next_due: float
+    max_occurrences: int | None
+    catch_up: str
+    max_burst: int
+    emitted: int = 0
+    skipped: int = 0
+    state: str = "active"
+
+
 WorkflowHandler = Callable[[WorkflowContext, Any], Any]
 
 
@@ -220,12 +310,19 @@ class WorkflowExecutor:
         clock: Callable[[], float] = time.monotonic,
         event_sink: Callable[[WorkflowTraceEvent], None] | None = None,
         max_steps: int = 100_000,
+        max_queue_size: int = 10_000,
+        backpressure_policy: str = "reject_new",
     ) -> None:
         graph.validate()
         self.graph = graph
         self._clock = clock
         self._event_sink = event_sink
         self.max_steps = max(1, int(max_steps))
+        self.max_queue_size = max(1, int(max_queue_size))
+        policy = str(backpressure_policy).strip().lower()
+        if policy not in WORKFLOW_BACKPRESSURE_POLICIES:
+            raise ValueError(f"Unknown workflow backpressure policy: {policy}")
+        self.backpressure_policy = policy
         self._queue: list[_WorkItem] = []
         self._order = 0
         self._sequence = 0
@@ -240,6 +337,11 @@ class WorkflowExecutor:
         self._errors: list[dict[str, Any]] = []
         self._trace: list[WorkflowTraceEvent] = []
         self._steps = 0
+        self._accepted = 0
+        self._rejected = 0
+        self._dropped = 0
+        self._high_watermark = 0
+        self._schedules: dict[str, _RecurringSchedule] = {}
 
     @property
     def state(self) -> str:
@@ -270,6 +372,7 @@ class WorkflowExecutor:
         connector_id: str = "",
         attempt: int = 0,
         generation: int = 0,
+        overflow: str | None = None,
     ) -> str:
         if node_id not in self.graph.nodes:
             raise KeyError(f"Unknown workflow node: {node_id}")
@@ -282,6 +385,46 @@ class WorkflowExecutor:
                 0.0, float(node.config.get("interval", node.config.get("seconds", 0.25)))
             )
         token_id = str(token_id or uuid.uuid4().hex[:12])
+        policy = str(
+            overflow
+            or (
+                node.config.get("overflow", self.backpressure_policy)
+                if node.type_id == "wf_queue"
+                else self.backpressure_policy
+            )
+        ).strip().lower()
+        if policy not in WORKFLOW_BACKPRESSURE_POLICIES:
+            raise ValueError(f"Unknown workflow backpressure policy: {policy}")
+        constrained = self._full_queue_scope(node_id)
+        if constrained is not None:
+            scope, capacity, candidates = constrained
+            detail = {
+                "reason": "queue_full", "policy": policy,
+                "scope": scope, "capacity": capacity,
+                "queued": len(self._queue),
+            }
+            if policy == "reject_new":
+                self._rejected += 1
+                self._record(
+                    "token_rejected", token_id, node_id, connector_id, detail
+                )
+                raise WorkflowBackpressureError(
+                    f"Workflow {scope} queue is full ({capacity} items)"
+                )
+            if policy == "drop_newest":
+                self._dropped += 1
+                self._record(
+                    "token_dropped", token_id, node_id, connector_id, detail
+                )
+                return token_id
+            oldest_index = min(candidates, key=lambda index: self._queue[index].order)
+            dropped = self._queue.pop(oldest_index)
+            heapq.heapify(self._queue)
+            self._dropped += 1
+            self._record(
+                "token_dropped", dropped.token_id, dropped.node_id,
+                dropped.connector_id, detail,
+            )
         self._order += 1
         heapq.heappush(self._queue, _WorkItem(
             self._logical_time + max(0.0, float(delay)),
@@ -289,11 +432,242 @@ class WorkflowExecutor:
             payload, dict(metadata or {}), int(attempt), str(connector_id), int(generation),
         ))
         self._state = "paused" if self._paused else "running"
+        self._accepted += 1
+        self._high_watermark = max(self._high_watermark, len(self._queue))
         self._record("token_queued", token_id, node_id, connector_id, {
             "inputPort": input_port, "delay": max(0.0, float(delay)),
-            "priority": int(priority),
+            "priority": int(priority), "queued": len(self._queue),
+            "capacity": self.max_queue_size,
         })
         return token_id
+
+    def pressure(self) -> WorkflowPressureSnapshot:
+        return WorkflowPressureSnapshot(
+            len(self._queue), self.max_queue_size, self._high_watermark,
+            self._accepted, self._rejected, self._dropped,
+            self.backpressure_policy,
+        )
+
+    def _full_queue_scope(
+        self, node_id: str
+    ) -> tuple[str, int, tuple[int, ...]] | None:
+        if len(self._queue) >= self.max_queue_size:
+            return "runtime", self.max_queue_size, tuple(range(len(self._queue)))
+        node = self.graph.nodes[node_id]
+        if node.type_id != "wf_queue":
+            return None
+        capacity = max(1, int(node.config.get("capacity", 100)))
+        candidates = tuple(
+            index for index, item in enumerate(self._queue)
+            if item.node_id == node_id
+        )
+        if len(candidates) >= capacity:
+            return f"node:{node_id}", capacity, candidates
+        return None
+
+    def schedule_recurring(
+        self,
+        node_id: str,
+        payload: Any = None,
+        *,
+        interval: float = 1.0,
+        initial_delay: float | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        priority: int = 0,
+        max_occurrences: int | None = None,
+        catch_up: str = "latest",
+        max_burst: int = 1000,
+        schedule_id: str | None = None,
+    ) -> str:
+        if node_id not in self.graph.nodes:
+            raise KeyError(f"Unknown workflow node: {node_id}")
+        every = float(interval)
+        if every <= 0.0:
+            raise ValueError("Workflow schedule interval must be greater than zero")
+        policy = str(catch_up).strip().lower()
+        if policy not in WORKFLOW_CATCH_UP_POLICIES:
+            raise ValueError(f"Unknown workflow catch-up policy: {policy}")
+        limit = None if max_occurrences is None else max(1, int(max_occurrences))
+        identifier = str(schedule_id or f"schedule-{uuid.uuid4().hex[:10]}")
+        if identifier in self._schedules:
+            raise ValueError(f"Workflow schedule already exists: {identifier}")
+        delay = every if initial_delay is None else max(0.0, float(initial_delay))
+        schedule = _RecurringSchedule(
+            identifier, str(node_id), payload, dict(metadata or {}), int(priority),
+            every, self._logical_time + delay, limit, policy,
+            max(1, int(max_burst)),
+        )
+        self._schedules[identifier] = schedule
+        self._record(
+            "schedule_created", node_id=node_id,
+            detail=self._schedule_snapshot(schedule).to_dict(),
+        )
+        self._materialize_schedules(self._logical_time)
+        self._update_idle_state()
+        return identifier
+
+    def schedules(self) -> tuple[WorkflowScheduleSnapshot, ...]:
+        return tuple(
+            self._schedule_snapshot(schedule)
+            for schedule in sorted(
+                self._schedules.values(), key=lambda value: value.schedule_id
+            )
+        )
+
+    def pause_schedule(self, schedule_id: str) -> bool:
+        schedule = self._required_schedule(schedule_id)
+        if schedule.state != "active":
+            return False
+        schedule.state = "paused"
+        self._record(
+            "schedule_paused", node_id=schedule.node_id,
+            detail={"scheduleId": schedule.schedule_id},
+        )
+        self._update_idle_state()
+        return True
+
+    def resume_schedule(self, schedule_id: str) -> bool:
+        schedule = self._required_schedule(schedule_id)
+        if schedule.state != "paused":
+            return False
+        schedule.state = "active"
+        schedule.next_due = max(schedule.next_due, self._logical_time)
+        self._record(
+            "schedule_resumed", node_id=schedule.node_id,
+            detail={"scheduleId": schedule.schedule_id},
+        )
+        self._materialize_schedules(self._logical_time)
+        self._update_idle_state()
+        return True
+
+    def cancel_schedule(self, schedule_id: str) -> bool:
+        schedule = self._required_schedule(schedule_id)
+        if schedule.state in ("cancelled", "completed"):
+            return False
+        schedule.state = "cancelled"
+        self._record(
+            "schedule_cancelled", node_id=schedule.node_id,
+            detail={"scheduleId": schedule.schedule_id},
+        )
+        self._update_idle_state()
+        return True
+
+    def _required_schedule(self, schedule_id: str) -> _RecurringSchedule:
+        try:
+            return self._schedules[str(schedule_id)]
+        except KeyError as error:
+            raise KeyError(f"Unknown workflow schedule: {schedule_id}") from error
+
+    @staticmethod
+    def _schedule_snapshot(
+        schedule: _RecurringSchedule,
+    ) -> WorkflowScheduleSnapshot:
+        return WorkflowScheduleSnapshot(
+            schedule.schedule_id, schedule.node_id, schedule.interval,
+            schedule.next_due, schedule.emitted, schedule.skipped,
+            schedule.max_occurrences, schedule.catch_up, schedule.state,
+        )
+
+    def _materialize_schedules(self, until: float) -> None:
+        epsilon = 1e-9
+        for schedule in sorted(
+            self._schedules.values(), key=lambda value: value.schedule_id
+        ):
+            if schedule.state != "active" or schedule.next_due > until + epsilon:
+                continue
+            processed = schedule.emitted + schedule.skipped
+            remaining = (
+                None if schedule.max_occurrences is None
+                else max(0, schedule.max_occurrences - processed)
+            )
+            if remaining == 0:
+                schedule.state = "completed"
+                continue
+            due_count = int((until - schedule.next_due) // schedule.interval) + 1
+            if remaining is not None:
+                due_count = min(due_count, remaining)
+            first_due = schedule.next_due
+            processed_before = processed
+            schedule.next_due += due_count * schedule.interval
+            emit_due_times: list[float]
+            skipped = 0
+            if schedule.catch_up == "all":
+                emit_count = min(due_count, schedule.max_burst)
+                emit_due_times = [
+                    first_due + index * schedule.interval
+                    for index in range(emit_count)
+                ]
+                skipped = due_count - emit_count
+            elif schedule.catch_up == "latest":
+                emit_due_times = [first_due + (due_count - 1) * schedule.interval]
+                skipped = due_count - 1
+            else:
+                exactly_due = abs(until - first_due) <= epsilon and due_count == 1
+                emit_due_times = [first_due] if exactly_due else []
+                skipped = due_count - len(emit_due_times)
+            schedule.skipped += skipped
+            if skipped:
+                self._record(
+                    "schedule_occurrences_skipped", node_id=schedule.node_id,
+                    detail={
+                        "scheduleId": schedule.schedule_id,
+                        "count": skipped, "catchUp": schedule.catch_up,
+                    },
+                )
+            for emit_index, scheduled_for in enumerate(emit_due_times):
+                occurrence = processed_before + skipped + emit_index + 1
+                metadata = dict(schedule.metadata)
+                metadata.update({
+                    "scheduleId": schedule.schedule_id,
+                    "occurrence": occurrence,
+                    "scheduledFor": scheduled_for,
+                })
+                accepted_before = self._accepted
+                try:
+                    self.enqueue(
+                        schedule.node_id, schedule.payload,
+                        input_port="trigger", metadata=metadata,
+                        priority=schedule.priority,
+                        token_id=f"{schedule.schedule_id}-{occurrence}",
+                    )
+                except WorkflowBackpressureError:
+                    schedule.skipped += 1
+                    self._record(
+                        "schedule_backpressured", node_id=schedule.node_id,
+                        detail={
+                            "scheduleId": schedule.schedule_id,
+                            "occurrence": occurrence,
+                        },
+                    )
+                    continue
+                if self._accepted == accepted_before:
+                    schedule.skipped += 1
+                    self._record(
+                        "schedule_backpressured", node_id=schedule.node_id,
+                        detail={
+                            "scheduleId": schedule.schedule_id,
+                            "occurrence": occurrence,
+                        },
+                    )
+                else:
+                    schedule.emitted += 1
+                    self._record(
+                        "schedule_emitted", node_id=schedule.node_id,
+                        detail={
+                            "scheduleId": schedule.schedule_id,
+                            "occurrence": occurrence,
+                            "scheduledFor": scheduled_for,
+                        },
+                    )
+            if (
+                schedule.max_occurrences is not None
+                and schedule.emitted + schedule.skipped >= schedule.max_occurrences
+            ):
+                schedule.state = "completed"
+                self._record(
+                    "schedule_completed", node_id=schedule.node_id,
+                    detail={"scheduleId": schedule.schedule_id},
+                )
 
     def start(
         self,
@@ -321,7 +695,7 @@ class WorkflowExecutor:
         if not self._paused:
             return False
         self._paused = False
-        self._state = "running" if self._queue else "completed"
+        self._state = "running" if self._queue else "waiting" if self._has_active_schedule() else "completed"
         self._record("runtime_resumed")
         return True
 
@@ -329,6 +703,9 @@ class WorkflowExecutor:
         if self._state in WORKFLOW_TERMINAL_STATES:
             return False
         self._queue.clear()
+        for schedule in self._schedules.values():
+            if schedule.state in ("active", "paused"):
+                schedule.state = "cancelled"
         self._state = "cancelled"
         for node_id, state in tuple(self._node_states.items()):
             if state in ("queued", "running"):
@@ -372,6 +749,9 @@ class WorkflowExecutor:
         except Exception as error:
             self._handle_error(item, node, error)
             return True
+        if result.failure is not None:
+            self._handle_failure(item, node, result.failure)
+            return True
         self._node_states[node.id] = "completed"
         self._record("node_completed", item.token_id, node.id, detail={
             "emissions": len(result.emissions),
@@ -381,8 +761,7 @@ class WorkflowExecutor:
         for emission in result.emissions:
             self._route(item, node, emission)
         if not self._queue:
-            self._state = "completed" if not self._errors else "failed"
-            self._record("runtime_completed" if not self._errors else "runtime_failed")
+            self._update_idle_state(record_terminal=True)
         return True
 
     def run_until_idle(self, *, auto_advance: bool = True) -> WorkflowRunResult:
@@ -393,7 +772,29 @@ class WorkflowExecutor:
 
     def advance(self, seconds: float) -> WorkflowRunResult:
         self._logical_time += max(0.0, float(seconds))
+        self._materialize_schedules(self._logical_time)
         return self.run_until_idle(auto_advance=False)
+
+    def _has_active_schedule(self) -> bool:
+        return any(schedule.state == "active" for schedule in self._schedules.values())
+
+    def _update_idle_state(self, *, record_terminal: bool = False) -> None:
+        if self._paused:
+            self._state = "paused"
+            return
+        if self._queue:
+            self._state = "running"
+            return
+        if self._has_active_schedule():
+            self._state = "waiting"
+            return
+        next_state = "failed" if self._errors else "completed"
+        was_terminal = self._state in WORKFLOW_TERMINAL_STATES
+        self._state = next_state
+        if record_terminal and not was_terminal:
+            self._record(
+                "runtime_completed" if next_state == "completed" else "runtime_failed"
+            )
 
     def result(self) -> WorkflowRunResult:
         return WorkflowRunResult(
@@ -435,16 +836,22 @@ class WorkflowExecutor:
                 "payload": emission.payload,
                 "metadata": metadata,
             })
-            self.enqueue(
-                connector.target,
-                emission.payload,
-                input_port=connector.target_port,
-                metadata=metadata,
-                priority=priority,
-                delay=emission.delay + float(connector.config.get("delay", 0.0)),
-                token_id=item.token_id,
-                connector_id=connector.id,
-            )
+            try:
+                self.enqueue(
+                    connector.target,
+                    emission.payload,
+                    input_port=connector.target_port,
+                    metadata=metadata,
+                    priority=priority,
+                    delay=emission.delay + float(connector.config.get("delay", 0.0)),
+                    token_id=item.token_id,
+                    connector_id=connector.id,
+                )
+            except WorkflowBackpressureError:
+                self._record(
+                    "connector_rejected", item.token_id, node.id, connector.id,
+                    {"reason": "queue_full", "target": connector.target},
+                )
 
     def _handle_error(self, item: _WorkItem, node: WorkflowNode, error: Exception) -> None:
         retries = max(0, int(node.config.get("retries", 0)))
@@ -463,19 +870,65 @@ class WorkflowExecutor:
         failure = {
             "tokenId": item.token_id, "nodeId": node.id,
             "error": str(error), "type": type(error).__name__,
+            "code": "handler_exception", "attempt": item.attempt,
         }
-        self._errors.append(failure)
+        self._handle_failure(item, node, failure)
+
+    def _handle_failure(
+        self,
+        item: _WorkItem,
+        node: WorkflowNode,
+        failure: Mapping[str, Any],
+    ) -> None:
+        envelope = {
+            "format": "monkez.workflow.failure",
+            "version": 1,
+            "tokenId": item.token_id,
+            "nodeId": node.id,
+            "error": str(failure.get("error", failure.get("message", "Workflow failure"))),
+            "type": str(failure.get("type", "WorkflowFailure")),
+            "code": str(failure.get("code", "workflow_failure")),
+            "attempt": int(failure.get("attempt", item.attempt)),
+            "detail": _plain(failure.get("detail", {})),
+        }
         self._node_states[node.id] = "failed"
-        self._record("node_failed", item.token_id, node.id, item.connector_id, failure)
-        error_edges = self.graph.outgoing(node.id, "error")
+        error_edges = tuple(
+            connector for connector in self.graph.connectors
+            if connector.source == node.id
+            and connector.source_port in WORKFLOW_FAILURE_PORTS
+        )
+        envelope["handled"] = bool(error_edges)
+        self._errors.append(envelope)
+        self._record("node_failed", item.token_id, node.id, item.connector_id, envelope)
         for connector in error_edges:
-            self.enqueue(
-                connector.target, failure, input_port=connector.target_port,
-                metadata=item.metadata, priority=-item.negative_priority,
-                token_id=item.token_id, connector_id=connector.id,
+            self._record(
+                "failure_routed", item.token_id, node.id, connector.id,
+                {"sourcePort": connector.source_port, "targetPort": connector.target_port},
             )
-        if not error_edges and not self._queue:
-            self._state = "failed"
+            self._record(
+                "connector_emitted", item.token_id, node.id, connector.id,
+                {
+                    "sourcePort": connector.source_port,
+                    "targetPort": connector.target_port,
+                    "delay": 0.0,
+                    "payload": envelope,
+                    "metadata": {**item.metadata, "failure": True},
+                    "failure": True,
+                },
+            )
+            try:
+                self.enqueue(
+                    connector.target, envelope, input_port=connector.target_port,
+                    metadata={**item.metadata, "failure": True},
+                    priority=-item.negative_priority,
+                    token_id=item.token_id, connector_id=connector.id,
+                )
+            except WorkflowBackpressureError:
+                self._record(
+                    "failure_route_rejected", item.token_id, node.id, connector.id,
+                    {"reason": "queue_full"},
+                )
+        self._update_idle_state(record_terminal=not self._queue)
 
     def _execute_builtin(self, context: WorkflowContext, payload: Any) -> WorkflowNodeResult:
         node = context.node

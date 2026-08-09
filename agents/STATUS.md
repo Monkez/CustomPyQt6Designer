@@ -2,8 +2,14 @@
 
 Updated: 2026-08-09
 
-- Current release gate: 269 tests and 54 subtests pass; Ruff is clean; wheel and
+- Current release gate: 274 tests and 54 subtests pass; Ruff is clean; wheel and
   sdist build successfully on the project Python 3.11 environment.
+
+- `MC-RUNTIME-WORKFLOW-002` extends the 29-component workflow pack with bounded
+  global/Queue-node capacity, deterministic reject/drop-oldest/drop-newest
+  backpressure, recurring logical schedules (`all`/`latest`/`skip` catch-up),
+  schedule pause/resume/cancel, portable `error`/`failure` envelopes and a
+  wall-clock Qt adapter. Runtime Debugger now shows queue pressure and schedules.
 
 - `MC-CORE-PERFORMANCE-002` adds adaptive Full/Compact/Overview LOD, public
   render-frame metrics, Auto/Quality/Speed controls, full-quality export isolation

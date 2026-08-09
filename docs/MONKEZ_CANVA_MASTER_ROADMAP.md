@@ -189,9 +189,15 @@ compiles the portable document, routes typed-port emissions with logical time,
 supports declarative transform/filter/switch/timing/state operations and exposes
 node/type custom-handler boundaries. Canvas integration adds run/step/pause/
 resume/cancel APIs, transient node status, packet visualization, signals, an
-object-specific Inspector card and a Workflow debugger timeline. Recurring
-wall-clock timers, queue backpressure and persisted replay fixtures remain later
-runtime slices rather than hidden behavior in this foundation.
+  object-specific Inspector card and a Workflow debugger timeline.
+
+Completed slice (2026-08-09): `MC-RUNTIME-WORKFLOW-002` adds bounded executor and
+per-Queue-node backpressure with deterministic reject/drop policies, recurring
+logical schedules with finite/unlimited occurrence limits and all/latest/skip
+catch-up, pause/resume/cancel controls, portable failure envelopes on `error` or
+`failure` edges, and an optional Qt wall-clock adapter. Runtime Debugger exposes
+queue pressure, schedule state and deterministic +1 second stepping; all runtime
+state remains transient.
 
 ### Packet runtime v2
 

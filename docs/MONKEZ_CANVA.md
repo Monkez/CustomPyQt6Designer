@@ -549,6 +549,29 @@ port, delay hay failure edge rõ ràng. Cấu hình Queue/Buffer và Timer ở m
 là nền tảng deterministic; backpressure nhiều producer và recurring wall-clock timer
 sẽ được bổ sung trong runtime nâng cao.
 
+Queue runtime cÃ³ giá»›i háº¡n toÃ n executor (`max_queue_size`) vÃ  Queue node cÃ³
+`capacity`; overflow dÃ¹ng `reject_new`, `drop_newest` hoáº·c `drop_oldest`. Tráº¡ng thÃ¡i
+Ã¡p lá»±c Ä‘Æ°á»£c Ä‘á»c qua `workflowQueueStats()` vÃ  khÃ´ng ghi vÃ o document.
+
+Timer cÃ³ schedule logical deterministic, khÃ´ng tá»± cháº¡y vÃ²ng vÃ´ háº¡n trong
+`run_until_idle()`. DÃ¹ng `advanceWorkflow(seconds)` cho test/replay, hoáº·c
+`startWorkflowClock()` khi muá»‘n drive báº±ng wall-clock Qt:
+
+```python
+schedule_id = canvas.scheduleWorkflow(
+    timer, {"topic": "heartbeat"}, interval=1.0,
+    initial_delay=0.0, max_occurrences=None,
+    catch_up="latest", start_clock=True,
+)
+canvas.pauseWorkflowSchedule(schedule_id)
+canvas.resumeWorkflowSchedule(schedule_id)
+canvas.cancelWorkflowSchedule(schedule_id)
+```
+
+Runtime Debugger hiá»ƒn thá»‹ queue/capacity/utilization, dropped count, schedule
+states vÃ  cÃ³ nÃºt Clock/+1 s. Failure edge dÃ¹ng envelope portable trÃªn source port
+`error` hoáº·c `failure`, cÃ³ trace vÃ  packet visualization riÃªng.
+
 ## Declarative data binding
 
 Binding definition nằm trong element JSON và đi theo dự án; subscription cùng giá

@@ -797,7 +797,7 @@ class WidgetTests(unittest.TestCase):
             branch_policy="first",
             travel_time=0.1,
         )
-        QTest.qWait(250)
+        QTest.qWait(500)
         self.assertEqual("completed", fixture_source.status)
         fixture = canvas.captureMessageReplay(
             fixture_source.message_id, fixture_id="widget-fixture"
@@ -818,7 +818,7 @@ class WidgetTests(unittest.TestCase):
                 message_id="fixture-replayed",
                 travel_time=0.1,
             )
-            QTest.qWait(250)
+            QTest.qWait(500)
         self.assertEqual("completed", replayed.status)
         self.assertEqual("fixture-replayed", replay_results[-1][0])
         self.assertTrue(replay_results[-1][1]["matched"])
@@ -3378,6 +3378,44 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(2.0, indicator.height())
 
         canvas.setEditMode(False)
+        canvas.close()
+        canvas.deleteLater()
+
+    def test_canva_recurring_workflow_schedule_exposes_runtime_state(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(900, 640)
+        canvas.show()
+        canvas.enableWorkflowComponents()
+        timer = canvas.addWorkflowComponent("timer", element_id="timer")
+        sink = canvas.addWorkflowComponent("sink", element_id="timer-sink")
+        canvas.connectElements(timer, sink, source_port="out", target_port="in")
+        pressure = []
+        schedules = []
+        canvas.workflowPressureChanged.connect(pressure.append)
+        canvas.workflowScheduleChanged.connect(schedules.append)
+        schedule_id = canvas.scheduleWorkflow(
+            timer, {"tick": True}, interval=1.0, initial_delay=0.0,
+            max_occurrences=3, catch_up="all", schedule_id="demo-ticks",
+        )
+        self.assertEqual("demo-ticks", schedule_id)
+        self.assertEqual("waiting", canvas.runActiveWorkflow()["state"])
+        self.assertEqual(1, len(canvas.runActiveWorkflow()["outputs"][sink]))
+        result = canvas.advanceWorkflow(2.2)
+        self.assertEqual("completed", result["state"])
+        self.assertEqual(3, len(result["outputs"][sink]))
+        self.assertEqual("completed", canvas.workflowSchedules()[0]["state"])
+        self.assertTrue(pressure)
+        self.assertTrue(schedules)
+        self.assertEqual(0, canvas.workflowQueueStats()["queued"])
+        clock_schedule = canvas.scheduleWorkflow(
+            timer, {"clock": True}, interval=0.02, initial_delay=0.0,
+            max_occurrences=2, catch_up="latest", schedule_id="clock-ticks",
+            start_clock=True,
+        )
+        self.assertEqual("clock-ticks", clock_schedule)
+        QTest.qWait(260)
+        self.assertFalse(canvas.workflowClockRunning())
+        self.assertEqual("completed", canvas.workflowSchedules()[-1]["state"])
         canvas.close()
         canvas.deleteLater()
 

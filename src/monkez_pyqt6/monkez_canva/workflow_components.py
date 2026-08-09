@@ -94,7 +94,10 @@ _SPECS = (
         "channelField": "channel", "valueField": "value",
     }, "#2563eb"),
     ("wf_bus", "Bus", "Workflow · Routing", IN_OUT, {}, "#2563eb"),
-    ("wf_timer", "Timer", "Workflow · Timing", IN_OUT, {"interval": 1.0}, "#7c3aed"),
+    ("wf_timer", "Timer", "Workflow · Timing", IN_OUT, {
+        "interval": 1.0, "initialDelay": 1.0, "maxOccurrences": None,
+        "catchUp": "latest", "maxBurst": 1000,
+    }, "#7c3aed"),
     ("wf_delay", "Delay", "Workflow · Timing", IN_OUT, {"seconds": 1.0}, "#7c3aed"),
     ("wf_queue", "Queue", "Workflow · Timing", IN_OUT, {
         "capacity": 100, "overflow": "drop_oldest",

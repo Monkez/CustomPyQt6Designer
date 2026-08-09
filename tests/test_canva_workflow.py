@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from monkez_pyqt6.monkez_canva import (
+    WorkflowBackpressureError,
     WORKFLOW_COMPONENT_DEFINITIONS,
     WORKFLOW_COMPONENT_TYPES,
     WorkflowExecutor,
@@ -150,6 +151,9 @@ class WorkflowKernelTests(unittest.TestCase):
         failure = failed.run_until_idle()
         self.assertEqual("failed", failure.state)
         self.assertEqual("ValueError", failure.outputs["errors"][0]["type"])
+        self.assertTrue(failure.errors[0]["handled"])
+        self.assertEqual("monkez.workflow.failure", failure.errors[0]["format"])
+        self.assertIn("failure_routed", [event.event for event in failed.trace()])
 
     def test_counter_state_machine_and_one_thousand_tokens(self) -> None:
         graph = WorkflowGraph.from_document(workflow_document(
@@ -193,6 +197,92 @@ class WorkflowKernelTests(unittest.TestCase):
         executor.enqueue("a", "loop")
         with self.assertRaisesRegex(RuntimeError, "possible infinite cycle"):
             executor.run_until_idle()
+
+    def test_bounded_runtime_queue_exposes_deterministic_backpressure(self) -> None:
+        graph = WorkflowGraph.from_document(workflow_document(
+            [node("source", "wf_source", ("out",))], []
+        ))
+        executor = WorkflowExecutor(
+            graph, clock=lambda: 0.0, max_queue_size=2,
+            backpressure_policy="drop_oldest",
+        )
+        executor.enqueue("source", "a", token_id="a")
+        executor.enqueue("source", "b", token_id="b")
+        executor.enqueue("source", "c", token_id="c")
+        self.assertEqual(2, executor.pressure().queued)
+        self.assertEqual(1, executor.pressure().dropped)
+        result = executor.run_until_idle()
+        self.assertEqual(("b", "c"), result.outputs["source"])
+        self.assertIn("token_dropped", [event.event for event in executor.trace()])
+
+        rejecting = WorkflowExecutor(
+            graph, clock=lambda: 0.0, max_queue_size=1,
+            backpressure_policy="reject_new",
+        )
+        rejecting.enqueue("source", "first")
+        with self.assertRaises(WorkflowBackpressureError):
+            rejecting.enqueue("source", "second")
+        self.assertEqual(1, rejecting.pressure().rejected)
+
+    def test_queue_component_uses_its_own_capacity_and_overflow_policy(self) -> None:
+        graph = WorkflowGraph.from_document(workflow_document(
+            [
+                node("queue", "wf_queue", ("in", "out"), capacity=1, overflow="drop_newest"),
+                node("sink", "wf_sink", ("in",)),
+            ],
+            [edge("queue-sink", "queue", "sink")],
+        ))
+        executor = WorkflowExecutor(graph, clock=lambda: 0.0, max_queue_size=10)
+        executor.enqueue("queue", "first", token_id="first")
+        executor.enqueue("queue", "second", token_id="second")
+        result = executor.run_until_idle()
+        self.assertEqual(("first",), result.outputs["sink"])
+        self.assertEqual(1, executor.pressure().dropped)
+
+    def test_recurring_schedule_is_finite_and_logical_time_driven(self) -> None:
+        graph = WorkflowGraph.from_document(workflow_document(
+            [node("timer", "wf_timer", ("in", "out")), node("sink", "wf_sink", ("in",))],
+            [edge("timer-sink", "timer", "sink")],
+        ))
+        executor = WorkflowExecutor(graph, clock=lambda: 0.0)
+        schedule_id = executor.schedule_recurring(
+            "timer", {"tick": True}, interval=1.0, initial_delay=0.0,
+            max_occurrences=3, catch_up="all", schedule_id="ticks",
+        )
+        self.assertEqual("ticks", schedule_id)
+        first = executor.run_until_idle()
+        self.assertEqual("waiting", first.state)
+        self.assertEqual(1, len(first.outputs["sink"]))
+        self.assertEqual("active", executor.schedules()[0].state)
+        final = executor.advance(2.5)
+        self.assertEqual("completed", final.state)
+        self.assertEqual(3, len(final.outputs["sink"]))
+        self.assertEqual(3, executor.schedules()[0].emitted)
+
+    def test_latest_and_skip_catch_up_keep_overdue_schedule_bounded(self) -> None:
+        graph = WorkflowGraph.from_document(workflow_document(
+            [node("timer", "wf_timer", ("in", "out")), node("sink", "wf_sink", ("in",))],
+            [edge("timer-sink", "timer", "sink")],
+        ))
+        latest = WorkflowExecutor(graph, clock=lambda: 0.0)
+        latest.schedule_recurring(
+            "timer", "latest", interval=1.0, initial_delay=1.0,
+            max_occurrences=5, catch_up="latest", schedule_id="latest",
+        )
+        latest_result = latest.advance(4.2)
+        self.assertEqual("waiting", latest_result.state)
+        self.assertEqual(("latest",), latest_result.outputs["sink"])
+        self.assertEqual(3, latest.schedules()[0].skipped)
+
+        skipped = WorkflowExecutor(graph, clock=lambda: 0.0)
+        skipped.schedule_recurring(
+            "timer", "skip", interval=1.0, initial_delay=1.0,
+            max_occurrences=5, catch_up="skip", schedule_id="skip",
+        )
+        skipped_result = skipped.advance(4.2)
+        self.assertEqual("waiting", skipped_result.state)
+        self.assertFalse(skipped_result.outputs.get("sink"))
+        self.assertEqual(4, skipped.schedules()[0].skipped)
 
 
 if __name__ == "__main__":

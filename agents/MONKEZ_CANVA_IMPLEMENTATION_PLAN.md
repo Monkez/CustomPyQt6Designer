@@ -382,8 +382,14 @@ tracker, Control Pane mode selection, export-quality isolation and coalesced
 full-document graphics projection. The reproducible native benchmark and committed
 environment-tagged JSON baseline make later regressions directly comparable.
 
-Next: packet replay/link metrics and recurring workflow scheduling/backpressure
-slices, followed by distributable protocol adapter packages.
+Completed: packet replay/link metrics and recurring workflow scheduling/backpressure
+slices. The next runtime boundary is distributable protocol adapter packages.
+
+`MC-RUNTIME-WORKFLOW-002` adds a bounded deterministic work queue, explicit
+reject/drop overflow policies, recurring logical schedules with catch-up controls,
+runtime-only pause/resume/cancel APIs, portable failure envelopes on `error`/
+`failure` edges, and an optional Qt wall-clock driver. Queue pressure and schedule
+state are public Canvas signals/API projections and remain outside saved JSON.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
