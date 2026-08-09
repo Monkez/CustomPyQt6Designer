@@ -163,7 +163,16 @@ an explicit read-only compatibility mode; mutation, autosave and durable save ar
 blocked while Layers, viewport navigation, highlighting and runtime signals remain
 available. The Floating Cards pane and quick toolbar expose that state.
 
-Next: Phase 1.5 shared animation scheduler.
+### Shared animation progress â€” 2026-08-09
+
+Phase 1.5 is complete. `_canva_animation.py` provides one weak-reference,
+visibility-aware scheduler for line/connector effects, packet transport and
+runtime property tweens. It culls repaint requests to the visible scene, pauses
+nonessential hidden work and preserves completion of explicitly sent packets.
+`animationStats()` and the clamped frame-interval API provide diagnostics.
+
+Next: Phase 2 professional editor UX, beginning with clipboard, keyboard nudge
+and mixed-value multi-selection Inspector behavior.
 
 ## Backlog tracking
 

@@ -90,6 +90,10 @@ from monkez_pyqt6.monkez_widgets._canva_commands import (
     CanvasRenameCommand,
     patches_from_documents,
 )
+from monkez_pyqt6.monkez_widgets._canva_animation import (
+    CanvasAnimationScheduler,
+    ScheduledPropertyAnimation,
+)
 
 
 _GRID_STYLES = ("lines", "dots", "cross")
@@ -591,6 +595,7 @@ class _CanvasElement(QGraphicsObject):
 
     def __init__(
         self,
+        canvas: "MonkezCanva",
         element_id: str,
         kind: str,
         width: float,
@@ -600,6 +605,7 @@ class _CanvasElement(QGraphicsObject):
     ) -> None:
         super().__init__()
         options = dict(options or {})
+        self.canvas = canvas
         self.element_id = element_id
         self.kind = kind
         self.definition = definition
@@ -645,9 +651,6 @@ class _CanvasElement(QGraphicsObject):
         self._resizing = False
         self._resize_origin = QPointF()
         self._line_phase = 0.0
-        self._line_timer = QTimer(self)
-        self._line_timer.setInterval(40)
-        self._line_timer.timeout.connect(self._advance_line_effect)
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
             | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -683,7 +686,7 @@ class _CanvasElement(QGraphicsObject):
         self._pixmap = QPixmap()
 
     def release(self) -> None:
-        self._line_timer.stop()
+        self.canvas._animation_scheduler.unregister(self)
         self.releaseMedia()
 
     def setSource(self, source: str) -> None:
@@ -954,10 +957,32 @@ class _CanvasElement(QGraphicsObject):
         if self.arrow_end and len(points) > 1:
             self._paint_line_arrow(painter, points[-1], points[-2])
 
-    def _advance_line_effect(self) -> None:
-        self._line_phase -= self.flow_speed * self.flow_direction
-        self._advance_packets()
-        self.update()
+    def _animation_active(self) -> bool:
+        return self.kind == "line" and (
+            self.animated
+            or bool(self._packets)
+            or (self.animation_effect == "packet" and self.packet_loop)
+        )
+
+    def _animation_has_packets(self) -> bool:
+        return bool(self._packets)
+
+    def _animation_tick(
+        self,
+        now: float,
+        delta: float,
+        *,
+        advance_visuals: bool,
+        allow_loop: bool,
+        repaint: bool,
+    ) -> None:
+        if advance_visuals and self.animated:
+            self._line_phase -= (
+                self.flow_speed * self.flow_direction * max(0.0, delta / 0.04)
+            )
+        self._advance_packets(now, allow_loop=allow_loop)
+        if repaint:
+            self.update(self.boundingRect())
 
     def sendPacket(self, message_id: str, icon: Any = None, duration: float | None = None) -> None:
         resolved_icon = self.packet_icon if icon is None else icon
@@ -967,11 +992,15 @@ class _CanvasElement(QGraphicsObject):
             "duration": max(0.1, float(duration or self.packet_duration)),
             "started": time.monotonic(),
         })
-        self._line_timer.start()
+        self.canvas._animation_scheduler.register(self)
 
-    def _advance_packets(self) -> None:
-        now = time.monotonic()
-        if self.kind == "line" and self.animation_effect == "packet" and self.packet_loop:
+    def _advance_packets(self, now: float, *, allow_loop: bool = True) -> None:
+        if (
+            allow_loop
+            and self.kind == "line"
+            and self.animation_effect == "packet"
+            and self.packet_loop
+        ):
             if now - self._last_packet_at >= self.packet_interval:
                 self._last_packet_at = now
                 self.sendPacket(uuid.uuid4().hex[:10])
@@ -980,18 +1009,12 @@ class _CanvasElement(QGraphicsObject):
         self._packets = [packet for packet in self._packets if id(packet) not in arrived_ids]
         for packet in arrived:
             self.packetArrived.emit(self.element_id, packet["id"])
-        if not self.animated and not self.packet_loop and not self._packets:
-            self._line_timer.stop()
 
     def _sync_line_animation(self) -> None:
-        active = self.kind == "line" and (
-            self.animated or bool(self._packets)
-            or (self.animation_effect == "packet" and self.packet_loop)
-        )
-        if active and not self._line_timer.isActive():
-            self._line_timer.start()
-        elif not active:
-            self._line_timer.stop()
+        if self._animation_active():
+            self.canvas._animation_scheduler.register(self)
+        else:
+            self.canvas._animation_scheduler.unregister(self)
         self.update()
 
     def _paint_line_arrow(self, painter: QPainter, tip: QPointF, near: QPointF) -> None:
@@ -1172,9 +1195,6 @@ class _CanvasConnector(QGraphicsObject):
         self._highlight = QColor()
         self._path = QPainterPath()
         self._flow_phase = 0.0
-        self._timer = QTimer(canvas)
-        self._timer.setInterval(40)
-        self._timer.timeout.connect(self._advance_flow)
         self.setZValue(float(options.get("z", -1)))
         self.setOpacity(max(0.0, min(1.0, float(options.get("opacity", 1.0)))))
         source.changed.connect(self.updatePath)
@@ -1281,10 +1301,30 @@ class _CanvasConnector(QGraphicsObject):
         )
         painter.drawPath(arrow)
 
-    def _advance_flow(self) -> None:
-        self._flow_phase -= self.flow_speed * self.flow_direction
-        self._advance_packets()
-        self.update()
+    def _animation_active(self) -> bool:
+        return self.animated or bool(self._packets) or (
+            self.animation_effect == "packet" and self.packet_loop
+        )
+
+    def _animation_has_packets(self) -> bool:
+        return bool(self._packets)
+
+    def _animation_tick(
+        self,
+        now: float,
+        delta: float,
+        *,
+        advance_visuals: bool,
+        allow_loop: bool,
+        repaint: bool,
+    ) -> None:
+        if advance_visuals and self.animated:
+            self._flow_phase -= (
+                self.flow_speed * self.flow_direction * max(0.0, delta / 0.04)
+            )
+        self._advance_packets(now, allow_loop=allow_loop)
+        if repaint:
+            self.update(self.boundingRect())
 
     def sendPacket(self, message_id: str, icon: Any = None, duration: float | None = None) -> None:
         resolved_icon = self.packet_icon if icon is None else icon
@@ -1294,11 +1334,10 @@ class _CanvasConnector(QGraphicsObject):
             "duration": max(0.1, float(duration or self.packet_duration)),
             "started": time.monotonic(),
         })
-        self._timer.start()
+        self.canvas._animation_scheduler.register(self)
 
-    def _advance_packets(self) -> None:
-        now = time.monotonic()
-        if self.animation_effect == "packet" and self.packet_loop:
+    def _advance_packets(self, now: float, *, allow_loop: bool = True) -> None:
+        if allow_loop and self.animation_effect == "packet" and self.packet_loop:
             if now - self._last_packet_at >= self.packet_interval:
                 self._last_packet_at = now
                 message_id = uuid.uuid4().hex[:10]
@@ -1315,21 +1354,16 @@ class _CanvasConnector(QGraphicsObject):
         self._packets = [packet for packet in self._packets if id(packet) not in arrived_ids]
         for packet in arrived:
             self.packetArrived.emit(self.connector_id, packet["id"])
-        if not self.animated and not self.packet_loop and not self._packets:
-            self._timer.stop()
 
     def _sync_animation(self) -> None:
-        active = self.animated or bool(self._packets) or (
-            self.animation_effect == "packet" and self.packet_loop
-        )
-        if active and not self._timer.isActive():
-            self._timer.start()
-        elif not active:
-            self._timer.stop()
+        if self._animation_active():
+            self.canvas._animation_scheduler.register(self)
+        else:
+            self.canvas._animation_scheduler.unregister(self)
         self.update()
 
     def release(self) -> None:
-        self._timer.stop()
+        self.canvas._animation_scheduler.unregister(self)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1456,14 +1490,14 @@ class _CanvasEditorToolbox(QDialog):
         panel.setGraphicsEffect(shadow)
         root.addWidget(panel)
         content = QVBoxLayout(panel)
-        content.setContentsMargins(18, 14, 18, 13)
-        content.setSpacing(11)
+        content.setContentsMargins(18, 14, 18, 14)
+        content.setSpacing(10)
         self._pane_header = _CanvasPaneHeader(self, canvas)
         content.addWidget(self._pane_header)
         self._tabs = QTabWidget()
         self._tabs.setObjectName("canvasEditorTabs")
         self._tabs.setDocumentMode(True)
-        self._tabs.setIconSize(QSize(15, 15))
+        self._tabs.setIconSize(QSize(16, 16))
         self._tabs.tabBar().setExpanding(True)
         self._tabs.tabBar().setUsesScrollButtons(False)
         self._tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
@@ -1504,10 +1538,11 @@ class _CanvasEditorToolbox(QDialog):
 
     @staticmethod
     def _pane_stylesheet() -> str:
-        return """
+        icon_root = Path(__file__).resolve().parent / "monkez_assets" / "icons"
+        stylesheet = """
         QFrame#canvasEditorPanel {
-            background: #fbfaf8;
-            border: 1px solid #d9d6d1;
+            background: #fcfbf9;
+            border: 1px solid #d8d5d0;
             border-radius: 20px;
         }
         QFrame#canvasPaneHeader { border: none; border-bottom: 1px solid #ebe7e2; background: transparent; }
@@ -1541,21 +1576,31 @@ class _CanvasEditorToolbox(QDialog):
             color: #087f72; background: #effbf8; border: 1px solid #c6eee7;
             border-radius: 10px; padding: 9px;
         }
-        QTabWidget#canvasEditorTabs::pane { border: none; background: transparent; top: 8px; }
-        QTabBar { background: #f1efec; border-radius: 11px; padding: 3px; }
-        QTabBar::tab {
-            color: #777d82; background: transparent; border: none; border-radius: 8px;
-            padding: 8px 7px; margin: 0px 1px; font-weight: 600;
+        QTabWidget#canvasEditorTabs::pane {
+            border: none; background: transparent; top: 7px;
         }
-        QTabBar::tab:selected { color: #ef5d50; background: #fffdfb; }
-        QTabBar::tab:hover:!selected { color: #3f474e; background: #f8f6f3; }
+        QTabWidget#canvasEditorTabs > QTabBar {
+            background: #f2f0ed; border: 1px solid #ebe8e3;
+            border-radius: 12px; padding: 3px;
+        }
+        QTabWidget#canvasEditorTabs > QTabBar::tab {
+            color: #70777d; background: transparent; border: none; border-radius: 9px;
+            min-height: 22px; padding: 7px 6px; margin: 0px; font-weight: 600;
+        }
+        QTabWidget#canvasEditorTabs > QTabBar::tab:selected {
+            color: #e95549; background: #fffefd; border: 1px solid #e8e3de;
+        }
+        QTabWidget#canvasEditorTabs > QTabBar::tab:hover:!selected {
+            color: #3f474e; background: #f9f7f4;
+        }
         QGroupBox {
-            color: #303941; background: #fffefd; border: 1px solid #e4e1dc;
-            border-radius: 12px; margin-top: 13px; padding: 15px 11px 11px 11px;
+            color: #303941; background: #fffefd; border: 1px solid #e5e1dc;
+            border-radius: 13px; margin-top: 12px; padding: 17px 12px 12px 12px;
             font-weight: 600;
         }
         QGroupBox::title {
-            color: #303941; subcontrol-origin: margin; left: 12px; padding: 0 6px;
+            color: #303941; background: #fcfbf9; subcontrol-origin: margin;
+            subcontrol-position: top left; left: 13px; padding: 0 7px;
             font-size: 10px; font-weight: 650;
         }
         QPushButton, QToolButton {
@@ -1577,12 +1622,48 @@ class _CanvasEditorToolbox(QDialog):
         QToolButton#canvasArrangeAction:hover { background: #fff0ed; }
         QLineEdit, QDoubleSpinBox, QComboBox, QListWidget {
             color: #303941; background: #fffefd; border: 1px solid #d9d6d1;
-            border-radius: 9px; padding: 5px 8px; min-height: 27px;
+            border-radius: 10px; padding: 4px 10px; min-height: 28px;
             selection-background-color: #ffd8d2;
         }
-        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #ff8c80; }
-        QComboBox::drop-down { border: none; width: 22px; }
-        QCheckBox { color: #3b444b; spacing: 7px; }
+        QLineEdit:hover, QDoubleSpinBox:hover, QComboBox:hover { border-color: #c6c1bb; }
+        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus, QListWidget:focus {
+            border: 1px solid #ff8c80; background: #ffffff;
+        }
+        QLineEdit:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+            color: #aaa6a1; background: #f4f2ef; border-color: #e5e1dc;
+        }
+        QComboBox { padding-right: 28px; }
+        QComboBox::drop-down { background: transparent; border: none; width: 27px; }
+        QComboBox::down-arrow {
+            image: url(__SPIN_DOWN__); width: 10px; height: 7px;
+        }
+        QDoubleSpinBox { padding-right: 28px; }
+        QDoubleSpinBox::up-button {
+            subcontrol-origin: padding; subcontrol-position: top right;
+            background: transparent; border: none; width: 25px; height: 16px;
+            margin: 1px 1px 0 0;
+        }
+        QDoubleSpinBox::down-button {
+            subcontrol-origin: padding; subcontrol-position: bottom right;
+            background: transparent; border: none; width: 25px; height: 16px;
+            margin: 0 1px 1px 0;
+        }
+        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+            background: #f1efec; border-radius: 6px;
+        }
+        QDoubleSpinBox::up-arrow {
+            image: url(__SPIN_UP__); width: 10px; height: 7px;
+        }
+        QDoubleSpinBox::down-arrow {
+            image: url(__SPIN_DOWN__); width: 10px; height: 7px;
+        }
+        QCheckBox { color: #3b444b; spacing: 8px; }
+        QCheckBox::indicator {
+            width: 16px; height: 16px; background: #fffefd;
+            border: 1px solid #cfcac4; border-radius: 5px;
+        }
+        QCheckBox::indicator:hover { border-color: #ff8c80; background: #fff7f5; }
+        QCheckBox::indicator:checked { background: #ff6b5f; border-color: #ff6b5f; }
         QListWidget { padding: 4px; }
         QListWidget::item { border-radius: 6px; padding: 7px; margin: 1px; }
         QListWidget::item:selected { color: #d94e43; background: #ffe9e5; }
@@ -1594,6 +1675,11 @@ class _CanvasEditorToolbox(QDialog):
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         QLabel { color: #50585f; }
         """
+        return (
+            stylesheet
+            .replace("__SPIN_UP__", (icon_root / "canvas-chevron-up.svg").as_posix())
+            .replace("__SPIN_DOWN__", (icon_root / "canvas-chevron-down.svg").as_posix())
+        )
 
     def _elements_tab(self) -> QWidget:
         page = QWidget()
@@ -1753,8 +1839,11 @@ class _CanvasEditorToolbox(QDialog):
 
         self._geometry_group = QGroupBox("Position / size")
         geometry_form = QGridLayout(self._geometry_group)
-        geometry_form.setHorizontalSpacing(10)
-        geometry_form.setVerticalSpacing(5)
+        geometry_form.setContentsMargins(13, 20, 13, 13)
+        geometry_form.setHorizontalSpacing(14)
+        geometry_form.setVerticalSpacing(7)
+        geometry_form.setColumnStretch(0, 1)
+        geometry_form.setColumnStretch(1, 1)
         self._number_fields: dict[str, QDoubleSpinBox] = {}
         self._number_labels: dict[str, QLabel] = {}
         fields = (
@@ -1772,7 +1861,7 @@ class _CanvasEditorToolbox(QDialog):
             field.setDecimals(decimals)
             field.setSingleStep(0.1 if key == "opacity" else 1.0)
             field.setMinimumWidth(0)
-            field.setMaximumWidth(128)
+            field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self._number_fields[key] = field
             label_widget = QLabel(label)
             self._number_labels[key] = label_widget
@@ -2634,11 +2723,15 @@ class _CanvasEditorToolbox(QDialog):
         self.refreshLayers()
 
     def _show_save_status(self, target: str) -> None:
-        prefix = "Draft" if self.canvas.isDocumentModified() else "Saved"
+        modified = self.canvas.isDocumentModified()
+        prefix = "Session" if modified else "Saved"
         self._save_status.setText(f"{prefix}: {target}")
-        self._footer_status.setText(
-            "Draft saved" if self.canvas.isDocumentModified() else "Saved"
+        color = "#c66a12" if modified else "#0f9f8f"
+        self._footer_icon.setPixmap(
+            _canvas_icon("save" if modified else "check", color).pixmap(19, 19)
         )
+        self._footer_status.setText("Session saved" if modified else "Saved")
+        self._footer_status.setStyleSheet(f"color: {color}; font-weight: 700;")
         self._footer_status.setToolTip(str(target))
 
     def _sync_modified_status(self, modified: bool) -> None:
@@ -3019,6 +3112,7 @@ class MonkezCanva(QWidget):
         self._scene = _CanvasScene(self)
         self._scene.setSceneRect(-2000, -2000, 4000, 4000)
         self._view = _CanvasView(self, self._scene)
+        self._animation_scheduler = CanvasAnimationScheduler(self)
         self._document_model = CanvasDocument.from_dict(self._graphics_document())
         self._document_subscription = self._document_model.subscribe(self._on_document_operation)
         self._undo_stack = QUndoStack(self)
@@ -3076,6 +3170,19 @@ class MonkezCanva(QWidget):
 
     def view(self) -> QGraphicsView:
         return self._view
+
+    def animationStats(self) -> dict[str, int | bool]:
+        """Return lightweight shared-clock metrics for profiling and tests."""
+
+        return self._animation_scheduler.stats()
+
+    def setAnimationFrameInterval(self, milliseconds: int) -> None:
+        """Set the one shared animation-clock interval (minimum 16 ms)."""
+
+        self._animation_scheduler.timer.setInterval(max(16, int(milliseconds)))
+
+    def animationFrameInterval(self) -> int:
+        return self._animation_scheduler.timer.interval()
 
     def elementRegistry(self) -> ElementRegistry:
         """Return this canvas' component registry."""
@@ -3198,6 +3305,7 @@ class MonkezCanva(QWidget):
             )
             return element_id
         item = _CanvasElement(
+            self,
             element_id,
             kind,
             width or default_width,
@@ -4055,7 +4163,11 @@ class MonkezCanva(QWidget):
         item = self._required_element(element_id)
         effect = str(effect).lower()
         property_name = b"scale" if effect == "pulse" else b"opacity"
-        animation = QPropertyAnimation(item, property_name, self)
+        previous = self._animations.pop(element_id, None)
+        if previous is not None:
+            previous.stop()
+            previous.deleteLater()
+        animation = ScheduledPropertyAnimation(self, item, property_name)
         animation.setDuration(max(80, int(duration)))
         animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         if effect == "pulse":
@@ -4067,9 +4179,20 @@ class MonkezCanva(QWidget):
             animation.setKeyValueAt(0.5, 0.25)
             animation.setKeyValueAt(1.0, 1.0)
         self._animations[element_id] = animation
-        animation.finished.connect(lambda key=element_id: self._animations.pop(key, None))
+        animation.finished.connect(
+            lambda key=element_id, value=animation: self._finish_runtime_animation(
+                key, value
+            )
+        )
         animation.start()
         return animation
+
+    def _finish_runtime_animation(
+        self, element_id: str, animation: QPropertyAnimation
+    ) -> None:
+        if self._animations.get(element_id) is animation:
+            self._animations.pop(element_id, None)
+        animation.deleteLater()
 
     def deleteSelected(self) -> None:
         selected = list(self._scene.selectedItems())
@@ -4098,6 +4221,10 @@ class MonkezCanva(QWidget):
         item = self._elements.pop(str(element_id), None)
         if item is None:
             return False
+        animation = self._animations.pop(str(element_id), None)
+        if animation is not None:
+            animation.stop()
+            animation.deleteLater()
         attached = [key for key, connector in self._connectors.items() if item in (connector.source, connector.target)]
         for key in attached:
             connector = self._connectors.pop(key)
@@ -5143,11 +5270,6 @@ class MonkezCanva(QWidget):
         self.diagnosticMessage.emit(f"Pan mode={self._pan_mode}")
         return self._pan_mode
 
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        if self._fit_pending:
-            QTimer.singleShot(0, self._apply_fit_content)
-
     def toggleEditMode(self) -> None:
         self.setEditMode(not self._edit_mode)
 
@@ -5390,3 +5512,13 @@ class MonkezCanva(QWidget):
             self._document_model.unsubscribe(self._document_subscription)
             self._document_subscription = ""
         super().closeEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._fit_pending:
+            QTimer.singleShot(0, self._apply_fit_content)
+        QTimer.singleShot(0, self._animation_scheduler.visibility_changed)
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._animation_scheduler.visibility_changed()

@@ -91,6 +91,12 @@ autosaved or overwritten by the older runtime.
 Move line, packet and runtime animation to one canvas-level clock. Update only
 visible dirty regions and pause nonessential effects when the view is hidden.
 
+Completed (2026-08-09): one visibility-aware clock now advances standalone line
+effects, connector effects, packet transport and `animateElement()` tweens.
+Visible-scene culling bounds repaint work; hidden decorative animation and loops
+pause, while explicitly sent packets still finish and release blocking callers.
+Runtime metrics and a configurable frame interval support profiling.
+
 ## Phase 2 — Professional editor UX
 
 - searchable palette with categories, favorites and recent items;

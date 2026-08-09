@@ -159,6 +159,18 @@ Updated: 2026-08-09
 
 ## Latest verification
 
+- `MC-EDITOR-PANE-002` polishes the Floating Cards Control Pane at native Windows
+  scale: its icon tabs are now a single compact segmented bar; all field/card
+  spacing follows a consistent rhythm; geometry inputs expand as an even two-
+  column grid; and packaged SVG chevrons replace the visually broken native
+  spinbox button frames. Focus, hover, disabled and session-save states are now
+  explicit and consistent.
+- `MC-CORE-ANIMATION-001` completes Phase 1.5 with one canvas-owned animation
+  clock for line/connector effects, packets and runtime property tweens. Hidden
+  decorative effects pause, explicit packets still complete, and visible-scene
+  culling avoids repainting every animated item on every tick. Runtime frame and
+  repaint metrics are available through `animationStats()`.
+
 - `MC-CORE-SCHEMA-001` completes Phase 1.4 with a public Draft 2020-12 document
   schema, a Qt-free ordered migration boundary, atomic JSON/asset writes, valid
   `.bak` recovery and SHA-256/size asset manifests. Both persistent and ordinary
@@ -219,7 +231,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 150 passing tests and covers all 36 public
+- The automated suite contains 151 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

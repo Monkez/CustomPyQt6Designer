@@ -167,10 +167,21 @@ Scene version 1 also persists grid visibility/size/style/colors and background
 color/image/mode. Grid renderers are lines, dots and crosses; background modes
 are fit, fill and non-aspect-preserving scale.
 
+## Shared animation clock
+
+`CanvasAnimationScheduler` owns one precise timer for the whole canvas. Animated
+lines, connectors, packets and public `animateElement()` tweens register weakly
+with that scheduler instead of allocating a timer per item. Each tick computes
+the visible scene rectangle and requests repaint only for intersecting targets.
+Decorative effects and packet loops pause while the canvas is hidden; explicitly
+sent packets continue to completion so `wait_to_end=True` cannot deadlock. Public
+`animationStats()` and `animationFrameInterval()` expose lightweight diagnostics
+without leaking scheduler implementation details.
+
 ## Roadmap
 
-1. Complete shared animation scheduler.
-2. Clipboard, keyboard nudging and true mixed-value property editing.
+1. Clipboard, keyboard nudging and true mixed-value property editing.
+2. Searchable palette, command palette and contextual actions.
 3. Typed ports, advanced routing and group/subflow rendering.
 4. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
 5. Declarative data bindings and throttled live chart updates.

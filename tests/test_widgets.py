@@ -596,12 +596,14 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual([connector_id], canvas.selectedObjectIds())
         self.assertEqual("orthogonal", connector.route)
         self.assertTrue(connector.animated)
-        self.assertTrue(connector._timer.isActive())
+        self.assertGreaterEqual(canvas.animationStats()["activeTargets"], 2)
+        self.assertFalse(canvas.animationStats()["timerActive"])
+        self.assertFalse(hasattr(connector, "_timer"))
         self.assertEqual(QColor("#06b6d4"), connector.flow_color)
         self.assertEqual("glow", connector.animation_effect)
         self.assertEqual(-1, connector.flow_direction)
         self.assertTrue(canvas.element(line_id).arrow_start)
-        self.assertTrue(canvas.element(line_id)._line_timer.isActive())
+        self.assertFalse(hasattr(canvas.element(line_id), "_line_timer"))
         self.assertEqual("pulse", canvas.element(line_id).animation_effect)
         self.assertEqual("line", canvas.element(polyline_id).kind)
         self.assertEqual(3, len(canvas.element(polyline_id).points))
@@ -690,7 +692,14 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual("input", canvas.nodePorts(splitter)[0]["mode"])
         self.assertFalse(canvas._message_payloads)
         canvas.updateConnector(incoming, packetLoop=True)
-        self.assertTrue(canvas.connector(incoming)._timer.isActive())
+        self.assertGreaterEqual(canvas.animationStats()["activeTargets"], 1)
+        self.assertFalse(canvas.animationStats()["timerActive"])
+        canvas.show()
+        self.app.processEvents()
+        self.assertTrue(canvas.animationStats()["timerActive"])
+        canvas.hide()
+        self.app.processEvents()
+        self.assertFalse(canvas.animationStats()["timerActive"])
         document = canvas.toDocument()
         splitter_data = next(item for item in document["elements"] if item["id"] == splitter)
         incoming_data = next(item for item in document["connectors"] if item["id"] == incoming)
@@ -712,8 +721,59 @@ class WidgetTests(unittest.TestCase):
             saved_edge = next(item for item in persisted["connectors"] if item["id"] == incoming)
             self.assertFalse(Path(saved_edge["packetIcon"]).is_absolute())
             self.assertTrue((saved.parent / saved_edge["packetIcon"]).is_file())
-
         canvas.clear()
+        canvas.deleteLater()
+
+    def test_canva_shared_animation_clock_pauses_and_culls_repaints(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(640, 420)
+        for index in range(40):
+            canvas.addLine(
+                index * 500,
+                0,
+                element_id=f"animated-{index}",
+                animated=True,
+                animationEffect="flow",
+            )
+
+        hidden = canvas.animationStats()
+        self.assertEqual(40, hidden["registeredTargets"])
+        self.assertEqual(40, hidden["activeTargets"])
+        self.assertFalse(hidden["timerActive"])
+        self.assertEqual(40, sum(not hasattr(canvas.element(key), "_line_timer") for key in canvas.elements()))
+
+        first = canvas.element("animated-0")
+        phase = first._line_phase
+        canvas.show()
+        self.app.processEvents()
+        QTest.qWait(130)
+        visible = canvas.animationStats()
+        self.assertTrue(visible["timerActive"])
+        self.assertNotEqual(phase, first._line_phase)
+        self.assertLess(visible["repaintCount"], visible["tickCount"] * visible["activeTargets"])
+
+        canvas.hide()
+        self.app.processEvents()
+        paused_phase = first._line_phase
+        QTest.qWait(100)
+        self.assertFalse(canvas.animationStats()["timerActive"])
+        self.assertEqual(paused_phase, first._line_phase)
+
+        runtime_animation = canvas.animateElement("animated-0", "pulse", 220)
+        QTest.qWait(80)
+        self.assertEqual(1.0, first.scale())
+        self.assertTrue(runtime_animation._animation_active())
+        canvas.show()
+        self.app.processEvents()
+        QTest.qWait(120)
+        self.assertGreater(first.scale(), 1.0)
+        QTest.qWait(160)
+        self.assertAlmostEqual(1.0, first.scale(), places=2)
+        self.assertNotIn("animated-0", canvas._animations)
+
+        canvas.hide()
+        canvas.clear()
+        self.assertEqual(0, canvas.animationStats()["registeredTargets"])
         canvas.deleteLater()
 
     def test_canva_node_ports_drag_connection_and_click_signals(self) -> None:

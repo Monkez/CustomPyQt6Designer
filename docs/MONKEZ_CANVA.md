@@ -444,6 +444,17 @@ mọi mutation, autosave và Save đều bị chặn để runtime cũ không l�
 Layers, zoom/pan, highlight và hiệu ứng runtime vẫn dùng được. Control Pane hiển
 thị footer khóa màu amber và chỉ để tab Layers hoạt động.
 
+Control Pane dùng thanh tab icon dạng segmented, card bo góc và lưới thuộc tính
+hai cột. Spinbox dùng chevron SVG đóng gói cùng thư viện nên không phụ thuộc
+kiểu nút mặc định của Windows. Các thay đổi Inspector vẫn tự apply; footer phân
+biệt `Session saved`, `Unsaved changes`, `Saved` và trạng thái read-only.
+
+Toàn bộ hiệu ứng line/connector, packet và `animateElement()` chia sẻ một clock
+của canvas. `animationStats()` cho biết số target, tick và repaint; dùng
+`setAnimationFrameInterval(ms)` để điều chỉnh chu kỳ (tối thiểu 16 ms). Khi
+canvas bị ẩn, hiệu ứng trang trí và loop tạm dừng, nhưng packet gửi từ code vẫn
+đi tới đích để `wait_to_end=True` không bị treo.
+
 ## Thuộc tính Qt Designer
 
 `gridVisible`, `snapToGrid`, `gridSize`, `gridStyle`, `backgroundColor`,
