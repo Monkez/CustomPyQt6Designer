@@ -83,6 +83,10 @@ from PyQt6.QtWidgets import (
 from monkez_pyqt6.monkez_canva import (
     ASSET_MANIFEST_KEY,
     CanvasDocument,
+    BindingEvent,
+    BindingSpec,
+    BindingUpdate,
+    DataBindingEngine,
     ElementDefinition,
     ElementRegistry,
     LayoutEdge,
@@ -106,6 +110,7 @@ from monkez_pyqt6.monkez_canva import (
     atomic_write_json,
     backup_path,
     build_asset_manifest,
+    binding_specs_from_document,
     build_selection_payload,
     create_default_element_registry,
     load_json_with_recovery,
@@ -155,6 +160,7 @@ _LINE_EFFECTS = ("flow", "pulse", "glow", "particles", "packet")
 _PORT_KINDS = ("node", "splitter")
 _VIEWPORT_BOOKMARKS_KEY = "viewportBookmarks"
 _MINIMAP_VISIBLE_KEY = "minimapVisible"
+_BINDING_UNSET = object()
 _ELEMENT_STANDARD_PROPERTIES = {
     "id", "type", "x", "y", "width", "height", "text", "color", "background",
     "textColor", "data", "metadata", "source", "lineWidth", "lineStyle",
@@ -2523,6 +2529,12 @@ class _CanvasCommandPalette(QDialog):
             ))
         if len(selected) == 1 and selected[0] in canvas._elements:
             selected_id = selected[0]
+            commands.append((
+                "binding:inspect", "Open data bindings", "Data",
+                "live signal property model callable mqtt websocket opcua modbus",
+                "refresh", writable,
+                lambda: canvas.showDataBindingInspector(selected_id),
+            ))
             definition = canvas.elementRegistry().definition(
                 canvas.element(selected_id).kind
             )
@@ -2690,6 +2702,7 @@ class _CanvasEditorToolbox(QDialog):
             )
         )
         canvas.workflowNodeStateChanged.connect(self._sync_workflow_state)
+        canvas.dataBindingStateChanged.connect(self._sync_binding_runtime_state)
         self._sync_inspector(canvas.selectedElementId())
         self.refreshLayers()
         self._sync_modified_status(canvas.isDocumentModified())
@@ -2744,6 +2757,22 @@ class _CanvasEditorToolbox(QDialog):
             color: #087f72; background: #effbf8; border-color: #bdebe3;
         }
         QLabel#runtimeState[state="failed"], QLabel#runtimeState[state="cancelled"] {
+            color: #c2413a; background: #fff2f0; border-color: #ffcfc8;
+        }
+        QLabel#bindingRuntimeState {
+            color: #68727a; background: #f4f2ef; border: 1px solid #e4dfd9;
+            border-radius: 8px; padding: 5px 8px; font-size: 9px; font-weight: 650;
+        }
+        QLabel#bindingRuntimeState[state="active"] {
+            color: #087f72; background: #effbf8; border-color: #bdebe3;
+        }
+        QLabel#bindingRuntimeState[state="pending"] {
+            color: #7c3aed; background: #f5f3ff; border-color: #ddd6fe;
+        }
+        QLabel#bindingRuntimeState[state="stale"] {
+            color: #b45309; background: #fff8eb; border-color: #fde2ad;
+        }
+        QLabel#bindingRuntimeState[state="error"] {
             color: #c2413a; background: #fff2f0; border-color: #ffcfc8;
         }
         QLabel#canvasSelectionHint { color: #858b90; font-size: 9px; }
@@ -3192,6 +3221,140 @@ class _CanvasEditorToolbox(QDialog):
         workflow_actions.addWidget(debug_workflow)
         workflow_layout.addLayout(workflow_actions)
         layout.addWidget(self._workflow_group)
+
+        self._bindings_group = _CanvasCardGroup("Data bindings")
+        bindings_layout = QVBoxLayout(self._bindings_group)
+        binding_header = QHBoxLayout()
+        self._bindings_list = QListWidget()
+        self._bindings_list.setMaximumHeight(96)
+        self._bindings_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._bindings_list.itemSelectionChanged.connect(
+            self._load_selected_binding
+        )
+        bindings_layout.addWidget(self._bindings_list)
+        self._binding_state_label = QLabel("Runtime · idle")
+        self._binding_state_label.setObjectName("bindingRuntimeState")
+        binding_header.addWidget(self._binding_state_label)
+        binding_header.addStretch(1)
+        new_binding = QToolButton()
+        new_binding.setIcon(_canvas_icon("add"))
+        new_binding.setToolTip("Create a new binding definition")
+        new_binding.clicked.connect(self._new_binding_editor)
+        binding_header.addWidget(new_binding)
+        bindings_layout.addLayout(binding_header)
+
+        binding_form = QGridLayout()
+        binding_form.setHorizontalSpacing(8)
+        binding_form.setVerticalSpacing(6)
+        self._binding_id_edit = QLineEdit()
+        self._binding_id_edit.setPlaceholderText("binding-id")
+        self._binding_source_edit = QLineEdit()
+        self._binding_source_edit.setPlaceholderText("Source ID, e.g. sensor.temp")
+        self._binding_target_combo = QComboBox()
+        self._binding_format_edit = QLineEdit()
+        self._binding_format_edit.setPlaceholderText("Format, e.g. {value:.1f} °C")
+        binding_form.addWidget(QLabel("Binding ID"), 0, 0)
+        binding_form.addWidget(QLabel("Source"), 0, 1)
+        binding_form.addWidget(self._binding_id_edit, 1, 0)
+        binding_form.addWidget(self._binding_source_edit, 1, 1)
+        binding_form.addWidget(QLabel("Target"), 2, 0)
+        binding_form.addWidget(QLabel("Format"), 2, 1)
+        binding_form.addWidget(self._binding_target_combo, 3, 0)
+        binding_form.addWidget(self._binding_format_edit, 3, 1)
+        bindings_layout.addLayout(binding_form)
+
+        self._binding_transforms_edit = QPlainTextEdit()
+        self._binding_transforms_edit.setPlaceholderText(
+            '[{"op": "get", "path": "value"}, {"op": "scale", "value": 1.5}]'
+        )
+        self._binding_transforms_edit.setMaximumHeight(82)
+        self._binding_transforms_edit.setToolTip(
+            "Safe JSON transform pipeline; no Python expression is evaluated"
+        )
+        bindings_layout.addWidget(self._binding_transforms_edit)
+
+        timing_layout = QGridLayout()
+        timing_layout.setHorizontalSpacing(7)
+        self._binding_debounce_field = _CanvasNumberField()
+        self._binding_throttle_field = _CanvasNumberField()
+        self._binding_stale_field = _CanvasNumberField()
+        for field in (
+            self._binding_debounce_field,
+            self._binding_throttle_field,
+            self._binding_stale_field,
+        ):
+            field.setRange(0, 86400)
+            field.setDecimals(2)
+            field.setSuffix(" s")
+            field.setSingleStep(0.1)
+        for column, (label, field) in enumerate((
+            ("Debounce", self._binding_debounce_field),
+            ("Throttle", self._binding_throttle_field),
+            ("Stale after", self._binding_stale_field),
+        )):
+            timing_layout.addWidget(QLabel(label), 0, column)
+            timing_layout.addWidget(field, 1, column)
+        bindings_layout.addLayout(timing_layout)
+
+        fallback_layout = QGridLayout()
+        fallback_layout.setHorizontalSpacing(8)
+        self._binding_fallback_edit = QLineEdit()
+        self._binding_fallback_edit.setPlaceholderText("Stale fallback JSON")
+        self._binding_error_fallback_edit = QLineEdit()
+        self._binding_error_fallback_edit.setPlaceholderText("Error fallback JSON")
+        fallback_layout.addWidget(self._binding_fallback_edit, 0, 0)
+        fallback_layout.addWidget(self._binding_error_fallback_edit, 0, 1)
+        bindings_layout.addLayout(fallback_layout)
+
+        binding_actions = QHBoxLayout()
+        self._binding_enabled_check = QCheckBox("Enabled")
+        self._binding_enabled_check.setChecked(True)
+        binding_actions.addWidget(self._binding_enabled_check)
+        binding_actions.addStretch(1)
+        save_binding = QPushButton("Add binding")
+        save_binding.setObjectName("primaryAction")
+        save_binding.setIcon(_canvas_icon("check", "#ffffff"))
+        save_binding.clicked.connect(self._save_binding_editor)
+        remove_binding = QToolButton()
+        remove_binding.setIcon(_canvas_icon("delete", "#b91c1c"))
+        remove_binding.setToolTip("Remove selected binding")
+        remove_binding.clicked.connect(self._remove_selected_binding)
+        binding_actions.addWidget(save_binding)
+        binding_actions.addWidget(remove_binding)
+        bindings_layout.addLayout(binding_actions)
+        layout.addWidget(self._bindings_group)
+
+        self._syncing_binding_editor = False
+        for field in (
+            self._binding_id_edit,
+            self._binding_source_edit,
+            self._binding_format_edit,
+            self._binding_fallback_edit,
+            self._binding_error_fallback_edit,
+        ):
+            field.editingFinished.connect(self._auto_update_selected_binding)
+        self._binding_transforms_edit.textChanged.connect(
+            lambda: self._schedule_binding_editor_update(240)
+        )
+        self._binding_target_combo.activated.connect(
+            self._auto_update_selected_binding
+        )
+        self._binding_enabled_check.toggled.connect(
+            self._auto_update_selected_binding
+        )
+        for field in (
+            self._binding_debounce_field,
+            self._binding_throttle_field,
+            self._binding_stale_field,
+        ):
+            field.valueChanged.connect(
+                lambda _value: self._schedule_binding_editor_update(90)
+            )
+        self._binding_apply_timer = QTimer(self)
+        self._binding_apply_timer.setSingleShot(True)
+        self._binding_apply_timer.timeout.connect(self._auto_update_selected_binding)
 
         self._geometry_group = _CanvasCardGroup("Position / size")
         geometry_form = QGridLayout(self._geometry_group)
@@ -4300,6 +4463,7 @@ class _CanvasEditorToolbox(QDialog):
         self._selection_hint.show()
         self._ports_group.hide()
         self._workflow_group.hide()
+        self._bindings_group.hide()
         self._media_group.hide()
         self._stroke_group.hide()
         self._content_group.setVisible(homogeneous_elements and len(kinds) == 1)
@@ -4389,6 +4553,7 @@ class _CanvasEditorToolbox(QDialog):
             self._content_group.hide()
             self._ports_group.hide()
             self._workflow_group.hide()
+            self._bindings_group.hide()
             self._geometry_group.hide()
             self._media_group.hide()
             self._stroke_group.hide()
@@ -4397,6 +4562,7 @@ class _CanvasEditorToolbox(QDialog):
         elif selected_count > 1:
             self._group_properties_group.hide()
             self._workflow_group.hide()
+            self._bindings_group.hide()
             self._sync_multi_inspector(items)
         else:
             self._id_edit.setEnabled(True)
@@ -4409,6 +4575,7 @@ class _CanvasEditorToolbox(QDialog):
                 self._content_group.hide()
                 self._ports_group.hide()
                 self._workflow_group.hide()
+                self._bindings_group.hide()
                 self._media_group.hide()
                 self._stroke_group.hide()
                 self._group_properties_group.show()
@@ -4456,6 +4623,7 @@ class _CanvasEditorToolbox(QDialog):
             self._ports_group.setVisible(not connector and "ports" in capabilities)
             workflow = not connector and "workflow" in capabilities
             self._workflow_group.setVisible(workflow)
+            self._bindings_group.setVisible(not connector)
             self._geometry_group.setVisible(not connector and "geometry" in capabilities)
             self._media_group.setVisible(media)
             self._stroke_group.setVisible(connector or line)
@@ -4537,6 +4705,8 @@ class _CanvasEditorToolbox(QDialog):
                 self._bus_id_edit.setText(item.bus_id)
                 self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.waypoints]))
             else:
+                self._refresh_binding_targets(item)
+                self._sync_binding_list(item.element_id)
                 self._text_edit.setText(item.text)
                 self._data_edit.setText(", ".join(str(value) for value in item.data) if chart else "")
                 self._data_label.setVisible(chart)
@@ -4592,6 +4762,228 @@ class _CanvasEditorToolbox(QDialog):
             self._workflow_state_label.setProperty("state", str(state))
             self._workflow_state_label.style().unpolish(self._workflow_state_label)
             self._workflow_state_label.style().polish(self._workflow_state_label)
+
+    def _schedule_binding_editor_update(self, delay: int = 120) -> None:
+        if (
+            not self._syncing_binding_editor
+            and self._bindings_list.currentItem() is not None
+        ):
+            self._binding_apply_timer.start(max(0, int(delay)))
+
+    def _binding_records_for_selected(self) -> list[dict[str, Any]]:
+        element_id = self.canvas.selectedElementId()
+        return [
+            {key: value for key, value in record.items() if key != "elementId"}
+            for record in self.canvas.dataBindings(element_id)
+        ] if element_id else []
+
+    def _sync_binding_list(self, element_id: str, select_id: str = "") -> None:
+        previous = select_id
+        if not previous and self._bindings_list.currentItem() is not None:
+            previous = str(
+                self._bindings_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            )
+        blocker = QSignalBlocker(self._bindings_list)
+        self._bindings_list.clear()
+        selected_row = -1
+        for row, record in enumerate(self.canvas.dataBindings(element_id)):
+            binding_id = str(record["id"])
+            state = self.canvas.dataBindingState(binding_id)["state"]
+            item = QListWidgetItem(
+                f"{binding_id}  ·  {record['source']} → {record['target']}  ·  {state}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, binding_id)
+            item.setToolTip(
+                f"Source: {record['source']}\nTarget: {record['target']}\nState: {state}"
+            )
+            self._bindings_list.addItem(item)
+            if binding_id == previous:
+                selected_row = row
+        if self._bindings_list.count():
+            self._bindings_list.setCurrentRow(
+                selected_row if selected_row >= 0 else 0
+            )
+        del blocker
+        if self._bindings_list.currentItem() is not None:
+            self._load_selected_binding()
+        else:
+            self._new_binding_editor()
+
+    def _refresh_binding_targets(self, item: _CanvasElement) -> None:
+        current = self._binding_target_combo.currentText()
+        targets = [
+            "text", "data", "color", "background", "textColor", "flowColor",
+            "opacity", "rotation", "scale", "x", "y", "width", "height",
+            "highlight", "animation",
+        ]
+        targets.extend(f"port.{port['id']}" for port in item.ports)
+        blocker = QSignalBlocker(self._binding_target_combo)
+        self._binding_target_combo.clear()
+        self._binding_target_combo.addItems(targets)
+        if current in targets:
+            self._binding_target_combo.setCurrentText(current)
+        del blocker
+
+    def _load_selected_binding(self) -> None:
+        selected = self._bindings_list.currentItem()
+        if selected is None:
+            return
+        binding_id = str(selected.data(Qt.ItemDataRole.UserRole))
+        record = next(
+            (
+                value for value in self.canvas.dataBindings()
+                if str(value["id"]) == binding_id
+            ),
+            None,
+        )
+        if record is None:
+            return
+        self._syncing_binding_editor = True
+        try:
+            self._binding_id_edit.setText(binding_id)
+            self._binding_source_edit.setText(str(record["source"]))
+            self._binding_target_combo.setCurrentText(str(record["target"]))
+            self._binding_format_edit.setText(str(record.get("format", "")))
+            self._binding_transforms_edit.setPlainText(
+                json.dumps(record.get("transforms", []), indent=2, ensure_ascii=False)
+            )
+            self._binding_debounce_field.setValue(float(record.get("debounce", 0)))
+            self._binding_throttle_field.setValue(float(record.get("throttle", 0)))
+            self._binding_stale_field.setValue(float(record.get("staleAfter", 0)))
+            self._binding_fallback_edit.setText(
+                "" if "fallback" not in record
+                else json.dumps(record["fallback"], ensure_ascii=False)
+            )
+            self._binding_error_fallback_edit.setText(
+                "" if "errorFallback" not in record
+                else json.dumps(record["errorFallback"], ensure_ascii=False)
+            )
+            self._binding_enabled_check.setChecked(bool(record.get("enabled", True)))
+            state = self.canvas.dataBindingState(binding_id)["state"]
+            self._set_binding_state_label(state)
+        finally:
+            self._syncing_binding_editor = False
+
+    def _new_binding_editor(self) -> None:
+        self._binding_apply_timer.stop()
+        self._syncing_binding_editor = True
+        try:
+            self._bindings_list.clearSelection()
+            element_id = self.canvas.selectedElementId()
+            count = len(self.canvas.dataBindings(element_id)) if element_id else 0
+            self._binding_id_edit.setText(f"binding-{count + 1}")
+            self._binding_source_edit.clear()
+            self._binding_target_combo.setCurrentText("text")
+            self._binding_format_edit.clear()
+            self._binding_transforms_edit.setPlainText("[]")
+            self._binding_debounce_field.setValue(0)
+            self._binding_throttle_field.setValue(0)
+            self._binding_stale_field.setValue(0)
+            self._binding_fallback_edit.clear()
+            self._binding_error_fallback_edit.clear()
+            self._binding_enabled_check.setChecked(True)
+            self._set_binding_state_label("idle")
+        finally:
+            self._syncing_binding_editor = False
+
+    @staticmethod
+    def _optional_json(text: str) -> tuple[bool, Any]:
+        source = str(text).strip()
+        return (False, None) if not source else (True, json.loads(source))
+
+    def _binding_editor_record(self) -> dict[str, Any]:
+        binding_id = self._binding_id_edit.text().strip()
+        source = self._binding_source_edit.text().strip()
+        if not binding_id or not source:
+            raise ValueError("Binding ID and Source are required")
+        transforms = json.loads(
+            self._binding_transforms_edit.toPlainText().strip() or "[]"
+        )
+        if isinstance(transforms, dict):
+            transforms = [transforms]
+        if not isinstance(transforms, list) or any(
+            not isinstance(value, dict) for value in transforms
+        ):
+            raise ValueError("Transforms must be a JSON array of objects")
+        record: dict[str, Any] = {
+            "id": binding_id,
+            "source": source,
+            "target": self._binding_target_combo.currentText(),
+            "transforms": transforms,
+            "format": self._binding_format_edit.text(),
+            "debounce": self._binding_debounce_field.value(),
+            "throttle": self._binding_throttle_field.value(),
+            "staleAfter": self._binding_stale_field.value(),
+            "enabled": self._binding_enabled_check.isChecked(),
+        }
+        has_fallback, fallback = self._optional_json(
+            self._binding_fallback_edit.text()
+        )
+        has_error, error_fallback = self._optional_json(
+            self._binding_error_fallback_edit.text()
+        )
+        if has_fallback:
+            record["fallback"] = fallback
+        if has_error:
+            record["errorFallback"] = error_fallback
+        return record
+
+    def _save_binding_editor(self, *_args) -> None:
+        element_id = self.canvas.selectedElementId()
+        if not element_id:
+            return
+        try:
+            record = self._binding_editor_record()
+            selected = self._bindings_list.currentItem()
+            old_id = "" if selected is None else str(
+                selected.data(Qt.ItemDataRole.UserRole)
+            )
+            records = self._binding_records_for_selected()
+            replaced = False
+            for index, current in enumerate(records):
+                if str(current.get("id")) == old_id:
+                    records[index] = record
+                    replaced = True
+                    break
+            if not replaced:
+                records.append(record)
+            self.canvas.setDataBindings(element_id, records)
+            self._sync_binding_list(element_id, str(record["id"]))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            self.canvas.diagnosticMessage.emit(f"Binding change rejected: {error}")
+
+    def _auto_update_selected_binding(self, *_args) -> None:
+        if self._syncing_binding_editor or self._bindings_list.currentItem() is None:
+            return
+        self._save_binding_editor()
+
+    def _remove_selected_binding(self) -> None:
+        selected = self._bindings_list.currentItem()
+        if selected is None:
+            return
+        binding_id = str(selected.data(Qt.ItemDataRole.UserRole))
+        if self.canvas.removeDataBinding(binding_id):
+            self._sync_binding_list(self.canvas.selectedElementId())
+
+    def _set_binding_state_label(self, state: str) -> None:
+        normalized = str(state or "idle")
+        self._binding_state_label.setText(
+            f"Runtime · {normalized.replace('_', ' ')}"
+        )
+        self._binding_state_label.setProperty("state", normalized)
+        self._binding_state_label.style().unpolish(self._binding_state_label)
+        self._binding_state_label.style().polish(self._binding_state_label)
+
+    def _sync_binding_runtime_state(
+        self, binding_id: str, state: dict[str, Any]
+    ) -> None:
+        selected = self._bindings_list.currentItem()
+        if selected is not None and str(
+            selected.data(Qt.ItemDataRole.UserRole)
+        ) == str(binding_id):
+            self._set_binding_state_label(str(state.get("state", "idle")))
+        if self._bindings_group.isVisible():
+            self._sync_binding_list(self.canvas.selectedElementId(), str(binding_id))
 
     def _run_selected_workflow(self) -> None:
         element_id = self.canvas.selectedElementId()
@@ -5054,6 +5446,8 @@ class _CanvasRuntimeDebugger(QDialog):
         self._tabs.addTab(self._messages, "Messages")
         self._tabs.addTab(self._trace, "Timeline")
         self._tabs.addTab(workflow_page, "Workflow")
+        self._bindings = QListWidget()
+        self._tabs.addTab(self._bindings, "Bindings")
         root.addWidget(self._tabs, 1)
 
         details = QFrame()
@@ -5078,15 +5472,21 @@ class _CanvasRuntimeDebugger(QDialog):
         canvas.workflowNodeStateChanged.connect(
             lambda _node_id, _state: self._refresh_workflow()
         )
+        canvas.dataBindingEvent.connect(lambda _event: self._refresh_bindings())
+        canvas.dataBindingStateChanged.connect(
+            lambda _binding_id, _state: self._refresh_bindings()
+        )
         self._sync_pause_state(canvas.runtimePaused())
         self._refresh_messages()
         self._refresh_trace()
         self._refresh_workflow()
+        self._refresh_bindings()
 
     def showEvent(self, event) -> None:
         self._refresh_messages()
         self._refresh_trace()
         self._refresh_workflow()
+        self._refresh_bindings()
         super().showEvent(event)
 
     def _refresh_messages(self) -> None:
@@ -5150,6 +5550,30 @@ class _CanvasRuntimeDebugger(QDialog):
                 f"#{event['sequence']:04d}  {event['event']}  "
                 f"{event.get('nodeId', '')}  {event.get('connectorId', '')}{suffix}"
             )
+
+    def _refresh_bindings(self) -> None:
+        self._bindings.clear()
+        colors = {
+            "active": "#0f9f8f", "pending": "#7c3aed", "stale": "#d97706",
+            "error": "#dc2626", "idle": "#64748b", "disabled": "#94a3b8",
+        }
+        for state in self.canvas._binding_engine.states():
+            status = str(state["state"])
+            last = state.get("value")
+            value = repr(last)
+            if len(value) > 70:
+                value = value[:67] + "…"
+            item = QListWidgetItem(
+                _canvas_icon("node", colors.get(status, "#64748b")),
+                f"{state['bindingId']}  ·  {state['sourceId']} → "
+                f"{state['elementId']}.{state['target']}  ·  {status}\n{value}",
+            )
+            item.setToolTip(
+                f"Last input: {state.get('lastInput')}\n"
+                f"Last apply: {state.get('lastApply')}\n"
+                f"Error: {state.get('error') or 'none'}"
+            )
+            self._bindings.addItem(item)
 
     def _selected_message_id(self) -> str:
         item = self._messages.currentItem()
@@ -5666,6 +6090,10 @@ class MonkezCanva(QWidget):
     workflowTraceEvent = pyqtSignal(dict)
     workflowNodeStateChanged = pyqtSignal(str, str)
     workflowFinished = pyqtSignal(dict)
+    dataBindingEvent = pyqtSignal(dict)
+    dataBindingStateChanged = pyqtSignal(str, dict)
+    dataBindingBatchApplied = pyqtSignal(list)
+    dataSourceBound = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -5718,6 +6146,13 @@ class MonkezCanva(QWidget):
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
         self._groups: dict[str, _CanvasGroup] = {}
+        self._binding_baselines: dict[tuple[str, str], Any] = {}
+        self._binding_disconnectors: dict[str, list[Callable[[], None]]] = {}
+        self._binding_providers: dict[str, dict[str, Any]] = {}
+        self._binding_engine = DataBindingEngine(
+            self._apply_binding_batch,
+            event_sink=self._on_data_binding_event,
+        )
         self._routing_revision = 0
         self._document_model: CanvasDocument | None = None
         self._document_subscription = ""
@@ -5750,6 +6185,9 @@ class MonkezCanva(QWidget):
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.timeout.connect(self._flush_autosave)
         self.documentChanged.connect(self._queue_autosave)
+        self._binding_timer = QTimer(self)
+        self._binding_timer.setInterval(33)
+        self._binding_timer.timeout.connect(self._binding_runtime_tick)
         self._toggle_shortcuts: list[QShortcut] = []
         for sequence, label in (
             ("Ctrl+D, E", "Ctrl+D then E"),
@@ -5902,6 +6340,25 @@ class MonkezCanva(QWidget):
         if self._command_palette is None:
             self._command_palette = _CanvasCommandPalette(self)
         self._command_palette.showPalette(query)
+
+    def showDataBindingInspector(self, element_id: str = "") -> None:
+        """Open the contextual Data bindings card for one element."""
+
+        target = str(element_id or self.selectedElementId())
+        if not self._edit_mode:
+            self.setEditMode(True)
+        if target:
+            self._required_element(target)
+            self.selectElement(target)
+        self._ensure_toolbox()
+        self._toolbox._tabs.setCurrentIndex(1)
+        self._toolbox._sync_inspector(target)
+        for scroll in self._toolbox.findChildren(QScrollArea):
+            if scroll.widget() is self._toolbox._bindings_group.parentWidget():
+                scroll.ensureWidgetVisible(self._toolbox._bindings_group, 0, 24)
+                break
+        self._toolbox.show()
+        self._toolbox.raise_()
 
     def selectAllElements(self) -> list[str]:
         return self.selectElements(self.elements())
@@ -6330,6 +6787,12 @@ class MonkezCanva(QWidget):
                 icon="save",
             )
         elif object_id in self._elements:
+            action(
+                "Open data bindings…",
+                lambda: self.showDataBindingInspector(object_id),
+                enabled=writable,
+                icon="refresh",
+            )
             definition = self._element_registry.definition(
                 self._elements[object_id].kind
             )
@@ -6690,6 +7153,554 @@ class MonkezCanva(QWidget):
         item.update()
         self.portRuntimeValueChanged.emit(key[0], key[1], None)
         return True
+
+    # ------------------------------------------------------------------
+    # Declarative data bindings
+
+    def dataBindings(self, element_id: str = "") -> list[dict[str, Any]]:
+        """Return portable binding definitions, optionally for one element."""
+
+        target = str(element_id)
+        return [
+            spec.to_record() | {"elementId": spec.element_id}
+            for spec in self._binding_engine.specs()
+            if not target or spec.element_id == target
+        ]
+
+    def setDataBindings(
+        self, element_id: str, bindings: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...]
+    ) -> "MonkezCanva":
+        """Replace one element's JSON binding definitions in one Undo command."""
+
+        item = self._required_element(element_id)
+        normalized = []
+        local_ids: set[str] = set()
+        local_targets: set[str] = set()
+        for index, record in enumerate(bindings):
+            spec = BindingSpec.from_record(item.element_id, record, index)
+            if spec.binding_id in local_ids:
+                raise ValueError(f"Duplicate data-binding ID: {spec.binding_id}")
+            if spec.target in local_targets:
+                raise ValueError(
+                    f"Element target already has a binding: {item.element_id}.{spec.target}"
+                )
+            local_ids.add(spec.binding_id)
+            local_targets.add(spec.target)
+            if spec.target.startswith("port.") and item.port(
+                spec.target.removeprefix("port.")
+            ) is None:
+                raise KeyError(
+                    f"Unknown binding port {spec.target.removeprefix('port.')!r} "
+                    f"on {item.element_id!r}"
+                )
+            normalized.append(spec.to_record())
+        existing_ids = {
+            spec.binding_id
+            for spec in self._binding_engine.specs()
+            if spec.element_id != item.element_id
+        }
+        duplicates = existing_ids.intersection(
+            str(record["id"]) for record in normalized
+        )
+        if duplicates:
+            raise ValueError(f"Duplicate data-binding ID: {sorted(duplicates)[0]}")
+        return self.updateElement(item.element_id, bindings=normalized)
+
+    def addDataBinding(
+        self,
+        element_id: str,
+        target: str,
+        source_id: str,
+        *,
+        binding_id: str | None = None,
+        transforms: Mapping[str, Any] | list[Mapping[str, Any]] | None = None,
+        format: str = "",
+        debounce: float = 0.0,
+        throttle: float = 0.0,
+        stale_after: float = 0.0,
+        fallback: Any = _BINDING_UNSET,
+        error_fallback: Any = _BINDING_UNSET,
+        enabled: bool = True,
+    ) -> str:
+        """Add a portable binding and return its stable ID."""
+
+        binding_id = str(binding_id or uuid.uuid4().hex[:10])
+        record: dict[str, Any] = {
+            "id": binding_id,
+            "source": str(source_id),
+            "target": str(target),
+            "transforms": (
+                [] if transforms is None
+                else [dict(transforms)] if isinstance(transforms, Mapping)
+                else [dict(value) for value in transforms]
+            ),
+            "format": str(format),
+            "debounce": float(debounce),
+            "throttle": float(throttle),
+            "staleAfter": float(stale_after),
+            "enabled": bool(enabled),
+        }
+        if fallback is not _BINDING_UNSET:
+            record["fallback"] = fallback
+        if error_fallback is not _BINDING_UNSET:
+            record["errorFallback"] = error_fallback
+        current = [
+            {key: value for key, value in binding.items() if key != "elementId"}
+            for binding in self.dataBindings(element_id)
+        ]
+        self.setDataBindings(element_id, [*current, record])
+        return binding_id
+
+    def updateDataBinding(self, binding_id: str, **changes) -> "MonkezCanva":
+        key = str(binding_id)
+        spec = self._binding_engine.spec(key)
+        if spec is None:
+            raise KeyError(f"Unknown data binding: {binding_id}")
+        records = [
+            {name: value for name, value in binding.items() if name != "elementId"}
+            for binding in self.dataBindings(spec.element_id)
+        ]
+        aliases = {
+            "source_id": "source",
+            "binding_id": "id",
+            "stale_after": "staleAfter",
+            "error_fallback": "errorFallback",
+        }
+        for index, record in enumerate(records):
+            if str(record.get("id")) == key:
+                for name, value in changes.items():
+                    record[aliases.get(name, name)] = value
+                records[index] = record
+                break
+        self.setDataBindings(spec.element_id, records)
+        return self
+
+    def removeDataBinding(self, binding_id: str) -> bool:
+        key = str(binding_id)
+        spec = self._binding_engine.spec(key)
+        if spec is None:
+            return False
+        records = [
+            {name: value for name, value in binding.items() if name != "elementId"}
+            for binding in self.dataBindings(spec.element_id)
+            if str(binding.get("id")) != key
+        ]
+        self.setDataBindings(spec.element_id, records)
+        return True
+
+    def dataBindingState(self, binding_id: str) -> dict[str, Any]:
+        return self._binding_engine.state(binding_id)
+
+    def dataBindingTrace(self, limit: int | None = None) -> list[dict[str, Any]]:
+        return [event.to_dict() for event in self._binding_engine.events(limit)]
+
+    def feedDataSource(
+        self,
+        source_id: str,
+        value: Any,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        updates = self._binding_engine.feed(
+            str(source_id), value, metadata=metadata
+        )
+        self._ensure_binding_timer()
+        return [self._binding_update_dict(update) for update in updates]
+
+    def feedDataSources(self, values: Mapping[str, Any]) -> list[dict[str, Any]]:
+        updates = self._binding_engine.feed_many(values)
+        self._ensure_binding_timer()
+        return [self._binding_update_dict(update) for update in updates]
+
+    def bindSignal(
+        self,
+        source_id: str,
+        signal,
+        extractor: Callable[..., Any] | None = None,
+        *,
+        replace: bool = True,
+    ) -> str:
+        """Bind a PyQt signal to a source ID without persisting the signal."""
+
+        key = str(source_id).strip()
+        if not key:
+            raise ValueError("Data source ID cannot be empty")
+        if replace:
+            self.unbindDataSource(key)
+
+        def receive(*args) -> None:
+            try:
+                value = (
+                    extractor(*args)
+                    if extractor is not None
+                    else args[0] if len(args) == 1
+                    else args
+                )
+                self.feedDataSource(key, value)
+            except Exception as error:  # host source boundary
+                self.diagnosticMessage.emit(
+                    f"Data source {key!r} rejected a signal value: {error}"
+                )
+
+        signal.connect(receive)
+        self._binding_disconnectors.setdefault(key, []).append(
+            lambda target=signal, callback=receive: self._safe_disconnect(
+                target, callback
+            )
+        )
+        self.dataSourceBound.emit(key)
+        return key
+
+    def bindQObjectProperty(
+        self,
+        source_id: str,
+        obj,
+        property_name: str,
+        notify_signal: Any = None,
+    ) -> str:
+        """Bind a QObject property and its notify signal when available."""
+
+        key = str(source_id)
+        name = str(property_name)
+
+        def getter() -> Any:
+            value = obj.property(name) if hasattr(obj, "property") else getattr(obj, name)
+            return value() if callable(value) and not hasattr(obj, "property") else value
+
+        signal = notify_signal
+        if isinstance(signal, str):
+            signal = getattr(obj, signal)
+        if signal is None:
+            signal = getattr(obj, f"{name}Changed", None)
+        self.unbindDataSource(key)
+        if signal is not None and hasattr(signal, "connect"):
+            self.bindSignal(key, signal, lambda *_args: getter(), replace=False)
+        self._binding_providers[key] = {
+            "provider": getter, "interval": 0.0, "last": None,
+        }
+        self.refreshDataSource(key)
+        self.dataSourceBound.emit(key)
+        return key
+
+    def bindCallable(
+        self,
+        source_id: str,
+        provider: Callable[[], Any],
+        *,
+        interval: float = 0.0,
+        immediate: bool = True,
+    ) -> str:
+        """Register a pull source; positive interval uses one shared poll timer."""
+
+        if not callable(provider):
+            raise TypeError("Data source provider must be callable")
+        key = str(source_id).strip()
+        if not key:
+            raise ValueError("Data source ID cannot be empty")
+        self.unbindDataSource(key)
+        self._binding_providers[key] = {
+            "provider": provider,
+            "interval": max(0.0, float(interval)),
+            "last": None,
+        }
+        if immediate:
+            self.refreshDataSource(key)
+        self._ensure_binding_timer()
+        self.dataSourceBound.emit(key)
+        return key
+
+    def bindModelIndex(
+        self,
+        source_id: str,
+        model,
+        row: int,
+        column: int = 0,
+        role: int = int(Qt.ItemDataRole.DisplayRole),
+    ) -> str:
+        """Bind one model index and refresh on data/reset/layout changes."""
+
+        key = str(source_id)
+
+        def getter() -> Any:
+            return model.data(model.index(int(row), int(column)), int(role))
+
+        self.unbindDataSource(key)
+        self._binding_providers[key] = {
+            "provider": getter, "interval": 0.0, "last": None,
+        }
+        for signal_name in ("dataChanged", "modelReset", "layoutChanged", "rowsInserted"):
+            signal = getattr(model, signal_name, None)
+            if signal is not None and hasattr(signal, "connect"):
+                def callback(*_args, source=key) -> None:
+                    self.refreshDataSource(source)
+
+                signal.connect(callback)
+                self._binding_disconnectors.setdefault(key, []).append(
+                    lambda target=signal, handler=callback: self._safe_disconnect(
+                        target, handler
+                    )
+                )
+        self.refreshDataSource(key)
+        self.dataSourceBound.emit(key)
+        return key
+
+    def bindDataAdapter(
+        self,
+        source_id: str,
+        adapter,
+        *,
+        signal: str = "valueChanged",
+        getter: str = "value",
+    ) -> str:
+        """Bind adapter conventions used by MQTT/WebSocket/OPC-UA/Modbus bridges."""
+
+        return self.bindQObjectProperty(
+            source_id, adapter, getter, getattr(adapter, signal, None)
+        )
+
+    def refreshDataSource(self, source_id: str) -> bool:
+        key = str(source_id)
+        provider = self._binding_providers.get(key)
+        if provider is None:
+            return False
+        try:
+            value = provider["provider"]()
+            provider["last"] = time.monotonic()
+            self.feedDataSource(key, value)
+            return True
+        except Exception as error:  # host source boundary
+            self.diagnosticMessage.emit(f"Data source {key!r} failed: {error}")
+            return False
+
+    def unbindDataSource(self, source_id: str) -> bool:
+        key = str(source_id)
+        changed = key in self._binding_providers or key in self._binding_disconnectors
+        self._binding_providers.pop(key, None)
+        for disconnect in self._binding_disconnectors.pop(key, []):
+            disconnect()
+        if not self._binding_providers and self._binding_engine.next_due() is None:
+            self._binding_timer.stop()
+        return changed
+
+    def clearDataBindingRuntime(self, *, disconnect_sources: bool = False) -> None:
+        self._restore_all_binding_baselines()
+        self._binding_engine.clear()
+        if disconnect_sources:
+            for source_id in tuple(
+                {*self._binding_providers, *self._binding_disconnectors}
+            ):
+                self.unbindDataSource(source_id)
+        if not self._binding_providers:
+            self._binding_timer.stop()
+
+    @staticmethod
+    def _safe_disconnect(signal, callback) -> None:
+        try:
+            signal.disconnect(callback)
+        except (RuntimeError, TypeError):
+            pass
+
+    @staticmethod
+    def _binding_update_dict(update: BindingUpdate) -> dict[str, Any]:
+        return {
+            "bindingId": update.binding_id,
+            "elementId": update.element_id,
+            "sourceId": update.source_id,
+            "target": update.target,
+            "value": update.value,
+            "sourceValue": update.source_value,
+            "timestamp": update.timestamp,
+            "state": update.state,
+            "metadata": dict(update.metadata),
+        }
+
+    def _sync_data_binding_definitions(self) -> None:
+        specs = binding_specs_from_document(self.toDocument())
+        old_records = tuple(
+            (spec.element_id, spec.to_record()) for spec in self._binding_engine.specs()
+        )
+        new_records = tuple((spec.element_id, spec.to_record()) for spec in specs)
+        if old_records == new_records:
+            return
+        self._restore_all_binding_baselines()
+        self._binding_engine.replace_all(specs)
+        self._ensure_binding_timer()
+
+    def _capture_binding_baseline(self, element_id: str, target: str) -> None:
+        key = (str(element_id), str(target))
+        if key in self._binding_baselines or target in ("highlight", "animation"):
+            return
+        item = self._required_element(element_id)
+        if target.startswith("port."):
+            port_id = target.removeprefix("port.")
+            runtime_key = (item.element_id, port_id)
+            self._binding_baselines[key] = (
+                runtime_key in self._port_runtime_values,
+                self._port_runtime_values.get(runtime_key),
+            )
+            return
+        values = {
+            "text": item.text,
+            "data": list(item.data),
+            "color": QColor(item.color),
+            "background": QColor(item.background),
+            "textColor": QColor(item.text_color),
+            "flowColor": QColor(item.flow_color),
+            "opacity": item.opacity(),
+            "rotation": item.rotation(),
+            "scale": item.scale(),
+            "x": item.pos().x(),
+            "y": item.pos().y(),
+            "width": item._rect.width(),
+            "height": item._rect.height(),
+        }
+        self._binding_baselines[key] = values[target]
+
+    def _restore_all_binding_baselines(self) -> None:
+        baselines = tuple(self._binding_baselines.items())
+        self._binding_baselines.clear()
+        for (element_id, target), value in baselines:
+            item = self._elements.get(element_id)
+            if item is None:
+                continue
+            if target.startswith("port."):
+                port_id = target.removeprefix("port.")
+                existed, previous = value
+                runtime_key = (element_id, port_id)
+                if existed:
+                    self._port_runtime_values[runtime_key] = previous
+                else:
+                    self._port_runtime_values.pop(runtime_key, None)
+                self.portRuntimeValueChanged.emit(
+                    element_id, port_id, previous if existed else None
+                )
+                item.update()
+                continue
+            self._apply_binding_target(item, target, value, runtime_action=False)
+
+    def _apply_binding_batch(self, updates: tuple[BindingUpdate, ...]) -> None:
+        applied = []
+        for update in updates:
+            item = self._elements.get(update.element_id)
+            if item is None:
+                continue
+            try:
+                self._capture_binding_baseline(update.element_id, update.target)
+                self._apply_binding_target(item, update.target, update.value)
+                applied.append(self._binding_update_dict(update))
+            except (KeyError, TypeError, ValueError) as error:
+                self.diagnosticMessage.emit(
+                    f"Binding {update.binding_id!r} target rejected value: {error}"
+                )
+        if applied:
+            self._update_minimap()
+            self.dataBindingBatchApplied.emit(applied)
+
+    def _apply_binding_target(
+        self,
+        item: _CanvasElement,
+        target: str,
+        value: Any,
+        *,
+        runtime_action: bool = True,
+    ) -> None:
+        geometry = False
+        if target == "text":
+            item.text = str(value)
+        elif target == "data":
+            if not isinstance(value, (list, tuple)):
+                raise TypeError("Chart data binding requires a list or tuple")
+            item.data = list(value)
+        elif target == "color":
+            item.color = _color(value)
+        elif target == "background":
+            item.background = _color(value, "#ffffff")
+        elif target == "textColor":
+            item.text_color = _color(value, "#0f172a")
+        elif target == "flowColor":
+            item.flow_color = _color(value, "#38bdf8")
+        elif target == "opacity":
+            item.setOpacity(max(0.0, min(1.0, float(value))))
+        elif target == "rotation":
+            item.setRotation(float(value))
+            geometry = True
+        elif target == "scale":
+            item.setScale(max(0.01, float(value)))
+            geometry = True
+        elif target in ("x", "y"):
+            item.setPos(
+                float(value) if target == "x" else item.pos().x(),
+                float(value) if target == "y" else item.pos().y(),
+            )
+            geometry = True
+        elif target in ("width", "height"):
+            item.prepareGeometryChange()
+            if target == "width":
+                item._rect.setWidth(max(24.0, float(value)))
+            else:
+                item._rect.setHeight(max(24.0, float(value)))
+            geometry = True
+        elif target.startswith("port."):
+            port_id = target.removeprefix("port.")
+            self.setPortRuntimeValue(item.element_id, port_id, value)
+            return
+        elif target == "highlight":
+            if runtime_action and value:
+                options = value if isinstance(value, Mapping) else {}
+                self.highlightElement(
+                    item.element_id,
+                    options.get("color", value if isinstance(value, str) else "#f59e0b"),
+                    int(options.get("duration", 900)),
+                )
+            return
+        elif target == "animation":
+            if runtime_action and value:
+                options = value if isinstance(value, Mapping) else {}
+                self.animateElement(
+                    item.element_id,
+                    str(options.get("effect", value if isinstance(value, str) else "pulse")),
+                    int(options.get("duration", 500)),
+                )
+            return
+        else:
+            raise ValueError(f"Unsupported binding target: {target}")
+        item.update()
+        if geometry:
+            self._routing_revision += 1
+            for connector in self._connectors.values():
+                if item in (connector.source, connector.target) or connector.route == "auto":
+                    connector.updatePath()
+
+    def _on_data_binding_event(self, event: BindingEvent) -> None:
+        payload = event.to_dict()
+        self.dataBindingEvent.emit(payload)
+        try:
+            state = self._binding_engine.state(event.binding_id)
+        except KeyError:
+            state = payload
+        self.dataBindingStateChanged.emit(event.binding_id, state)
+
+    def _binding_runtime_tick(self) -> None:
+        now = time.monotonic()
+        for source_id, provider in tuple(self._binding_providers.items()):
+            interval = float(provider["interval"])
+            last = provider["last"]
+            if interval > 0 and (last is None or now - float(last) >= interval):
+                self.refreshDataSource(source_id)
+        self._binding_engine.tick(now)
+        if not any(
+            float(provider["interval"]) > 0
+            for provider in self._binding_providers.values()
+        ) and self._binding_engine.next_due() is None:
+            self._binding_timer.stop()
+
+    def _ensure_binding_timer(self) -> None:
+        needs_timer = self._binding_engine.next_due() is not None or any(
+            float(provider["interval"]) > 0
+            for provider in self._binding_providers.values()
+        )
+        if needs_timer and not self._binding_timer.isActive():
+            self._binding_timer.start()
 
     def setNodePorts(self, element_id: str, ports) -> "MonkezCanva":
         item = self._required_element(element_id)
@@ -8686,6 +9697,8 @@ class MonkezCanva(QWidget):
         return True
 
     def clear(self) -> None:
+        if self._restoring:
+            self.clearDataBindingRuntime()
         element_ids = list(self._elements)
         group_ids = list(self._groups)
         use_macro = not self._restoring and len(element_ids) + len(group_ids) > 1
@@ -9532,6 +10545,17 @@ class MonkezCanva(QWidget):
         try:
             self._apply_document_operation(event)
             self._sync_graphics_record_order()
+            binding_definition_changed = event.action in (
+                "element.added",
+                "element.removed",
+                "element.renamed",
+            ) or (
+                event.action == "element.updated" and "bindings" in event.changes
+            )
+            if binding_definition_changed:
+                self._sync_data_binding_definitions()
+            elif event.action == "element.updated":
+                self._reapply_bound_element_targets(event.target_id, event.changes)
             self._last_rendered_document_revision = max(
                 self._last_rendered_document_revision, event.revision
             )
@@ -9622,6 +10646,31 @@ class MonkezCanva(QWidget):
                 self.itemIdChanged.emit(old_id, item.group_id)
         elif action == "group.removed":
             self._remove_group_graphics(event.target_id)
+
+    def _reapply_bound_element_targets(
+        self, element_id: str, changes: Mapping[str, Any]
+    ) -> None:
+        target_fields = set(changes).intersection(
+            {
+                "text", "data", "color", "background", "textColor", "flowColor",
+                "opacity", "rotation", "x", "y", "width", "height", "ports",
+            }
+        )
+        if not target_fields:
+            return
+        for spec in self._binding_engine.specs():
+            if spec.element_id != str(element_id):
+                continue
+            property_name = "ports" if spec.target.startswith("port.") else spec.target
+            if property_name not in target_fields:
+                continue
+            self._binding_baselines.pop((spec.element_id, spec.target), None)
+            state = self._binding_engine.state(spec.binding_id)
+            if state["lastApply"] is not None:
+                item = self._elements.get(spec.element_id)
+                if item is not None:
+                    self._capture_binding_baseline(spec.element_id, spec.target)
+                    self._apply_binding_target(item, spec.target, state["value"])
 
     def _apply_scene_record(self, scene: dict[str, Any]) -> None:
         width = max(100.0, float(scene.get("width", self._scene.sceneRect().width())))
@@ -10181,6 +11230,7 @@ class MonkezCanva(QWidget):
         self._groups.clear()
         for entry in data.get("groups", []):
             self._add_group_record(dict(entry))
+        self._sync_data_binding_definitions()
         self._restoring = previous
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         if not previous:
@@ -10355,9 +11405,7 @@ class MonkezCanva(QWidget):
                 self._command_palette.hide()
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag if enabled else QGraphicsView.DragMode.ScrollHandDrag)
         if enabled:
-            if self._toolbox is None:
-                self._toolbox = _CanvasEditorToolbox(self)
-            self._toolbox.setParent(self.window(), self._toolbox.windowFlags())
+            self._ensure_toolbox()
             self._toolbox.show()
             self._place_toolbox_on_screen()
             self._toolbox.raise_()
@@ -10366,6 +11414,11 @@ class MonkezCanva(QWidget):
         toolbox_state = "visible" if self._toolbox is not None and self._toolbox.isVisible() else "hidden"
         self.diagnosticMessage.emit(f"Edit mode={enabled}; toolbox={toolbox_state}")
         self.editModeChanged.emit(enabled)
+
+    def _ensure_toolbox(self) -> None:
+        if self._toolbox is None:
+            self._toolbox = _CanvasEditorToolbox(self)
+        self._toolbox.setParent(self.window(), self._toolbox.windowFlags())
 
     def _place_quick_toolbar(self) -> None:
         toolbar = self._quick_toolbar
@@ -10650,6 +11703,7 @@ class MonkezCanva(QWidget):
             self._command_palette.close()
         if self._runtime_debugger is not None:
             self._runtime_debugger.close()
+        self.clearDataBindingRuntime(disconnect_sources=True)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
             self._document_subscription = ""

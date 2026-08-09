@@ -290,6 +290,20 @@ runs a Source → Transform → Sink example.
 Next runtime slices: recurring timer scheduling, bounded queue/backpressure,
 replay fixtures, link metrics and explicit workflow failure-edge conventions.
 
+### Declarative data-binding progress — 2026-08-09
+
+`MC-RUNTIME-BINDING-001` adds the Qt-free `data_binding.py` evaluator and the
+element-local `bindings` schema. It implements safe transforms/formatting,
+logical-time debounce/throttle/stale transitions, stale/error fallback, bounded
+trace and batched target delivery. The canvas owns transient baselines, runtime
+projection, one shared scheduling timer and adapters for Qt signals/properties,
+callables, model indexes and conventional external QObject adapters. Inspector,
+context/command discovery, Runtime Debugger, demo and public APIs use the same
+definitions and state.
+
+Next data slices: optional MQTT/WebSocket/OPC-UA/Modbus adapter packages,
+historian/ring-buffer policies, write-back bindings and aggregate source health.
+
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
 selected icon color, field focus states, card title clearance and JSON editor

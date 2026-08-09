@@ -24,6 +24,24 @@
         "tooltip": {"type": "string"}
       },
       "additionalProperties": true
+    },
+    "binding": {
+      "type": "object",
+      "required": ["id", "source", "target"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "transforms": {"type": "array", "items": {"type": "object"}},
+        "format": {"type": "string"},
+        "debounce": {"type": "number", "minimum": 0},
+        "throttle": {"type": "number", "minimum": 0},
+        "staleAfter": {"type": "number", "minimum": 0},
+        "enabled": {"type": "boolean"},
+        "fallback": {},
+        "errorFallback": {}
+      },
+      "additionalProperties": true
     }
   },
   "required": ["format", "version", "scene", "elements", "connectors"],
@@ -43,6 +61,10 @@
           "ports": {
             "type": "array",
             "items": {"$ref": "#/$defs/port"}
+          },
+          "bindings": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/binding"}
           }
         },
         "additionalProperties": true

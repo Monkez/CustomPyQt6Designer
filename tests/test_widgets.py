@@ -13,13 +13,14 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QSize, QSizeF, Qt
-from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap, QStandardItem, QStandardItemModel
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QGraphicsItem,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QTabWidget,
@@ -3288,6 +3289,154 @@ class WidgetTests(unittest.TestCase):
 
         canvas.setEditMode(False)
         canvas.close()
+        canvas.deleteLater()
+
+    def test_canva_declarative_data_bindings_sources_and_inspector(self) -> None:
+        canvas = MonkezCanva()
+        canvas.resize(1000, 700)
+        canvas.show()
+        label = canvas.addText("Waiting", 0, 0, element_id="temperature")
+        chart = canvas.addChart(
+            [0], "line", 240, 0, element_id="temperature-chart"
+        )
+        node = canvas.addNode("Sensor", 480, 0, element_id="sensor-node")
+        text_binding = canvas.addDataBinding(
+            label,
+            "text",
+            "telemetry",
+            binding_id="temperature-text",
+            transforms={"op": "get", "path": "temperature"},
+            format="{value:.1f} °C",
+            throttle=0.05,
+            stale_after=2,
+            fallback="No signal",
+            error_fallback="Invalid",
+        )
+        chart_binding = canvas.addDataBinding(
+            chart,
+            "data",
+            "telemetry",
+            binding_id="temperature-series",
+            transforms={"op": "get", "path": "samples"},
+        )
+        port_binding = canvas.addDataBinding(
+            node,
+            "port.in",
+            "sensor-input",
+            binding_id="sensor-input-value",
+        )
+        document_before_runtime = canvas.toDocument()
+        dirty_before_runtime = canvas.isDocumentModified()
+        batches = []
+        states = []
+        canvas.dataBindingBatchApplied.connect(batches.append)
+        canvas.dataBindingStateChanged.connect(
+            lambda binding_id, state: states.append((binding_id, state["state"]))
+        )
+
+        updates = canvas.feedDataSources({
+            "telemetry": {"temperature": 23.456, "samples": [20, 21, 23.456]},
+            "sensor-input": {"enabled": True},
+        })
+        self.assertEqual(3, len(updates))
+        self.assertEqual("23.5 °C", canvas.element(label).text)
+        self.assertEqual([20, 21, 23.456], canvas.element(chart).data)
+        self.assertEqual(
+            {"enabled": True}, canvas.portRuntimeValue(node, "in")
+        )
+        self.assertEqual(document_before_runtime, canvas.toDocument())
+        self.assertEqual(dirty_before_runtime, canvas.isDocumentModified())
+        self.assertTrue(batches)
+        self.assertIn((chart_binding, "active"), states)
+
+        source_field = QLineEdit()
+        canvas.bindSignal(
+            "line-edit-source", source_field.textChanged,
+            lambda text: float(text),
+        )
+        signal_binding = canvas.addDataBinding(
+            label, "opacity", "line-edit-source", binding_id="signal-opacity",
+            transforms={"op": "scale", "value": 0.01},
+        )
+        source_field.setText("72")
+        self.app.processEvents()
+        self.assertAlmostEqual(0.72, canvas.element(label).opacity())
+
+        values = iter(("Callable A", "Callable B"))
+        canvas.bindCallable("callable-source", lambda: next(values), immediate=True)
+        callable_binding = canvas.addDataBinding(
+            node, "text", "callable-source", binding_id="callable-text"
+        )
+        canvas.refreshDataSource("callable-source")
+        self.assertEqual("Callable B", canvas.element(node).text)
+
+        model = QStandardItemModel(1, 1)
+        model.setItem(0, 0, QStandardItem("Model A"))
+        model_binding = canvas.addDataBinding(
+            chart, "text", "model-source", binding_id="model-title"
+        )
+        canvas.bindModelIndex("model-source", model, 0, 0)
+        self.assertEqual("Model A", canvas.element(chart).text)
+        model.item(0, 0).setText("Model B")
+        self.app.processEvents()
+        self.assertEqual("Model B", canvas.element(chart).text)
+
+        canvas.setEditMode(True)
+        canvas.selectElement(label)
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(label)
+        self.assertTrue(toolbox._bindings_group.isVisibleTo(toolbox))
+        self.assertEqual(2, toolbox._bindings_list.count())
+        canvas.selectElement(node)
+        toolbox._sync_inspector(node)
+        self.assertIn("port.in", [
+            toolbox._binding_target_combo.itemText(index)
+            for index in range(toolbox._binding_target_combo.count())
+        ])
+        canvas.selectElement(label)
+        toolbox._sync_inspector(label)
+        canvas.showDataBindingInspector(label)
+        self.app.processEvents()
+        self.assertEqual(1, toolbox._tabs.currentIndex())
+        self.assertTrue(toolbox._bindings_group.isVisibleTo(toolbox))
+        toolbox._sync_binding_list(label, text_binding)
+        toolbox._binding_format_edit.setText("Temperature {value:.2f} °C")
+        toolbox._auto_update_selected_binding()
+        self.assertEqual(
+            "Temperature {value:.2f} °C",
+            next(
+                binding for binding in canvas.dataBindings(label)
+                if binding["id"] == text_binding
+            )["format"],
+        )
+
+        canvas.showRuntimeDebugger()
+        self.app.processEvents()
+        self.assertEqual(4, canvas._runtime_debugger._tabs.count())
+        self.assertEqual(6, canvas._runtime_debugger._bindings.count())
+        self.assertTrue(canvas.dataBindingTrace())
+
+        restored = MonkezCanva()
+        restored.setDocumentModel(CanvasDocument.from_dict(canvas.toDocument()))
+        self.assertEqual(6, len(restored.dataBindings()))
+        self.assertEqual("Waiting", restored.element(label).text)
+        self.assertIsNone(restored.portRuntimeValue(node, "in", use_default=False))
+
+        self.assertTrue(canvas.removeDataBinding(signal_binding))
+        self.assertEqual(1.0, canvas.element(label).opacity())
+        for source in ("line-edit-source", "callable-source", "model-source"):
+            canvas.unbindDataSource(source)
+        self.assertIn(callable_binding, {item["id"] for item in canvas.dataBindings()})
+        self.assertIn(model_binding, {item["id"] for item in canvas.dataBindings()})
+        self.assertIn(port_binding, {item["id"] for item in canvas.dataBindings()})
+        canvas.clearDataBindingRuntime(disconnect_sources=True)
+        self.assertFalse(canvas._binding_timer.isActive())
+
+        canvas.setEditMode(False)
+        canvas.close()
+        restored.deleteLater()
+        source_field.deleteLater()
         canvas.deleteLater()
 
 

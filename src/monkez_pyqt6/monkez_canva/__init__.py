@@ -45,6 +45,16 @@ from .workflow_components import (
     register_workflow_components,
     workflow_component_definitions,
 )
+from .data_binding import (
+    BINDING_STATES,
+    BINDING_TARGET_PREFIXES,
+    BindingEvent,
+    BindingSpec,
+    BindingUpdate,
+    DataBindingEngine,
+    apply_binding_pipeline,
+    binding_specs_from_document,
+)
 
 from .models import (
     DOCUMENT_FORMAT,
@@ -127,6 +137,8 @@ from .typed_ports import (
 
 __all__ = [
     "BRANCH_POLICIES",
+    "BINDING_STATES",
+    "BINDING_TARGET_PREFIXES",
     "CLIPBOARD_FORMAT",
     "CLIPBOARD_VERSION",
     "CANVAS_CLIPBOARD_MIME_TYPE",
@@ -145,6 +157,9 @@ __all__ = [
     "SNAP_TARGETS",
     "SNAP_TARGETS_KEY",
     "AssetIntegrityIssue",
+    "BindingEvent",
+    "BindingSpec",
+    "BindingUpdate",
     "CanvasDocument",
     "BUILTIN_ELEMENT_DEFINITIONS",
     "ConnectorModel",
@@ -221,8 +236,11 @@ __all__ = [
     "search_palette",
     "snap_rect",
     "DocumentMigrationResult",
+    "DataBindingEngine",
     "sha256_file",
     "verify_asset_manifest",
     "register_workflow_components",
     "workflow_component_definitions",
+    "apply_binding_pipeline",
+    "binding_specs_from_document",
 ]

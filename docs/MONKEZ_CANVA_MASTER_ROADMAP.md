@@ -133,7 +133,7 @@ connectors. Routing parameters are portable, undoable and Inspector-editable.
 - edge labels, self-loops, parallel edges, crossing bridges and visual buses — complete;
 - obstacle-aware Manhattan routing with configurable clearance — complete;
 - group/frame, swimlane, nested/collapsible group and reusable JSON subflow — complete;
-- automatic layout adapter with layered, tree, force and radial strategies â€” complete.
+- automatic layout adapter with layered, tree, force and radial strategies — complete.
 
 Completed (2026-08-09): `MC-EDITOR-LAYOUT-001` adds a deterministic Qt-free
 layout engine with cycle-safe SCC layering, subtree-aware trees, graph-distance
@@ -197,6 +197,16 @@ Bind element properties to Qt signals/properties, callables, model indexes and
 optional adapter sources such as MQTT, WebSocket, OPC-UA or Modbus. Support
 transform, format, debounce, throttle, stale state, error fallback and batched
 painting.
+
+Completed foundation (2026-08-09): `MC-RUNTIME-BINDING-001` adds a Qt-free,
+source-agnostic engine with safe declarative transforms, formatting, deterministic
+debounce/throttle/stale behavior, stale/error fallbacks and batch delivery. Binding
+definitions are element-local portable JSON; live values/subscriptions never dirty
+the document. Canvas adapters cover push feeds, Qt signals/properties, callables,
+model indexes and conventional external adapters through one shared timer. Text,
+chart, appearance, geometry, port, highlight and animation targets are supported,
+with an object-specific Inspector and Runtime Debugger tab. Protocol-specific
+connectors, historian windows and write-back remain optional ecosystem adapters.
 
 ## Phase 4 — Component packs
 

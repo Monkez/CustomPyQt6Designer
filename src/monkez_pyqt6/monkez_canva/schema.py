@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from .data_binding import binding_specs_from_document
+
 
 DOCUMENT_FORMAT = "monkez-canva"
 DOCUMENT_VERSION = 1
@@ -40,6 +42,26 @@ DOCUMENT_JSON_SCHEMA: dict[str, Any] = {
             },
             "additionalProperties": True,
         },
+        "binding": {
+            "type": "object",
+            "required": ["id", "source", "target"],
+            "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "source": {"type": "string", "minLength": 1},
+                "target": {"type": "string", "minLength": 1},
+                "transforms": {
+                    "type": "array", "items": {"type": "object"},
+                },
+                "format": {"type": "string"},
+                "debounce": {"type": "number", "minimum": 0},
+                "throttle": {"type": "number", "minimum": 0},
+                "staleAfter": {"type": "number", "minimum": 0},
+                "enabled": {"type": "boolean"},
+                "fallback": {},
+                "errorFallback": {},
+            },
+            "additionalProperties": True,
+        },
     },
     "required": ["format", "version", "scene", "elements", "connectors"],
     "properties": {
@@ -58,6 +80,10 @@ DOCUMENT_JSON_SCHEMA: dict[str, Any] = {
                     "ports": {
                         "type": "array",
                         "items": {"$ref": "#/$defs/port"},
+                    },
+                    "bindings": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/binding"},
                     },
                 },
                 "additionalProperties": True,
@@ -130,6 +156,7 @@ def validate_document_shape(data: Mapping[str, Any]) -> None:
     for entry in data.get("connectors", []):
         if any(not str(entry.get(key, "")).strip() for key in ("id", "source", "target")):
             raise ValueError("MonkezCanva connectors require id, source and target")
+    binding_specs_from_document(data)
 
 
 def migrate_document(

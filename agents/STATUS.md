@@ -321,7 +321,16 @@ Updated: 2026-08-09
   capsule; card title clearance, JSON fields and workflow state chips follow the
   same warm-white/coral/teal visual system. Offscreen visual QA covers the full
   pane and Position / size card at 438×720.
-- The automated suite contains 204 tests and covers all 36 public
+- `MC-RUNTIME-BINDING-001` completes the Phase 3 data-binding foundation. Portable
+  element-local definitions target text/chart/appearance/geometry/typed ports and
+  runtime highlight/animation without persisting live values. The Qt-free engine
+  provides safe transform/format pipelines, deterministic debounce/throttle/stale,
+  stale/error fallbacks, bounded trace and batch apply. Canvas source adapters cover
+  push feeds, Qt signals/properties, callables, model indexes and external QObject
+  adapters through one shared timer with explicit disconnect cleanup. Each element
+  has a polished Data bindings Inspector card; Runtime Debugger adds a Bindings tab.
+  Offscreen QA at 438×720 confirms the full editor fits without horizontal clipping.
+- The automated suite contains 211 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

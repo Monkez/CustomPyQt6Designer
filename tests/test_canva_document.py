@@ -72,6 +72,50 @@ class CanvasDocumentTests(unittest.TestCase):
         )
         self.assertEqual(DOCUMENT_JSON_SCHEMA, packaged_schema)
 
+    def test_declarative_bindings_are_portable_and_structurally_validated(self) -> None:
+        payload = document_payload()
+        payload["elements"][0]["bindings"] = [
+            {
+                "id": "source-label",
+                "source": "telemetry.status",
+                "target": "text",
+                "transforms": [{"op": "get", "path": "label"}],
+                "format": "State: {value}",
+                "debounce": 0.05,
+                "staleAfter": 5,
+                "fallback": "Offline",
+            }
+        ]
+
+        document = CanvasDocument.from_dict(payload)
+
+        self.assertEqual(
+            payload["elements"][0]["bindings"],
+            document.to_dict()["elements"][0]["bindings"],
+        )
+        binding_schema = DOCUMENT_JSON_SCHEMA["$defs"]["binding"]
+        self.assertEqual(["id", "source", "target"], binding_schema["required"])
+        self.assertEqual(
+            "#/$defs/binding",
+            DOCUMENT_JSON_SCHEMA["properties"]["elements"]["items"]
+            ["properties"]["bindings"]["items"]["$ref"],
+        )
+
+        duplicate = document_payload()
+        duplicate["elements"][0]["bindings"] = [
+            {"id": "duplicate", "source": "a", "target": "text"},
+            {"id": "duplicate", "source": "b", "target": "color"},
+        ]
+        with self.assertRaisesRegex(ValueError, "Duplicate data-binding ID"):
+            CanvasDocument.from_dict(duplicate)
+
+        invalid = document_payload()
+        invalid["elements"][0]["bindings"] = [
+            {"id": "bad", "source": "telemetry", "target": "unsupported"}
+        ]
+        with self.assertRaisesRegex(ValueError, "Unsupported data-binding target"):
+            CanvasDocument.from_dict(invalid)
+
     def test_version_one_load_is_json_safe_and_normalizes_legacy_lines(self) -> None:
         payload = document_payload()
         payload["elements"].extend(

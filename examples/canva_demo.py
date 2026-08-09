@@ -81,6 +81,12 @@ def main() -> int:
             result["state"], result["steps"], result["outputs"],
         )
     )
+    canvas.dataBindingEvent.connect(
+        lambda event: logger.info(
+            "binding -> #%s %s %s [%s]",
+            event["sequence"], event["bindingId"], event["event"], event["state"],
+        )
+    )
     canvas.enableWorkflowComponents()
     canvas.setPersistenceKey("demo-workspace")
     logger.info("Portable project workspace: %s", canvas.persistentPath())
@@ -200,6 +206,24 @@ def main() -> int:
         canvas.setPortRuntimeValue(
             detector, "objects", [{"label": "vehicle", "confidence": 0.94}]
         )
+        canvas.addDataBinding(
+            chart,
+            "data",
+            "vision.metrics",
+            binding_id="confidence-series-binding",
+            transforms={"op": "get", "path": "samples"},
+            throttle=0.1,
+            stale_after=5.0,
+            fallback=[0],
+        )
+        canvas.addDataBinding(
+            monitor,
+            "text",
+            "vision.status",
+            binding_id="event-log-binding",
+            format="Status: {value}",
+            error_fallback="Status unavailable",
+        )
         workflow_source = canvas.addWorkflowComponent(
             "source", -250, 410, element_id="workflow-source", text="Telemetry"
         )
@@ -248,12 +272,21 @@ def main() -> int:
                 "workflow-source", 42, metadata={"topic": "telemetry.demo"}
             ),
         )
+    if canvas.dataBindings():
+        QTimer.singleShot(
+            1800,
+            lambda: canvas.feedDataSources({
+                "vision.metrics": {"samples": [42, 61, 57, 81, 74, 93]},
+                "vision.status": "live telemetry connected",
+            }),
+        )
     logger.info("Demo window shown: %sx%s", window.width(), window.height())
     logger.info("Shortcut option 1: press Ctrl+D, release Ctrl, then press E")
     logger.info("Shortcut option 2: hold Ctrl, press D, then press E")
     logger.info("When successful, logs will show 'Editor shortcut received' and toolbox state")
     logger.info("Open the packet debugger with Ctrl+K, then search 'runtime debugger'")
     logger.info("Workflow Pack is enabled; select a workflow node to edit/run it")
+    logger.info("Select an element and open Inspector > Data bindings for live data")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)
     return result

@@ -339,6 +339,33 @@ The catalog lives in `workflow_components.py` under plugin owner
 late reconciles missing workflow placeholders without changing IDs; disabling
 it unloads definitions while preserving canonical records.
 
+## Declarative data-binding boundary
+
+Element records may contain a `bindings` array. Each record names a stable ID,
+source ID, target and JSON-only transform/timing/fallback configuration. Source
+IDs are logical addresses, not network URLs or Python imports. The document never
+stores QObject pointers, callables, model indexes, credentials or the last value.
+
+`monkez_canva/data_binding.py` compiles those records into `BindingSpec` values.
+`DataBindingEngine` is Qt-free and source-agnostic: hosts push source values,
+logical time decides immediate/pending/stale transitions, and one batch callback
+receives normalized `BindingUpdate` values. Safe transforms are an allowlist;
+arbitrary expressions and `eval` are prohibited. Duplicate global binding IDs and
+multiple writers to one element target are rejected before document mutation.
+
+The widget adapter owns subscriptions. `bindSignal`, `bindQObjectProperty`,
+`bindCallable`, `bindModelIndex` and `bindDataAdapter` all feed the same engine.
+Callable polling, debounce/throttle flush and stale checks share one 33 ms timer;
+signal-only sources allocate no timer. Disconnect callbacks are retained and run
+on explicit unbind or canvas close.
+
+Projection updates bypass `documentChanged` and graphics-to-model reconciliation.
+The adapter snapshots a target's canonical presentation before the first live
+value, restores it when a definition is removed, and reapplies live state after a
+canonical target edit. Geometry bindings explicitly update attached/auto-routed
+connectors. Port targets reuse typed-port runtime validation. Highlight/animation
+are trigger targets and do not have persistent baselines.
+
 ## Roadmap
 
 1. Clipboard, keyboard nudging and true mixed-value property editing.

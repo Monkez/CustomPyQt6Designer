@@ -465,6 +465,79 @@ port, delay hay failure edge rõ ràng. Cấu hình Queue/Buffer và Timer ở m
 là nền tảng deterministic; backpressure nhiều producer và recurring wall-clock timer
 sẽ được bổ sung trong runtime nâng cao.
 
+## Declarative data binding
+
+Binding definition nằm trong element JSON và đi theo dự án; subscription cùng giá
+trị live chỉ tồn tại ở runtime. Vì vậy telemetry có thể đổi text, chart, màu, geometry,
+port value, highlight hoặc animation mà không làm document dirty và không ghi giá trị
+cuối cùng vào autosave.
+
+```python
+binding_id = canvas.addDataBinding(
+    "temperature-label",
+    "text",
+    "plant.sensor.temperature",
+    binding_id="temperature-text",
+    transforms=[
+        {"op": "get", "path": "measurement.value"},
+        {"op": "round", "digits": 1},
+    ],
+    format="{value} °C",
+    debounce=0.1,
+    throttle=0.25,
+    stale_after=5.0,
+    fallback="No signal",
+    error_fallback="Invalid value",
+)
+
+canvas.feedDataSource(
+    "plant.sensor.temperature",
+    {"measurement": {"value": 24.76}},
+)
+```
+
+Target hỗ trợ: `text`, `data`, `color`, `background`, `textColor`, `flowColor`,
+`opacity`, `rotation`, `scale`, `x`, `y`, `width`, `height`, `highlight`,
+`animation` và `port.<port-id>`. Một element chỉ có tối đa một binding trên mỗi
+target để kết quả không phụ thuộc thứ tự ngầm.
+
+Transform pipeline không chạy `eval` hoặc Python expression. Các operation an toàn
+gồm `get`, `scale`, `offset`, `clamp`, `round`, `map`, `coalesce`, `bool`, `not`,
+`string`, `length` và `json`. `format` dùng placeholder `{value}` và field từ mapping.
+Kernel dùng logical time nên debounce, throttle, stale và fallback kiểm thử được mà
+không phụ thuộc event loop Qt; widget chỉ dùng một timer chung để flush pending update,
+poll callable và phát hiện stale.
+
+Nguồn runtime tích hợp sẵn:
+
+```python
+canvas.bindSignal("ui.speed", slider.valueChanged)
+canvas.bindQObjectProperty("machine.running", machine, "running")
+canvas.bindCallable("clock.value", read_clock, interval=0.25)
+canvas.bindModelIndex("table.status", model, row=2, column=1)
+canvas.bindDataAdapter(
+    "mqtt.temperature", mqtt_adapter,
+    signal="valueChanged", getter="value",
+)
+
+canvas.feedDataSources({
+    "ui.speed": 75,
+    "machine.running": True,
+})  # batch nhiều source, repaint mỗi target đúng một lần
+```
+
+MQTT, WebSocket, OPC-UA và Modbus adapter không bị ép thành dependency của widget;
+host chỉ cần cung cấp QObject có signal/getter hoặc gọi `feedDataSource()`. Dùng
+`unbindDataSource()` để tháo subscription; canvas tự disconnect và dừng timer khi
+đóng. `dataBindingEvent`, `dataBindingStateChanged` và `dataBindingBatchApplied`
+phục vụ logging/debug UI.
+
+Inspector của từng element có card **Data bindings** với danh sách binding, source,
+target, JSON transforms, format, debounce/throttle/stale, stale/error fallback và
+enabled state. Binding đang chọn tự apply khi sửa. Runtime Debugger có tab Bindings
+hiển thị live value, state, last input/apply và lỗi. Chuột phải element hoặc Ctrl+K
+→ **Open data bindings** mở thẳng card này.
+
 ## Node có nhiều port
 
 Mỗi node có thể có số lượng port tùy ý. Port có ID ổn định và một trong ba mode:
