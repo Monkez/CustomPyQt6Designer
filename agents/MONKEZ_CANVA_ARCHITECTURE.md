@@ -113,8 +113,18 @@ autosave draft does not pretend durable changes were saved.
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading
-validates the format and supported element kinds. Future custom element plugins
-need a registry/allowlist; importing module names from documents is unacceptable.
+validates the stable structure against the public Draft 2020-12 schema contract.
+`schema.py` owns document-version migration order; component migrations remain in
+the trusted registry. Future custom element plugins use the registry/allowlist;
+importing module names from documents is unacceptable.
+
+Documents newer than the runtime are parsed only through the known structural
+subset and retain their source version/extensions. The model rejects every
+mutation with `PermissionError`. A version-1 document containing a component
+schema newer than its registered definition is read-only at the view boundary.
+The pane disables Add, Inspect, View and Save while leaving Layers and non-mutating
+navigation/runtime visualization available. This prevents an older runtime from
+normalizing or overwriting unknown data.
 
 ## Component registry and plugin boundary
 
@@ -145,13 +155,21 @@ first load. Setting a persistence key schedules a safe auto-load after property
 configuration; it proceeds only while the canvas is empty, so application-created
 objects are never silently replaced. Explicit session checkpoints remain process-local.
 
+Every JSON write is serialized and validated before same-directory atomic replace.
+A valid previous primary becomes `<name>.json.bak`; a corrupt primary never replaces
+an existing valid backup. Loaders fall back to that backup and emit `recoveryLoaded`.
+Managed image/GIF/background/packet/resource files are copied atomically and listed
+under `assetManifest` with SHA-256 and byte size. Loading verifies the manifest,
+emits `assetIntegrityChecked`, and keeps warnings accessible through
+`assetIntegrityIssues()`; integrity warnings do not execute or repair untrusted data.
+
 Scene version 1 also persists grid visibility/size/style/colors and background
 color/image/mode. Grid renderers are lines, dots and crosses; background modes
 are fit, fill and non-aspect-preserving scale.
 
 ## Roadmap
 
-1. Complete schema recovery and shared animation scheduler.
+1. Complete shared animation scheduler.
 2. Clipboard, keyboard nudging and true mixed-value property editing.
 3. Typed ports, advanced routing and group/subflow rendering.
 4. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.

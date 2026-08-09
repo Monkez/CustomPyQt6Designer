@@ -336,7 +336,8 @@ Editor có ba tầng lưu:
 2. **Save session checkpoint**: lưu mốc khôi phục trong vòng đời process hiện tại;
    đóng app sẽ mất checkpoint này.
 3. **Save persistent now**: ghi JSON vào `.monkez_canva/<persistenceKey>.json`
-   ngay trong project và copy ảnh/GIF/background vào thư mục assets bên cạnh.
+   ngay trong project và copy ảnh/GIF/background/packet icon/resource vào thư
+   mục assets bên cạnh.
    JSON chỉ lưu đường dẫn tương đối, vì vậy có thể copy cả project sang máy hoặc
    ổ đĩa khác rồi tự load mà không cần sửa path.
 
@@ -351,7 +352,24 @@ canvas.restoreSession()
 
 canvas.savePersistent()
 canvas.loadPersistent()
+
+# Kiểm tra lại SHA-256/size của toàn bộ managed assets
+for warning in canvas.verifyPersistentAssets():
+    print(warning)
 ```
+
+Mỗi lần ghi JSON sử dụng file tạm cùng thư mục rồi `os.replace`, vì vậy app bị
+dừng giữa lúc lưu không để lại JSON viết dở ở đường dẫn chính. Nếu primary hiện
+tại hợp lệ, phiên bản đó được giữ ở `<filename>.json.bak` trước khi thay thế.
+Khi primary bị hỏng hoặc mất, loader tự đọc backup, phát
+`recoveryLoaded(primary, backup)` và ghi rõ nguyên nhân qua `diagnosticMessage`;
+loader không tự ghi đè primary lỗi nên vẫn có thể điều tra hoặc khôi phục thủ công.
+
+File persistent chứa `assetManifest`: mỗi ảnh/GIF, background, packet icon và
+resource tương đối có SHA-256 cùng kích thước byte. Khi load, canvas phát
+`assetIntegrityChecked(list[str])`; kết quả gần nhất đọc bằng
+`assetIntegrityIssues()`. Thiếu file, checksum sai và path thoát khỏi project đều
+được cảnh báo nhưng không kích hoạt code hay tự tải nội dung từ bên ngoài.
 
 ### Undo/Redo dạng command
 
@@ -414,6 +432,17 @@ cũng được quản lý như một portable project asset.
 Định dạng JSON hiện tại có `format: "monkez-canva"`, `version: 1`, danh sách
 `elements` và `connectors`. Mỗi element có `metadata` để ứng dụng gắn business ID
 hoặc cấu hình riêng. Tài liệu không chứa và không thực thi Python code.
+
+JSON Schema Draft 2020-12 được export thành `DOCUMENT_JSON_SCHEMA`; ứng dụng có
+thể dùng schema này để kiểm tra project trong CI hoặc công cụ ngoài Qt. Bản JSON
+độc lập được đóng gói tại `monkez_pyqt6/monkez_canva/schemas/monkez-canva-document-v1.schema.json`.
+Nếu file
+có document version mới hơn runtime, hoặc một element có `componentVersion` mới
+hơn definition đã đăng ký, canvas vẫn dựng phần dữ liệu tương thích để xem nhưng
+chuyển sang **read-only**. `isReadOnly()`/`readOnlyReason()` cho biết trạng thái;
+mọi mutation, autosave và Save đều bị chặn để runtime cũ không làm mất trường mới.
+Layers, zoom/pan, highlight và hiệu ứng runtime vẫn dùng được. Control Pane hiển
+thị footer khóa màu amber và chỉ để tab Layers hoạt động.
 
 ## Thuộc tính Qt Designer
 

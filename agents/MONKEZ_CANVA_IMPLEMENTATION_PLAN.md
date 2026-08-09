@@ -150,8 +150,20 @@ share the stack; updates merge for 800 ms and multi-object actions use macros.
 The public API exposes stack/state/text, macro boundaries and group/resource
 commands. Save/load/session boundaries maintain an explicit clean/dirty state.
 
-Next: Phase 1.4 schema recovery (atomic writes, backup/checksum/read-only newer
-documents), followed by the shared animation scheduler.
+### Schema and recovery progress — 2026-08-09
+
+Phase 1.4 is complete. `schema.py` publishes the version-1 Draft 2020-12 JSON
+Schema, structural validation and the ordered document-migration boundary.
+`persistence.py` performs same-directory atomic replacement, retains the last
+valid primary as `.bak`, recovers corrupt/missing primary files without silently
+overwriting them, and maintains SHA-256/size manifests for every managed asset.
+Both ordinary path loading and portable persistence report recovery and integrity
+diagnostics. Documents or registered components newer than the runtime render in
+an explicit read-only compatibility mode; mutation, autosave and durable save are
+blocked while Layers, viewport navigation, highlighting and runtime signals remain
+available. The Floating Cards pane and quick toolbar expose that state.
+
+Next: Phase 1.5 shared animation scheduler.
 
 ## Backlog tracking
 

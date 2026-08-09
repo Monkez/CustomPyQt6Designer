@@ -142,13 +142,17 @@ class ElementDefinition:
     def default_size(self) -> tuple[float, float]:
         return float(self.default_width), float(self.default_height)
 
-    def prepare_record(self, record: Mapping[str, Any]) -> dict[str, Any]:
+    def prepare_record(
+        self, record: Mapping[str, Any], *, allow_newer: bool = False
+    ) -> dict[str, Any]:
         """Migrate, default and validate one JSON element record."""
         result = _json_copy(dict(record))
         if str(result.get("type", self.type_id)).lower() != self.type_id:
             raise ValueError(f"Record type does not match definition {self.type_id!r}")
         version = int(result.get("componentVersion", 1))
         if version > self.schema_version:
+            if allow_newer:
+                return result
             raise ValueError(
                 f"Element {self.type_id!r} requires newer schema {version}; supported {self.schema_version}"
             )
@@ -230,9 +234,11 @@ class ElementRegistry:
             self._definitions.pop(definition.type_id, None)
         return removed
 
-    def prepare_record(self, record: Mapping[str, Any]) -> dict[str, Any]:
+    def prepare_record(
+        self, record: Mapping[str, Any], *, allow_newer: bool = False
+    ) -> dict[str, Any]:
         type_id = str(record.get("type", "")).strip().lower()
-        return self.require(type_id).prepare_record(record)
+        return self.require(type_id).prepare_record(record, allow_newer=allow_newer)
 
     def clone(self) -> "ElementRegistry":
         return ElementRegistry(replace(item) for item in self._definitions.values())

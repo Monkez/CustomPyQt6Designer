@@ -159,6 +159,15 @@ Updated: 2026-08-09
 
 ## Latest verification
 
+- `MC-CORE-SCHEMA-001` completes Phase 1.4 with a public Draft 2020-12 document
+  schema, a Qt-free ordered migration boundary, atomic JSON/asset writes, valid
+  `.bak` recovery and SHA-256/size asset manifests. Both persistent and ordinary
+  path loaders expose recovery/integrity signals and diagnostics. Documents or
+  component records newer than runtime open visibly but read-only; UI, model,
+  autosave and durable-save mutation paths are blocked. Windows visual QA at
+  448x710 confirmed disabled mutation tabs, accessible Layers and an amber lock
+  footer without clipping. The complete suite now contains 150 passing tests.
+
 - `MC-CORE-HISTORY-001` replaces whole-document snapshots with bounded
   `QUndoStack` commands containing only changed record pairs. It covers model and
   graphics-origin edits, cascade delete, port/geometry/property edits,
@@ -210,7 +219,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 145 passing tests and covers all 36 public
+- The automated suite contains 150 passing tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

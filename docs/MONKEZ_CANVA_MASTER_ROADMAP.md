@@ -78,6 +78,14 @@ state are exposed to the pane and floating toolbar.
 Add JSON Schema, versioned migrations, atomic writes, recovery backup, asset
 checksums and read-only handling for documents newer than the runtime.
 
+Completed (2026-08-09): the public Draft 2020-12 schema and migration boundary
+are Qt-free. JSON saves use atomic same-directory replacement and preserve the
+last valid primary in `.bak`; corrupt or missing primary files recover with an
+explicit signal/diagnostic. Portable media, packet icons, backgrounds and resource
+URIs receive SHA-256/size manifest entries and integrity verification. Newer
+document/component schemas open visibly in read-only mode and cannot be modified,
+autosaved or overwritten by the older runtime.
+
 ### 1.5 Shared animation scheduler
 
 Move line, packet and runtime animation to one canvas-level clock. Update only

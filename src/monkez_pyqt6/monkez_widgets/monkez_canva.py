@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import shutil
 import sys
 import time
 import uuid
@@ -73,12 +72,19 @@ from PyQt6.QtWidgets import (
 )
 
 from monkez_pyqt6.monkez_canva import (
+    ASSET_MANIFEST_KEY,
     CanvasDocument,
     ElementDefinition,
     ElementRegistry,
     OperationEvent,
+    atomic_write_json,
+    backup_path,
+    build_asset_manifest,
     create_default_element_registry,
+    load_json_with_recovery,
+    verify_asset_manifest,
 )
+from monkez_pyqt6.monkez_canva.persistence import copy_asset_atomically
 from monkez_pyqt6.monkez_widgets._canva_commands import (
     CanvasDocumentCommand,
     CanvasRenameCommand,
@@ -272,6 +278,10 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
         painter.drawRoundedRect(QRectF(3, 2.5, 14, 15), 2, 2)
         painter.drawRect(QRectF(6, 2.5, 7, 5))
         painter.drawRoundedRect(QRectF(6, 11, 8, 6.5), 1, 1)
+    elif name == "lock":
+        painter.drawRoundedRect(QRectF(4, 8, 12, 9), 2, 2)
+        painter.drawArc(QRectF(6, 2.5, 8, 11), 0, 180 * 16)
+        painter.drawEllipse(QRectF(9, 11, 2, 2))
     elif name in ("zoom_in", "zoom_out"):
         painter.drawEllipse(QRectF(3, 3, 10, 10))
         painter.drawLine(QPointF(12, 12), QPointF(17, 17))
@@ -1169,7 +1179,7 @@ class _CanvasConnector(QGraphicsObject):
         self.setOpacity(max(0.0, min(1.0, float(options.get("opacity", 1.0)))))
         source.changed.connect(self.updatePath)
         target.changed.connect(self.updatePath)
-        self.setEditable(canvas.editMode)
+        self.setEditable(canvas.editMode and not canvas.isReadOnly())
         self.updatePath()
         self._sync_animation()
 
@@ -1450,18 +1460,18 @@ class _CanvasEditorToolbox(QDialog):
         content.setSpacing(11)
         self._pane_header = _CanvasPaneHeader(self, canvas)
         content.addWidget(self._pane_header)
-        tabs = QTabWidget()
-        tabs.setObjectName("canvasEditorTabs")
-        tabs.setDocumentMode(True)
-        tabs.setIconSize(QSize(15, 15))
-        tabs.tabBar().setExpanding(True)
-        tabs.tabBar().setUsesScrollButtons(False)
-        tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
-        tabs.addTab(self._inspector_tab(), _canvas_icon("color"), "Inspect")
-        tabs.addTab(self._layers_tab(), _canvas_icon("front"), "Layers")
-        tabs.addTab(self._view_tab(), _canvas_icon("grid"), "View")
-        tabs.addTab(self._save_tab(), _canvas_icon("save"), "Save")
-        content.addWidget(tabs, 1)
+        self._tabs = QTabWidget()
+        self._tabs.setObjectName("canvasEditorTabs")
+        self._tabs.setDocumentMode(True)
+        self._tabs.setIconSize(QSize(15, 15))
+        self._tabs.tabBar().setExpanding(True)
+        self._tabs.tabBar().setUsesScrollButtons(False)
+        self._tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
+        self._tabs.addTab(self._inspector_tab(), _canvas_icon("color"), "Inspect")
+        self._tabs.addTab(self._layers_tab(), _canvas_icon("front"), "Layers")
+        self._tabs.addTab(self._view_tab(), _canvas_icon("grid"), "View")
+        self._tabs.addTab(self._save_tab(), _canvas_icon("save"), "Save")
+        content.addWidget(self._tabs, 1)
         footer = QFrame()
         footer.setObjectName("canvasPaneFooter")
         footer_layout = QHBoxLayout(footer)
@@ -1485,10 +1495,12 @@ class _CanvasEditorToolbox(QDialog):
         canvas.selectionSetChanged.connect(lambda _element_ids: self.refreshLayers())
         canvas.autoSaved.connect(self._show_save_status)
         canvas.documentModifiedChanged.connect(self._sync_modified_status)
+        canvas.readOnlyChanged.connect(self._sync_read_only_status)
         canvas.documentChanged.connect(self._sync_view_controls)
         self._sync_inspector(canvas.selectedElementId())
         self.refreshLayers()
         self._sync_modified_status(canvas.isDocumentModified())
+        self._sync_read_only_status(canvas.isReadOnly(), canvas.readOnlyReason())
 
     @staticmethod
     def _pane_stylesheet() -> str:
@@ -2213,7 +2225,11 @@ class _CanvasEditorToolbox(QDialog):
             check.toggled.connect(lambda _checked: self._schedule_inspector_apply(0))
 
     def _schedule_inspector_apply(self, delay: int = 80) -> None:
-        if not self._syncing_inspector and self.canvas.selectedElementId():
+        if (
+            not self._syncing_inspector
+            and not self.canvas.isReadOnly()
+            and self.canvas.selectedElementId()
+        ):
             self._inspector_apply_timer.start(max(0, int(delay)))
 
     def _sync_packet_controls(self, _index: int = -1) -> None:
@@ -2233,7 +2249,7 @@ class _CanvasEditorToolbox(QDialog):
             return
         try:
             self._apply_inspector_values()
-        except (KeyError, TypeError, ValueError) as error:
+        except (KeyError, PermissionError, TypeError, ValueError) as error:
             self.canvas.diagnosticMessage.emit(f"Inspector change rejected: {error}")
 
     def _apply_inspector_values(self) -> None:
@@ -2626,12 +2642,28 @@ class _CanvasEditorToolbox(QDialog):
         self._footer_status.setToolTip(str(target))
 
     def _sync_modified_status(self, modified: bool) -> None:
+        if self.canvas.isReadOnly():
+            return
         color = "#ef6a5b" if modified else "#0f9f8f"
         self._footer_icon.setPixmap(
             _canvas_icon("save" if modified else "check", color).pixmap(19, 19)
         )
         self._footer_status.setText("Unsaved changes" if modified else "Saved")
         self._footer_status.setStyleSheet(f"color: {color}; font-weight: 700;")
+
+    def _sync_read_only_status(self, read_only: bool, reason: str) -> None:
+        for index in (0, 1, 3, 4):
+            self._tabs.setTabEnabled(index, not read_only)
+        if read_only:
+            color = "#d97706"
+            self._footer_icon.setPixmap(_canvas_icon("lock", color).pixmap(19, 19))
+            self._footer_status.setText("Read only · newer format")
+            self._footer_status.setToolTip(reason)
+            self._footer_status.setStyleSheet(f"color: {color}; font-weight: 700;")
+            if self._tabs.currentIndex() in (0, 1, 3, 4):
+                self._tabs.setCurrentIndex(2)
+        else:
+            self._sync_modified_status(self.canvas.isDocumentModified())
 
 
 class _CanvasQuickToolbar(QFrame):
@@ -2659,15 +2691,16 @@ class _CanvasQuickToolbar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(7, 6, 7, 6)
         layout.setSpacing(2)
-        save = self._button(
+        self._save_button = self._button(
             "", lambda _checked=False: canvas.savePersistent(),
             "Save project workspace", 36, "save",
         )
-        save.setObjectName("quickSave")
+        self._save_button.setObjectName("quickSave")
         self._separator(layout)
         self._undo_button = self._button("", canvas.undo, "Undo", 34, "undo")
         self._redo_button = self._button("", canvas.redo, "Redo", 34, "redo")
         canvas.historyChanged.connect(self._update_history_state)
+        canvas.readOnlyChanged.connect(self._update_read_only_state)
         self._update_history_state(
             canvas.canUndo(), canvas.canRedo(), canvas.undoText(), canvas.redoText()
         )
@@ -2691,14 +2724,24 @@ class _CanvasQuickToolbar(QFrame):
             self._align_buttons.append(button)
         canvas.selectionSetChanged.connect(self._update_alignment_state)
         self._update_alignment_state(canvas.selectedElementIds())
+        self._update_read_only_state(canvas.isReadOnly(), canvas.readOnlyReason())
 
     def _update_history_state(
         self, can_undo: bool, can_redo: bool, undo_text: str, redo_text: str
     ) -> None:
-        self._undo_button.setEnabled(can_undo)
-        self._redo_button.setEnabled(can_redo)
+        self._undo_button.setEnabled(can_undo and not self.canvas.isReadOnly())
+        self._redo_button.setEnabled(can_redo and not self.canvas.isReadOnly())
         self._undo_button.setToolTip(f"Undo {undo_text}" if undo_text else "Undo")
         self._redo_button.setToolTip(f"Redo {redo_text}" if redo_text else "Redo")
+
+    def _update_read_only_state(self, read_only: bool, reason: str) -> None:
+        self._save_button.setEnabled(not read_only)
+        self._save_button.setToolTip(reason if read_only else "Save project workspace")
+        self._update_history_state(
+            self.canvas.canUndo(), self.canvas.canRedo(),
+            self.canvas.undoText(), self.canvas.redoText(),
+        )
+        self._update_alignment_state(self.canvas.selectedElementIds())
 
     def _button(
         self,
@@ -2728,7 +2771,10 @@ class _CanvasQuickToolbar(QFrame):
         layout.addWidget(line)
 
     def _update_alignment_state(self, element_ids: list[str]) -> None:
-        enabled = len([element_id for element_id in element_ids if element_id in self.canvas._elements]) >= 2
+        enabled = (
+            len([element_id for element_id in element_ids if element_id in self.canvas._elements]) >= 2
+            and not self.canvas.isReadOnly()
+        )
         for button in self._align_buttons:
             button.setEnabled(enabled)
 
@@ -2773,7 +2819,11 @@ class _CanvasView(QGraphicsView):
 
     def mousePressEvent(self, event) -> None:
         point = event.position().toPoint()
-        if event.button() == Qt.MouseButton.LeftButton and self.canvas.editMode:
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self.canvas.editMode
+            and not self.canvas.isReadOnly()
+        ):
             endpoint = self._port_at(point)
             if endpoint is not None:
                 self._connection_origin = endpoint
@@ -2880,7 +2930,7 @@ class _CanvasView(QGraphicsView):
 
     def dropEvent(self, event) -> None:
         urls = self._media_urls(event.mimeData())
-        if not urls:
+        if not urls or self.canvas.isReadOnly():
             super().dropEvent(event)
             return
         scene_pos = self.mapToScene(event.position().toPoint())
@@ -2927,6 +2977,9 @@ class MonkezCanva(QWidget):
     messageArrived = pyqtSignal(str, str)
     historyChanged = pyqtSignal(bool, bool, str, str)
     documentModifiedChanged = pyqtSignal(bool)
+    readOnlyChanged = pyqtSignal(bool, str)
+    recoveryLoaded = pyqtSignal(str, str)
+    assetIntegrityChecked = pyqtSignal(list)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -2952,6 +3005,9 @@ class MonkezCanva(QWidget):
         self._auto_save_delay = 500
         self._session_document: dict[str, Any] | None = None
         self._draft_document: dict[str, Any] | None = None
+        self._read_only_reason = ""
+        self._last_recovery_source = ""
+        self._asset_integrity_issues: list[str] = []
         self._restoring = False
         self._document_render_notification = False
         self._animations: dict[str, QPropertyAnimation] = {}
@@ -3151,7 +3207,7 @@ class MonkezCanva(QWidget):
         )
         center = self._view.mapToScene(self._view.viewport().rect().center())
         item.setPos(center.x() - item._rect.width() / 2 if x is None else x, center.y() - item._rect.height() / 2 if y is None else y)
-        item.setEditable(self._edit_mode)
+        item.setEditable(self._edit_mode and not self.isReadOnly())
         item.changed.connect(self._element_changed)
         item.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(item)
@@ -3182,6 +3238,8 @@ class MonkezCanva(QWidget):
         return [dict(port) for port in item.ports]
 
     def setNodePorts(self, element_id: str, ports) -> "MonkezCanva":
+        if not self._restoring:
+            self._ensure_writable()
         item = self._required_element(element_id)
         if not item.supports_ports:
             raise TypeError(f"Element {element_id!r} does not support ports")
@@ -3279,6 +3337,7 @@ class MonkezCanva(QWidget):
         return selected
 
     def alignSelected(self, alignment: str) -> bool:
+        self._ensure_writable()
         alignment = str(alignment).lower().replace("-", "").replace("_", "")
         aliases = {"horizontalcenter": "hcenter", "verticalcenter": "vcenter", "middle": "center"}
         alignment = aliases.get(alignment, alignment)
@@ -3344,6 +3403,7 @@ class MonkezCanva(QWidget):
 
     def distributeSelected(self, direction: str = "horizontal") -> bool:
         """Evenly distribute three or more selected elements by their centers."""
+        self._ensure_writable()
         direction = str(direction).lower().strip()
         aliases = {"h": "horizontal", "x": "horizontal", "v": "vertical", "y": "vertical"}
         direction = aliases.get(direction, direction)
@@ -3385,6 +3445,7 @@ class MonkezCanva(QWidget):
 
     def renameElement(self, element_id: str, new_id: str) -> str:
         if not self._restoring:
+            self._ensure_writable()
             requested = str(new_id).strip()
             candidate = CanvasDocument.from_dict(self._document_model.to_dict())
             events = candidate.rename_element(element_id, requested)
@@ -3540,6 +3601,7 @@ class MonkezCanva(QWidget):
         return self.addElement(kind, x, y, width, height, **values)
 
     def bringSelectedToFront(self) -> None:
+        self._ensure_writable()
         item = self.canvasObject(self.selectedElementId())
         if item is not None:
             objects = [*self._elements.values(), *self._connectors.values()]
@@ -3547,6 +3609,7 @@ class MonkezCanva(QWidget):
             self.documentChanged.emit()
 
     def sendSelectedToBack(self) -> None:
+        self._ensure_writable()
         item = self.canvasObject(self.selectedElementId())
         if item is not None:
             objects = [*self._elements.values(), *self._connectors.values()]
@@ -3659,6 +3722,8 @@ class MonkezCanva(QWidget):
         target_port: str | None = None,
     ) -> "MonkezCanva":
         """Change connector endpoints while preserving its ID and visual settings."""
+        if not self._restoring:
+            self._ensure_writable()
         connector = self._required_connector(connector_id)
         source = self._required_element(source_id)
         target = self._required_element(target_id)
@@ -3888,6 +3953,7 @@ class MonkezCanva(QWidget):
 
     def renameConnector(self, connector_id: str, new_id: str) -> str:
         if not self._restoring:
+            self._ensure_writable()
             requested = str(new_id).strip()
             candidate = CanvasDocument.from_dict(self._document_model.to_dict())
             event = candidate.rename_connector(connector_id, requested)
@@ -3938,6 +4004,7 @@ class MonkezCanva(QWidget):
         return True
 
     def setElementColor(self, element_id: str, color: Any, role: str = "accent") -> "MonkezCanva":
+        self._ensure_writable()
         item = self._required_element(element_id)
         value = _color(color)
         if role in ("background", "surface"):
@@ -3951,6 +4018,7 @@ class MonkezCanva(QWidget):
         return self
 
     def setElementText(self, element_id: str, text: str) -> "MonkezCanva":
+        self._ensure_writable()
         item = self._required_element(element_id)
         item.text = str(text)
         item.update()
@@ -3958,6 +4026,7 @@ class MonkezCanva(QWidget):
         return self
 
     def setChartData(self, element_id: str, values) -> "MonkezCanva":
+        self._ensure_writable()
         item = self._required_element(element_id)
         if item.kind not in ("bar_chart", "line_chart"):
             raise TypeError(f"Element {element_id!r} is not a chart")
@@ -4154,7 +4223,38 @@ class MonkezCanva(QWidget):
     def isDocumentModified(self) -> bool:
         return not self._undo_stack.isClean()
 
+    def isReadOnly(self) -> bool:
+        return bool(self._read_only_reason)
+
+    def readOnlyReason(self) -> str:
+        return self._read_only_reason
+
+    def lastRecoverySource(self) -> str:
+        return self._last_recovery_source
+
+    def assetIntegrityIssues(self) -> tuple[str, ...]:
+        return tuple(self._asset_integrity_issues)
+
+    def _set_read_only_reason(self, reason: str) -> None:
+        normalized = str(reason).strip()
+        if normalized == self._read_only_reason:
+            return
+        self._read_only_reason = normalized
+        writable_edit = self._edit_mode and not normalized
+        for item in self._elements.values():
+            item.setEditable(writable_edit)
+        for connector in self._connectors.values():
+            connector.setEditable(writable_edit)
+        self.readOnlyChanged.emit(bool(normalized), normalized)
+        if normalized:
+            self.diagnosticMessage.emit(f"Read-only document: {normalized}")
+
+    def _ensure_writable(self) -> None:
+        if self.isReadOnly():
+            raise PermissionError(self._read_only_reason)
+
     def beginCommandMacro(self, text: str) -> None:
+        self._ensure_writable()
         self._undo_stack.beginMacro(str(text))
 
     def endCommandMacro(self) -> None:
@@ -4175,6 +4275,7 @@ class MonkezCanva(QWidget):
         *,
         merge_key: str = "",
     ) -> bool:
+        self._ensure_writable()
         before = self._document_model.to_dict()
         candidate = CanvasDocument.from_dict(before)
         mutation(candidate)
@@ -4198,16 +4299,39 @@ class MonkezCanva(QWidget):
             raise TypeError("MonkezCanva.setDocumentModel expects a CanvasDocument")
         if document is self._document_model:
             return self
-        prepared = self._prepare_document_for_registry(document.to_dict())
-        document.reconcile(prepared, origin=self)
+        source = document.to_dict()
+        reasons = self._compatibility_reasons(document)
+        if not reasons:
+            prepared = self._prepare_document_for_registry(source)
+            document.reconcile(prepared, origin=self)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)
         self._document_model = document
         self._document_subscription = document.subscribe(self._on_document_operation)
         self._last_rendered_document_revision = document.revision
         self._undo_stack.clear()
+        self._set_read_only_reason("; ".join(reason for reason in reasons if reason))
         self._render_document(document.to_dict())
         return self
+
+    def _newer_component_reasons(self, data: dict[str, Any]) -> list[str]:
+        reasons: list[str] = []
+        for entry in data.get("elements", []):
+            definition = self._element_registry.definition(str(entry.get("type", "")))
+            if definition is None:
+                continue
+            version = int(entry.get("componentVersion", 1))
+            if version > definition.schema_version:
+                reasons.append(
+                    f"Component {entry.get('id', '?')!r} ({definition.type_id}) uses "
+                    f"schema {version}; supported {definition.schema_version}"
+                )
+        return reasons
+
+    def _compatibility_reasons(self, document: CanvasDocument) -> list[str]:
+        reasons = [document.read_only_reason] if document.is_read_only else []
+        reasons.extend(self._newer_component_reasons(document.to_dict()))
+        return [reason for reason in reasons if reason]
 
     def _prepare_document_for_registry(self, data: dict[str, Any]) -> dict[str, Any]:
         prepared = json.loads(json.dumps(data))
@@ -4227,7 +4351,7 @@ class MonkezCanva(QWidget):
         for index, entry in enumerate(data.get("elements", [])):
             if str(entry.get("type", "")).lower() != str(type_id).lower():
                 continue
-            migrated = self._element_registry.prepare_record(entry)
+            migrated = self._element_registry.prepare_record(entry, allow_newer=True)
             if migrated != entry:
                 data["elements"][index] = migrated
                 changed = True
@@ -4238,6 +4362,9 @@ class MonkezCanva(QWidget):
                 if item.kind == str(type_id).lower():
                     item.definition = self._element_registry.require(type_id)
                     item.update()
+        self._set_read_only_reason(
+            "; ".join(self._compatibility_reasons(self._document_model))
+        )
 
     @staticmethod
     def _model_values(values: dict[str, Any]) -> dict[str, Any]:
@@ -4385,7 +4512,7 @@ class MonkezCanva(QWidget):
         }
 
     def _sync_document_from_graphics(self) -> tuple[OperationEvent, ...]:
-        if self._restoring or self._document_model is None:
+        if self._restoring or self._document_model is None or self.isReadOnly():
             return ()
         before = self._document_model.to_dict()
         after = self._graphics_document()
@@ -4549,7 +4676,9 @@ class MonkezCanva(QWidget):
             self.diagnosticMessage.emit(
                 f"Missing component type {kind!r}; rendered a safe placeholder"
             )
-        values = self._element_registry.prepare_record(values)
+        values = self._element_registry.prepare_record(
+            values, allow_newer=self.isReadOnly()
+        )
         kind = values.pop("type")
         element_id = values.pop("id")
         x = values.pop("x", 0)
@@ -4596,9 +4725,15 @@ class MonkezCanva(QWidget):
         return json.dumps(self.toDocument(), ensure_ascii=False, indent=indent)
 
     def saveDocument(self, path: str | Path) -> Path:
+        self._ensure_writable()
         target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.toJson(), encoding="utf-8")
+        payload = self.toDocument()
+        manifest = build_asset_manifest(payload, target.parent)
+        if manifest:
+            payload[ASSET_MANIFEST_KEY] = manifest
+        else:
+            payload.pop(ASSET_MANIFEST_KEY, None)
+        atomic_write_json(target, payload)
         self._undo_stack.setClean()
         return target
 
@@ -4654,7 +4789,9 @@ class MonkezCanva(QWidget):
         if self._elements or self._connectors:
             self.diagnosticMessage.emit("Portable auto-load skipped: canvas already contains objects")
             return
-        if self.persistentPath().is_file() or self.legacyPersistentPath().is_file():
+        persistent = self.persistentPath()
+        legacy = self.legacyPersistentPath()
+        if any(path.is_file() for path in (persistent, backup_path(persistent), legacy, backup_path(legacy))):
             self.loadPersistent()
 
     def saveSession(self) -> dict[str, Any]:
@@ -4670,6 +4807,7 @@ class MonkezCanva(QWidget):
         return True
 
     def savePersistent(self, document: dict[str, Any] | None = None) -> Path:
+        self._ensure_writable()
         target = self.persistentPath()
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = json.loads(json.dumps(document if document is not None else self.toDocument()))
@@ -4699,7 +4837,21 @@ class MonkezCanva(QWidget):
             managed = self._copy_managed_asset(background_image, "background", target, assets)
             if managed:
                 scene["backgroundImage"] = managed
-        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        for entry in payload.get("resources", []):
+            uri = str(entry.get("uri", ""))
+            if not uri:
+                continue
+            safe_id = "".join(
+                character if character.isalnum() or character in "-_" else "_"
+                for character in str(entry["id"])
+            )
+            managed = self._copy_managed_asset(uri, f"resource-{safe_id}", target, assets)
+            if managed:
+                entry["uri"] = managed
+        payload[ASSET_MANIFEST_KEY] = build_asset_manifest(payload, target.parent)
+        atomic_write_json(target, payload)
+        self._asset_integrity_issues = []
+        self.assetIntegrityChecked.emit([])
         self._undo_stack.setClean()
         self.persistentSaved.emit(str(target))
         self.autoSaved.emit(str(target))
@@ -4707,33 +4859,79 @@ class MonkezCanva(QWidget):
 
     def loadPersistent(self) -> bool:
         source = self.persistentPath()
-        if not source.is_file():
+        if not source.is_file() and not backup_path(source).is_file():
             legacy = self.legacyPersistentPath()
-            if legacy.is_file():
+            if legacy.is_file() or backup_path(legacy).is_file():
                 source = legacy
                 self.diagnosticMessage.emit(f"Migrating legacy persistent document: {legacy}")
             else:
                 self.diagnosticMessage.emit(f"Persistent document not found: {source}")
                 return False
-        payload = json.loads(source.read_text(encoding="utf-8"))
-        for entry in payload.get("elements", []):
-            media = str(entry.get("source", ""))
-            if media and not Path(media).is_absolute():
-                entry["source"] = str((source.parent / Path(media)).resolve())
-        for entry in [*payload.get("elements", []), *payload.get("connectors", [])]:
-            packet_icon = str(entry.get("packetIcon", ""))
-            if packet_icon and not Path(packet_icon).is_absolute():
-                entry["packetIcon"] = str((source.parent / Path(packet_icon)).resolve())
-        scene = payload.get("scene", {})
-        background_image = str(scene.get("backgroundImage", ""))
-        if background_image and not Path(background_image).is_absolute():
-            scene["backgroundImage"] = str((source.parent / Path(background_image)).resolve())
-        self._restore_document(payload)
+        loaded = load_json_with_recovery(source)
+        payload = loaded.payload
+        self._last_recovery_source = str(loaded.source) if loaded.recovered_from_backup else ""
+        if loaded.recovered_from_backup:
+            self.diagnosticMessage.emit(
+                f"Recovered persistent document from backup {loaded.source}; "
+                f"primary error: {loaded.primary_error}"
+            )
+            self.recoveryLoaded.emit(str(source), str(loaded.source))
+        self._prepare_loaded_assets(payload, source.parent)
+        self._restore_document(payload, allow_newer=True)
         if source != self.persistentPath():
-            self.savePersistent()
+            if not self.isReadOnly():
+                self.savePersistent()
         self.persistentLoaded.emit(str(source))
         self.autoSaved.emit(f"loaded {source}")
         return True
+
+    def verifyPersistentAssets(self, path: str | Path | None = None) -> tuple[str, ...]:
+        """Verify all relative managed assets against the saved SHA-256 manifest."""
+
+        target = Path(path) if path is not None else self.persistentPath()
+        loaded = load_json_with_recovery(target)
+        issues = verify_asset_manifest(loaded.payload, target.parent)
+        self._asset_integrity_issues = [issue.message() for issue in issues]
+        self.assetIntegrityChecked.emit(list(self._asset_integrity_issues))
+        return tuple(self._asset_integrity_issues)
+
+    def _prepare_loaded_assets(self, payload: dict[str, Any], root: Path) -> None:
+        issues = verify_asset_manifest(payload, root)
+        self._asset_integrity_issues = [issue.message() for issue in issues]
+        self.assetIntegrityChecked.emit(list(self._asset_integrity_issues))
+        for issue in self._asset_integrity_issues:
+            self.diagnosticMessage.emit(f"Asset integrity warning: {issue}")
+
+        def resolve(value: Any) -> str:
+            text = str(value or "")
+            if (
+                not text
+                or "://" in text
+                or text.lower().startswith(("data:", "qrc:"))
+                or Path(text).is_absolute()
+            ):
+                return text
+            candidate = (root / Path(text)).resolve()
+            try:
+                candidate.relative_to(root.resolve())
+            except ValueError:
+                return ""
+            return str(candidate)
+
+        for entry in payload.get("elements", []):
+            if entry.get("source"):
+                entry["source"] = resolve(entry["source"])
+            if entry.get("packetIcon"):
+                entry["packetIcon"] = resolve(entry["packetIcon"])
+        for entry in payload.get("connectors", []):
+            if entry.get("packetIcon"):
+                entry["packetIcon"] = resolve(entry["packetIcon"])
+        scene = payload.get("scene", {})
+        if scene.get("backgroundImage"):
+            scene["backgroundImage"] = resolve(scene["backgroundImage"])
+        for entry in payload.get("resources", []):
+            if entry.get("uri"):
+                entry["uri"] = resolve(entry["uri"])
 
     @staticmethod
     def _copy_managed_asset(source_text: str, asset_id: str, target: Path, assets: Path) -> str:
@@ -4749,7 +4947,7 @@ class MonkezCanva(QWidget):
         destination = assets / f"{asset_id}-{safe_name}"
         assets.mkdir(parents=True, exist_ok=True)
         if source.resolve() != destination.resolve():
-            shutil.copy2(source, destination)
+            copy_asset_atomically(source, destination)
         return destination.relative_to(target.parent).as_posix()
 
     def setAutoSaveEnabled(self, enabled: bool) -> None:
@@ -4765,7 +4963,7 @@ class MonkezCanva(QWidget):
         return self._auto_save_delay
 
     def _queue_autosave(self) -> None:
-        if self._restoring:
+        if self._restoring or self.isReadOnly():
             return
         if not self._document_render_notification:
             self._sync_document_from_graphics()
@@ -4774,7 +4972,7 @@ class MonkezCanva(QWidget):
         self._autosave_timer.start(self._auto_save_delay)
 
     def _flush_autosave(self) -> None:
-        if self._restoring:
+        if self._restoring or self.isReadOnly():
             return
         document = json.loads(json.dumps(self._document_model.to_dict()))
         self._draft_document = document
@@ -4783,6 +4981,8 @@ class MonkezCanva(QWidget):
             self.savePersistent(document)
 
     def undo(self) -> bool:
+        if self.isReadOnly():
+            return False
         self._flush_autosave()
         if not self._undo_stack.canUndo():
             return False
@@ -4791,6 +4991,8 @@ class MonkezCanva(QWidget):
         return True
 
     def redo(self) -> bool:
+        if self.isReadOnly():
+            return False
         if not self._undo_stack.canRedo():
             return False
         self._undo_stack.redo()
@@ -4798,6 +5000,7 @@ class MonkezCanva(QWidget):
         return True
 
     def loadDocument(self, document: dict[str, Any] | str | Path) -> "MonkezCanva":
+        asset_root: Path | None = None
         if isinstance(document, dict):
             data = document
         else:
@@ -4805,13 +5008,33 @@ class MonkezCanva(QWidget):
             if serialized.lstrip().startswith("{"):
                 data = json.loads(serialized)
             else:
-                data = json.loads(Path(serialized).read_text(encoding="utf-8"))
-        model = CanvasDocument.from_dict(data)
+                document_path = Path(serialized)
+                loaded = load_json_with_recovery(document_path)
+                data = loaded.payload
+                asset_root = document_path.parent
+                self._last_recovery_source = (
+                    str(loaded.source) if loaded.recovered_from_backup else ""
+                )
+                if loaded.recovered_from_backup:
+                    self.diagnosticMessage.emit(
+                        f"Recovered document from backup {loaded.source}; "
+                        f"primary error: {loaded.primary_error}"
+                    )
+                    self.recoveryLoaded.emit(serialized, str(loaded.source))
+        if asset_root is not None:
+            self._prepare_loaded_assets(data, asset_root)
+        model = CanvasDocument.from_dict(data, allow_newer=True)
         return self.setDocumentModel(model)
 
-    def _restore_document(self, data: dict[str, Any]) -> None:
-        model = CanvasDocument.from_dict(data)
+    def _restore_document(
+        self, data: dict[str, Any], *, allow_newer: bool = False
+    ) -> None:
+        model = CanvasDocument.from_dict(data, allow_newer=allow_newer)
+        if model.is_read_only or self._newer_component_reasons(model.to_dict()):
+            self.setDocumentModel(model)
+            return
         events = self._document_model.reconcile(model.to_dict())
+        self._set_read_only_reason("")
         if events:
             self._last_rendered_document_revision = self._document_model.revision
         self._undo_stack.clear()
@@ -4940,10 +5163,11 @@ class MonkezCanva(QWidget):
         if enabled == self._edit_mode:
             return
         self._edit_mode = enabled
+        writable_edit = enabled and not self.isReadOnly()
         for item in self._elements.values():
-            item.setEditable(enabled)
+            item.setEditable(writable_edit)
         for connector in self._connectors.values():
-            connector.setEditable(enabled)
+            connector.setEditable(writable_edit)
         if enabled:
             self._place_quick_toolbar()
             self._quick_toolbar.show()
@@ -5008,6 +5232,7 @@ class MonkezCanva(QWidget):
         visible = bool(visible)
         if visible == self._grid_visible:
             return
+        self._ensure_writable()
         self._grid_visible = visible
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         self.documentChanged.emit()
@@ -5019,6 +5244,7 @@ class MonkezCanva(QWidget):
         enabled = bool(enabled)
         if enabled == self._snap_to_grid:
             return
+        self._ensure_writable()
         self._snap_to_grid = enabled
         self.documentChanged.emit()
 
@@ -5029,6 +5255,7 @@ class MonkezCanva(QWidget):
         size = max(4, int(size))
         if size == self._grid_size:
             return
+        self._ensure_writable()
         self._grid_size = size
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         self.documentChanged.emit()
@@ -5046,6 +5273,7 @@ class MonkezCanva(QWidget):
             index = max(0, min(len(_GRID_STYLES) - 1, int(style)))
         if index == self._grid_style:
             return
+        self._ensure_writable()
         self._grid_style = index
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         self.documentChanged.emit()
@@ -5057,6 +5285,7 @@ class MonkezCanva(QWidget):
         color = _color(value, "#f8fafc")
         if color == self._background_color:
             return
+        self._ensure_writable()
         self._background_color = color
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         self.documentChanged.emit()
@@ -5069,6 +5298,7 @@ class MonkezCanva(QWidget):
         source = str(Path(text).expanduser().resolve()) if text else ""
         if source == self._background_image:
             return
+        self._ensure_writable()
         pixmap = QPixmap(source) if source else QPixmap()
         if source and pixmap.isNull():
             raise ValueError(f"Unsupported canvas background image: {source}")
@@ -5090,6 +5320,7 @@ class MonkezCanva(QWidget):
             index = max(0, min(len(_BACKGROUND_IMAGE_MODES) - 1, int(mode)))
         if index == self._background_image_mode:
             return
+        self._ensure_writable()
         self._background_image_mode = index
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         self.documentChanged.emit()
@@ -5101,6 +5332,7 @@ class MonkezCanva(QWidget):
         color = _color(value, "#e2e8f0")
         if color == self._grid_color:
             return
+        self._ensure_writable()
         self._grid_color = color
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         self.documentChanged.emit()

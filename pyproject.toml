@@ -71,6 +71,9 @@ include-package-data = true
     "monkez_assets/icons/*",
     "monkez_assets/images/*",
 ]
+"monkez_pyqt6.monkez_canva" = [
+    "schemas/*.json",
+]
 
 [tool.ruff]
 target-version = "py310"

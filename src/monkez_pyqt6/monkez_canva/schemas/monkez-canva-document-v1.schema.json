@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monkez.dev/schemas/monkez-canva/document-v1.json",
+  "title": "MonkezCanva document",
+  "type": "object",
+  "required": ["format", "version", "scene", "elements", "connectors"],
+  "properties": {
+    "format": {"const": "monkez-canva"},
+    "version": {"type": "integer", "minimum": 1},
+    "scene": {"type": "object"},
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"type": "string", "minLength": 1},
+          "componentVersion": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "target"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"const": "connector"},
+          "source": {"type": "string", "minLength": 1},
+          "target": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "groups": {"type": "array", "items": {"type": "object"}},
+    "resources": {"type": "array", "items": {"type": "object"}},
+    "assetManifest": {"type": "object"}
+  },
+  "additionalProperties": true
+}

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import json
 import unittest
+from importlib.resources import files
 
-from monkez_pyqt6.monkez_canva import CanvasDocument, ElementModel
+from monkez_pyqt6.monkez_canva import (
+    DOCUMENT_JSON_SCHEMA,
+    CanvasDocument,
+    ElementModel,
+    migrate_document,
+)
 
 
 def document_payload() -> dict:
@@ -39,6 +46,32 @@ def document_payload() -> dict:
 
 
 class CanvasDocumentTests(unittest.TestCase):
+    def test_public_schema_and_newer_document_read_only_contract(self) -> None:
+        payload = document_payload()
+        payload["version"] = 7
+        payload["futureMetadata"] = {"preserved": True}
+
+        with self.assertRaisesRegex(ValueError, "newer than supported"):
+            CanvasDocument.from_dict(payload)
+        document = CanvasDocument.from_dict(payload, allow_newer=True)
+
+        self.assertTrue(document.is_read_only)
+        self.assertEqual(7, document.source_version)
+        self.assertEqual(7, document.to_dict()["version"])
+        self.assertEqual({"preserved": True}, document.to_dict()["futureMetadata"])
+        with self.assertRaises(PermissionError):
+            document.add_element({"id": "blocked", "type": "text"})
+        with self.assertRaises(PermissionError):
+            document.reconcile(document.to_dict())
+        self.assertEqual("object", DOCUMENT_JSON_SCHEMA["type"])
+        self.assertTrue(migrate_document(payload, allow_newer=True).read_only)
+        packaged_schema = json.loads(
+            files("monkez_pyqt6.monkez_canva")
+            .joinpath("schemas/monkez-canva-document-v1.schema.json")
+            .read_text(encoding="utf-8")
+        )
+        self.assertEqual(DOCUMENT_JSON_SCHEMA, packaged_schema)
+
     def test_version_one_load_is_json_safe_and_normalizes_legacy_lines(self) -> None:
         payload = document_payload()
         payload["elements"].extend(

@@ -10,10 +10,9 @@ from uuid import uuid4
 from weakref import WeakMethod
 
 from .operations import OperationEvent, changed_fields
+from .schema import DOCUMENT_FORMAT, DOCUMENT_VERSION, migrate_document
 
 
-DOCUMENT_FORMAT = "monkez-canva"
-DOCUMENT_VERSION = 1
 _KNOWN_TOP_LEVEL = {"format", "version", "scene", "elements", "connectors", "groups", "resources"}
 _PORT_MODES = {"input", "output", "free"}
 _PORT_SIDES = {"left", "right", "top", "bottom"}
@@ -230,6 +229,9 @@ class CanvasDocument:
         resources: Iterable[ResourceModel] = (),
         version: int = DOCUMENT_VERSION,
         extensions: Mapping[str, Any] | None = None,
+        source_version: int | None = None,
+        read_only: bool = False,
+        read_only_reason: str = "",
     ) -> None:
         if int(version) != DOCUMENT_VERSION:
             raise ValueError(f"Unsupported MonkezCanva document version: {version}")
@@ -251,6 +253,16 @@ class CanvasDocument:
         if len(self._resources) != len(resource_items):
             raise ValueError("MonkezCanva document contains duplicate resource IDs")
         self._extensions = _frozen_mapping(extensions)
+        self._source_version = int(source_version or version)
+        self._read_only = bool(read_only)
+        self._read_only_reason = str(read_only_reason).strip()
+        if self._read_only and not self._read_only_reason:
+            self._read_only_reason = (
+                f"Document version {self._source_version} is newer than supported "
+                f"version {DOCUMENT_VERSION}"
+                if self._source_version > DOCUMENT_VERSION
+                else "MonkezCanva document is read-only"
+            )
         self._revision = 0
         self._listeners: dict[str, DocumentListener | WeakMethod] = {}
         self._validate()
@@ -260,11 +272,11 @@ class CanvasDocument:
         return cls(scene=SceneModel.from_dict(scene))
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "CanvasDocument":
-        raw = _json_copy(dict(data))
-        if raw.get("format") != DOCUMENT_FORMAT:
-            raise ValueError("Unsupported MonkezCanva document format")
-        version = int(raw.get("version", DOCUMENT_VERSION))
+    def from_dict(
+        cls, data: Mapping[str, Any], *, allow_newer: bool = False
+    ) -> "CanvasDocument":
+        migration = migrate_document(data, allow_newer=allow_newer)
+        raw = migration.payload
         extensions = {key: value for key, value in raw.items() if key not in _KNOWN_TOP_LEVEL}
         return cls(
             scene=SceneModel.from_dict(raw.get("scene", {})),
@@ -272,13 +284,27 @@ class CanvasDocument:
             connectors=(ConnectorModel.from_dict(item) for item in raw.get("connectors", [])),
             groups=(GroupModel.from_dict(item) for item in raw.get("groups", [])),
             resources=(ResourceModel.from_dict(item) for item in raw.get("resources", [])),
-            version=version,
+            version=DOCUMENT_VERSION,
             extensions=extensions,
+            source_version=migration.source_version,
+            read_only=migration.read_only,
         )
 
     @property
     def revision(self) -> int:
         return self._revision
+
+    @property
+    def source_version(self) -> int:
+        return self._source_version
+
+    @property
+    def is_read_only(self) -> bool:
+        return self._read_only
+
+    @property
+    def read_only_reason(self) -> str:
+        return self._read_only_reason
 
     @property
     def scene(self) -> SceneModel:
@@ -325,23 +351,24 @@ class CanvasDocument:
         self._listeners.pop(str(token), None)
 
     def to_dict(self) -> dict[str, Any]:
-        result = {
+        result = _json_copy(self._extensions)
+        result.update({
             "format": DOCUMENT_FORMAT,
-            "version": DOCUMENT_VERSION,
+            "version": self._source_version if self._read_only else DOCUMENT_VERSION,
             "scene": self._scene.to_dict(),
             "elements": [item.to_dict() for item in self._elements.values()],
             "connectors": [item.to_dict() for item in self._connectors.values()],
-        }
+        })
         if self._groups:
             result["groups"] = [item.to_dict() for item in self._groups.values()]
         if self._resources:
             result["resources"] = [item.to_dict() for item in self._resources.values()]
-        result.update(_json_copy(self._extensions))
         return result
 
     def reconcile(self, data: Mapping[str, Any], *, origin: Any = None) -> tuple[OperationEvent, ...]:
         """Atomically replace state and report the smallest record-level changes."""
 
+        self._ensure_writable()
         candidate = CanvasDocument.from_dict(data)
         events: list[tuple[str, str, str, dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         previous_scene = self._scene.to_dict()
@@ -374,12 +401,14 @@ class CanvasDocument:
         return committed
 
     def add_element(self, element: ElementModel | Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         model = element if isinstance(element, ElementModel) else ElementModel.from_dict(element)
         self._ensure_available_id(model.id)
         self._elements[model.id] = model
         return self._commit("element.added", "element", model.id, current=model.to_dict(), origin=origin)
 
     def update_element(self, element_id: str, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(element_id)
         previous = self._required_element(key).to_dict()
         updated = dict(previous)
@@ -392,6 +421,7 @@ class CanvasDocument:
         )
 
     def remove_element(self, element_id: str, *, origin: Any = None) -> tuple[OperationEvent, ...]:
+        self._ensure_writable()
         key = str(element_id)
         previous = self._required_element(key).to_dict()
         attached = [item for item in self._connectors.values() if key in (item.source, item.target)]
@@ -427,6 +457,7 @@ class CanvasDocument:
         return committed
 
     def add_connector(self, connector: ConnectorModel | Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         model = connector if isinstance(connector, ConnectorModel) else ConnectorModel.from_dict(connector)
         self._ensure_available_id(model.id)
         self._validate_connector(model)
@@ -434,6 +465,7 @@ class CanvasDocument:
         return self._commit("connector.added", "connector", model.id, current=model.to_dict(), origin=origin)
 
     def update_connector(self, connector_id: str, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(connector_id)
         previous_model = self._connectors.get(key)
         if previous_model is None:
@@ -451,6 +483,7 @@ class CanvasDocument:
         )
 
     def remove_connector(self, connector_id: str, *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(connector_id)
         model = self._connectors.pop(key, None)
         if model is None:
@@ -458,6 +491,7 @@ class CanvasDocument:
         return self._commit("connector.removed", "connector", key, previous=model.to_dict(), origin=origin)
 
     def rename_connector(self, connector_id: str, new_id: str, *, origin: Any = None) -> OperationEvent | None:
+        self._ensure_writable()
         old_id = str(connector_id)
         requested = _required_id(new_id, "connector")
         model = self._connectors.get(old_id)
@@ -479,6 +513,7 @@ class CanvasDocument:
         )
 
     def rename_element(self, element_id: str, new_id: str, *, origin: Any = None) -> tuple[OperationEvent, ...]:
+        self._ensure_writable()
         old_id = str(element_id)
         requested = _required_id(new_id, "element")
         model = self._required_element(old_id)
@@ -542,6 +577,7 @@ class CanvasDocument:
         return committed
 
     def add_group(self, group: GroupModel | Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         model = group if isinstance(group, GroupModel) else GroupModel.from_dict(group)
         self._ensure_available_id(model.id)
         missing = [member for member in model.members if member not in self._elements and member not in self._groups]
@@ -551,6 +587,7 @@ class CanvasDocument:
         return self._commit("group.added", "group", model.id, current=model.to_dict(), origin=origin)
 
     def update_group(self, group_id: str, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(group_id)
         previous_model = self._groups.get(key)
         if previous_model is None:
@@ -570,6 +607,7 @@ class CanvasDocument:
         )
 
     def remove_group(self, group_id: str, *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(group_id)
         model = self._groups.pop(key, None)
         if model is None:
@@ -602,6 +640,7 @@ class CanvasDocument:
         return removed
 
     def add_resource(self, resource: ResourceModel | Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         model = resource if isinstance(resource, ResourceModel) else ResourceModel.from_dict(resource)
         if model.id in self._resources:
             raise ValueError(f"Duplicate MonkezCanva resource id: {model.id}")
@@ -609,6 +648,7 @@ class CanvasDocument:
         return self._commit("resource.added", "resource", model.id, current=model.to_dict(), origin=origin)
 
     def update_resource(self, resource_id: str, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(resource_id)
         previous_model = self._resources.get(key)
         if previous_model is None:
@@ -625,6 +665,7 @@ class CanvasDocument:
         )
 
     def remove_resource(self, resource_id: str, *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         key = str(resource_id)
         model = self._resources.pop(key, None)
         if model is None:
@@ -632,6 +673,7 @@ class CanvasDocument:
         return self._commit("resource.removed", "resource", key, previous=model.to_dict(), origin=origin)
 
     def update_scene(self, changes: Mapping[str, Any], *, origin: Any = None) -> OperationEvent:
+        self._ensure_writable()
         previous = self._scene.to_dict()
         current = dict(previous)
         current.update(_json_copy(dict(changes)))
@@ -670,6 +712,12 @@ class CanvasDocument:
         )
         self._emit((event,))
         return event
+
+    def _ensure_writable(self) -> None:
+        if self._read_only:
+            raise PermissionError(
+                self._read_only_reason or "MonkezCanva document is read-only"
+            )
 
     def _emit(self, events: Iterable[OperationEvent]) -> None:
         listeners: list[DocumentListener] = []

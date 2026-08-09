@@ -1010,11 +1010,13 @@ class WidgetTests(unittest.TestCase):
             saved_path = canvas.savePersistent()
             self.assertEqual(persistent_path, saved_path)
             payload = json.loads(persistent_path.read_text(encoding="utf-8"))
+            self.assertIn("assetManifest", payload)
             self.assertFalse(Path(payload["elements"][0]["source"]).is_absolute())
             copied_media = persistent_path.parent / payload["elements"][0]["source"]
             self.assertTrue(copied_media.is_file())
             self.assertNotEqual(image_path, copied_media)
             self.assertFalse(Path(payload["scene"]["backgroundImage"]).is_absolute())
+            self.assertEqual((), canvas.verifyPersistentAssets())
 
             relocated = root / "relocated-project"
             shutil.copytree(project, relocated)
@@ -1058,6 +1060,65 @@ class WidgetTests(unittest.TestCase):
             auto_source.deleteLater()
             auto_restored.deleteLater()
             canvas.deleteLater()
+
+    def test_canva_recovers_backup_and_opens_future_schemas_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "workspace.json"
+            source = MonkezCanva()
+            source.persistentPath = lambda: target
+            source.addNode("Backup version", element_id="node")
+            source.savePersistent()
+            source.setElementText("node", "Latest version")
+            source.savePersistent()
+            target.write_text('{"format":', encoding="utf-8")
+
+            restored = MonkezCanva()
+            restored.persistentPath = lambda: target
+            recovered = []
+            restored.recoveryLoaded.connect(lambda primary, backup: recovered.append((primary, backup)))
+            self.assertTrue(restored.loadPersistent())
+            self.assertEqual("Backup version", restored.element("node").text)
+            self.assertTrue(restored.lastRecoverySource().endswith(".json.bak"))
+            self.assertTrue(recovered)
+
+            future = {
+                "format": "monkez-canva",
+                "version": 4,
+                "scene": {},
+                "elements": [{"id": "future", "type": "node", "componentVersion": 9}],
+                "connectors": [],
+                "futureData": {"keep": True},
+            }
+            restored.loadDocument(future)
+            self.assertTrue(restored.isReadOnly())
+            self.assertIn("Document version 4", restored.readOnlyReason())
+            self.assertEqual(4, restored.toDocument()["version"])
+            with self.assertRaises(PermissionError):
+                restored.addText("Blocked")
+            with self.assertRaises(PermissionError):
+                restored.saveDocument(Path(directory) / "must-not-write.json")
+            restored.setEditMode(True)
+            self.app.processEvents()
+            self.assertFalse(restored.element("future").flags() & restored.element("future").GraphicsItemFlag.ItemIsMovable)
+            self.assertEqual("Read only · newer format", restored._toolbox._footer_status.text())
+            self.assertFalse(restored._toolbox._tabs.isTabEnabled(0))
+            self.assertTrue(restored._toolbox._tabs.isTabEnabled(2))
+
+            component_only = {
+                "format": "monkez-canva",
+                "version": 1,
+                "scene": {},
+                "elements": [{"id": "component", "type": "node", "componentVersion": 6}],
+                "connectors": [],
+            }
+            separate = MonkezCanva()
+            separate.loadDocument(component_only)
+            self.assertTrue(separate.isReadOnly())
+            self.assertIn("schema 6", separate.readOnlyReason())
+            separate.deleteLater()
+            source.deleteLater()
+            restored.setEditMode(False)
+            restored.deleteLater()
 
     def test_button_does_not_force_preview_geometry_to_theme_size(self) -> None:
         button = MonkezButton()
