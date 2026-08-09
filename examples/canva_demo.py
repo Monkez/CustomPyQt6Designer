@@ -140,6 +140,26 @@ def main() -> int:
             report["counts"]["modified"],
         )
     )
+    canvas.projectPluginsDiscovered.connect(
+        lambda packages: logger.info(
+            "projectPluginsDiscovered -> %s packages [%s]",
+            len(packages),
+            ", ".join(str(package["state"]) for package in packages) or "none",
+        )
+    )
+    canvas.projectPluginTrustChanged.connect(
+        lambda plugin_id, trusted, fingerprint: logger.info(
+            "projectPluginTrustChanged -> %s trusted=%s fingerprint=%s",
+            plugin_id,
+            trusted,
+            fingerprint[:12] if fingerprint else "none",
+        )
+    )
+    canvas.projectPluginLoadFailed.connect(
+        lambda plugin_id, error: logger.info(
+            "projectPluginLoadFailed -> %s: %s", plugin_id, error
+        )
+    )
     canvas.enableWorkflowComponents()
     canvas.enableAllComponentPacks()
     canvas.registerElementPlugin(TELEMETRY_PLUGIN)
@@ -375,6 +395,7 @@ def main() -> int:
     logger.info("Select an element and open Inspector > Data bindings for live data")
     logger.info("Open reusable project templates with Ctrl+K, then search 'templates'")
     logger.info("Open document health and changes since save with Ctrl+K, then search 'health'")
+    logger.info("Open explicit-trust project plugin discovery with Ctrl+K, then search 'plugins'")
     result = app.exec()
     logger.info("Demo closed with exit code %s", result)
     return result

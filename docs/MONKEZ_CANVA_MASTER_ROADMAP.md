@@ -289,6 +289,13 @@ asset-integrity findings, canvas metrics and changes since the clean save/load
 baseline. Reports are exportable JSON and discoverable from blank context or
 Ctrl+K without mutating history.
 
+Completed slice (2026-08-09): `MC-ECOSYSTEM-PLUGIN-007` adds bounded project
+plugin packages, deterministic non-executing discovery, whole-package SHA-256
+fingerprints and a session-only exact trust store. The detached Plugin Manager
+requires an explicit Trust and load action, reports invalid/conflicting packages
+without stopping discovery and preserves records as missing placeholders on
+unload. A standalone portable package example documents the complete contract.
+
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;

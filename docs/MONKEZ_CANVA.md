@@ -50,8 +50,9 @@ trong pane và floatbar dùng icon vector DPI-safe kèm tooltip.
 Card trong Control Pane được vẽ đồng nhất bởi editor thay vì phụ thuộc vào native
 `QGroupBox`, vì vậy title luôn nằm gọn bên trong card và không cắt đường viền trên
 Windows/High-DPI. Spinbox dùng stepper chìm, không còn các đường kẻ dày quanh mũi
-tên; thanh tab là một segmented control liền khối với icon 16 px, hover và selected
-state rõ ràng.
+tên; thanh tab dùng icon 16 px, hover rất nhẹ và selected state không còn
+đóng khung như một button. Tab active chỉ đổi icon/chữ sang coral và hiện
+một vạch ngắn 2 px căn giữa, giúp thanh tab thoáng và không nhảy bố cục.
 
 Có thể phân bố đều từ ba element trở lên:
 
@@ -872,6 +873,12 @@ Xem [MonkezCanva Component Plugin SDK](MONKEZ_CANVA_PLUGIN_SDK.md) và
 để có ví dụ đầy đủ về renderer vector, typed port và Inspector auto-apply.
 `registerElementDefinition()` bên dưới vẫn là API mức thấp phù hợp cho một
 component được khai báo trực tiếp trong ứng dụng.
+
+Plugin portable theo project nằm trong `.monkez_canva/plugins/<package>/`. Mở
+Plugin Manager từ menu chuột phải canvas hoặc `Ctrl+K` với từ khóa `plugins` để
+xem manifest, component types, đường dẫn và SHA-256. Discovery không chạy code;
+chỉ nút **Trust and load** mới import entry point. Trust chỉ giữ trong process và
+tự vô hiệu khi bất kỳ source/asset nào trong package thay đổi.
 
 ```python
 from monkez_pyqt6.monkez_canva import ElementDefinition

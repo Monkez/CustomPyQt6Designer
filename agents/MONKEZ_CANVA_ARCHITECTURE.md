@@ -452,6 +452,19 @@ canvas owns a detached clean baseline updated only at save/load/clean model
 attachment boundaries. Health refresh, JSON export, Ctrl+K and context actions
 call public facade methods and never reconcile or mutate the document.
 
+`monkez_canva/plugin_packages.py` separates discovery from execution. Discovery
+validates bounded manifests, safe relative entry paths, symlink policy, duplicate
+IDs and whole-package fingerprints without importing Python. `PluginTrustStore`
+is deliberately process-local and keys decisions by normalized plugin ID plus
+exact SHA-256; project files can travel, trust cannot. Loading re-scans immediately
+before import to close the discovery/load mutation window.
+
+The Qt facade owns discovered/loaded package lifecycle and the detached Plugin
+Manager. Trust and execution require an explicit public API or button action.
+Unload first removes registry callbacks, then releases the dynamic module and
+projects every surviving record through a `__missing__` definition. Documents,
+autosave and Undo never store package paths, entry symbols or trust decisions.
+
 `monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
 One render-state context temporarily hides excluded objects, clears selection and
 smart-guide artifacts, optionally suppresses background/grid painting, then

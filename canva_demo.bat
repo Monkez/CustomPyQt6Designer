@@ -36,6 +36,7 @@ echo [TIP] "Import DOT as subflow" wraps the imported graph as one reusable grou
 echo [TIP] The SDK examples category contains a trusted plugin component with its own Inspector
 echo [TIP] Ctrl+K, search "templates" to browse and insert reusable project templates
 echo [TIP] Ctrl+K, search "health" to inspect document integrity and changes since save
+echo [TIP] Ctrl+K, search "plugins" to discover, review and explicitly trust project packages
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

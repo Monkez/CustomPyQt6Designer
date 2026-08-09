@@ -78,6 +78,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QTabBar,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
@@ -106,6 +107,7 @@ from monkez_pyqt6.monkez_canva import (
     LayoutNode,
     LayoutOptions,
     LayoutResult,
+    LoadedPluginPackage,
     MessageTicket,
     OperationEvent,
     PacketRuntime,
@@ -119,6 +121,8 @@ from monkez_pyqt6.monkez_canva import (
     PALETTE_FAVORITES_KEY,
     PALETTE_RECENT_KEY,
     PaletteEntry,
+    PluginPackageCandidate,
+    PluginTrustStore,
     CANVAS_CLIPBOARD_MIME_TYPE,
     atomic_write_json,
     backup_path,
@@ -129,7 +133,9 @@ from monkez_pyqt6.monkez_canva import (
     create_default_element_registry,
     diagnose_document,
     diff_documents,
+    discover_plugin_packages,
     load_json_with_recovery,
+    load_trusted_plugin_package,
     layout_graph,
     normalize_component_ids,
     normalize_page_config,
@@ -159,6 +165,7 @@ from monkez_pyqt6.monkez_canva import (
     install_component_plugin,
     normalize_port_record,
     validate_port_value,
+    unload_plugin_package,
     parallel_lane_offset,
     segment_intersection,
 )
@@ -2254,6 +2261,43 @@ class _CanvasPaneHeader(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class _CanvasEditorTabBar(QTabBar):
+    """Minimal editor tabs with a short, DPI-safe active indicator."""
+
+    _indicator_width = 28.0
+    _indicator_height = 2.0
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("canvasEditorTabBar")
+        self.setDrawBase(False)
+
+    def _indicator_rect(self) -> QRectF:
+        index = self.currentIndex()
+        if index < 0:
+            return QRectF()
+        tab_rect = self.tabRect(index)
+        width = min(self._indicator_width, max(0.0, float(tab_rect.width() - 16)))
+        return QRectF(
+            tab_rect.center().x() - width / 2.0,
+            tab_rect.bottom() - self._indicator_height + 1.0,
+            width,
+            self._indicator_height,
+        )
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        indicator = self._indicator_rect()
+        if indicator.isEmpty():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#ff6b5f"))
+        radius = self._indicator_height / 2.0
+        painter.drawRoundedRect(indicator, radius, radius)
+
+
 class _CanvasNumberField(QDoubleSpinBox):
     """Stable, frameless-stepper number field used throughout the control pane.
 
@@ -2624,6 +2668,7 @@ class _CanvasCommandPalette(QDialog):
             ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
             ("template:browse", "Browse project templates", "Templates", "catalog reusable subflow", "grid", True, canvas.showProjectTemplateBrowser),
             ("document:health", "Open document health report", "Document", "diagnostics integrity diff changes", "command", True, canvas.showDocumentDiagnostics),
+            ("plugin:manager", "Open project plugin manager", "Plugins", "discover trust load component package", "grid", True, canvas.showProjectPluginManager),
         ))
         if selected:
             all_locked = all(canvas.objectState(object_id)["locked"] for object_id in selected)
@@ -3267,6 +3312,265 @@ class _CanvasDocumentReport(QDialog):
             self.canvas.exportDocumentReport(filename)
 
 
+class _CanvasPluginManager(QDialog):
+    """Detached explicit-trust manager for project-local component packages."""
+
+    def __init__(self, canvas: "MonkezCanva") -> None:
+        super().__init__(canvas.window())
+        self.canvas = canvas
+        self._records: dict[str, dict[str, Any]] = {}
+        self.setWindowTitle("MonkezCanva Project Plugins")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.setMinimumSize(730, 500)
+        self.resize(810, 550)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 16)
+        root.setSpacing(12)
+
+        header = QHBoxLayout()
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
+        title = QLabel("Project plugins")
+        title.setObjectName("pluginManagerTitle")
+        subtitle = QLabel("Packages are discovered safely. Python runs only after Trust & Load.")
+        subtitle.setObjectName("pluginManagerMuted")
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+        self._count = QLabel()
+        self._count.setObjectName("pluginManagerCount")
+        header.addLayout(title_box)
+        header.addStretch(1)
+        header.addWidget(self._count)
+        root.addLayout(header)
+
+        body = QHBoxLayout()
+        body.setSpacing(14)
+        self._list = QListWidget()
+        self._list.setObjectName("pluginManagerList")
+        self._list.setMinimumWidth(285)
+        self._list.setSpacing(4)
+        body.addWidget(self._list, 4)
+
+        detail = QFrame()
+        detail.setObjectName("pluginManagerDetail")
+        detail_layout = QVBoxLayout(detail)
+        detail_layout.setContentsMargins(15, 15, 15, 14)
+        detail_layout.setSpacing(9)
+        status_row = QHBoxLayout()
+        self._name = QLabel("Select a plugin")
+        self._name.setObjectName("pluginManagerName")
+        self._status = QLabel()
+        self._status.setObjectName("pluginManagerStatus")
+        status_row.addWidget(self._name, 1)
+        status_row.addWidget(self._status)
+        self._description = QLabel()
+        self._description.setWordWrap(True)
+        self._description.setObjectName("pluginManagerDescription")
+        self._metadata = QLabel()
+        self._metadata.setWordWrap(True)
+        self._metadata.setObjectName("pluginManagerMuted")
+        fingerprint_title = QLabel("Package fingerprint")
+        fingerprint_title.setObjectName("pluginManagerSection")
+        self._fingerprint = QLineEdit()
+        self._fingerprint.setReadOnly(True)
+        self._fingerprint.setObjectName("pluginFingerprint")
+        self._fingerprint.setPlaceholderText("Unavailable")
+        location_title = QLabel("Project location")
+        location_title.setObjectName("pluginManagerSection")
+        self._location = QLabel()
+        self._location.setWordWrap(True)
+        self._location.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._location.setObjectName("pluginManagerMuted")
+        self._warning = QLabel(
+            "Trust grants this exact package full Python permissions in the application process. "
+            "Review its source and fingerprint first. Trust is not stored in the project."
+        )
+        self._warning.setWordWrap(True)
+        self._warning.setObjectName("pluginTrustWarning")
+        self._error = QLabel()
+        self._error.setWordWrap(True)
+        self._error.setObjectName("pluginManagerError")
+        detail_layout.addLayout(status_row)
+        detail_layout.addWidget(self._description)
+        detail_layout.addWidget(self._metadata)
+        detail_layout.addSpacing(4)
+        detail_layout.addWidget(fingerprint_title)
+        detail_layout.addWidget(self._fingerprint)
+        detail_layout.addWidget(location_title)
+        detail_layout.addWidget(self._location)
+        detail_layout.addWidget(self._warning)
+        detail_layout.addWidget(self._error)
+        detail_layout.addStretch(1)
+        actions = QHBoxLayout()
+        self._revoke = QPushButton("Revoke trust")
+        self._action = QPushButton("Trust and load")
+        self._action.setObjectName("primaryAction")
+        actions.addWidget(self._revoke)
+        actions.addStretch(1)
+        actions.addWidget(self._action)
+        detail_layout.addLayout(actions)
+        body.addWidget(detail, 5)
+        root.addLayout(body, 1)
+
+        footer = QHBoxLayout()
+        self._refresh = QPushButton("Refresh")
+        self._refresh.setIcon(_canvas_icon("refresh"))
+        folder_hint = QLabel("Place packages in  .monkez_canva/plugins/<package>/")
+        folder_hint.setObjectName("pluginManagerMuted")
+        close = QPushButton("Close")
+        footer.addWidget(self._refresh)
+        footer.addWidget(folder_hint)
+        footer.addStretch(1)
+        footer.addWidget(close)
+        root.addLayout(footer)
+
+        self.setStyleSheet("""
+            QDialog { background: #fbfaf8; color: #2d3740; }
+            QLabel#pluginManagerTitle { font-size: 18px; font-weight: 750; color: #27313a; }
+            QLabel#pluginManagerMuted { color: #81898f; font-size: 10px; }
+            QLabel#pluginManagerCount { color: #e95549; background: #fff1ee;
+                border: 1px solid #ffd3cc; border-radius: 10px; padding: 5px 9px; }
+            QListWidget#pluginManagerList { background: transparent; border: none; outline: none; }
+            QListWidget#pluginManagerList::item { background: #fffefd; border: 1px solid #e5e0da;
+                border-radius: 11px; padding: 11px 12px; margin: 1px 0; }
+            QListWidget#pluginManagerList::item:hover { border-color: #ffc1ba; background: #fff8f6; }
+            QListWidget#pluginManagerList::item:selected { color: #d94e43; border-color: #ff9f95;
+                background: #fff1ee; }
+            QFrame#pluginManagerDetail { background: #fffefd; border: 1px solid #e4dfd9;
+                border-radius: 14px; }
+            QLabel#pluginManagerName { color: #27313a; font-size: 15px; font-weight: 750; }
+            QLabel#pluginManagerStatus { border-radius: 9px; padding: 4px 8px; font-size: 9px;
+                font-weight: 750; }
+            QLabel#pluginManagerDescription { color: #59656e; }
+            QLabel#pluginManagerSection { color: #3b464e; font-weight: 700; font-size: 10px; }
+            QLineEdit#pluginFingerprint { color: #59656e; background: #f7f5f2;
+                border: 1px solid #e3ded8; border-radius: 8px; padding: 7px 9px;
+                font-family: Consolas; font-size: 9px; }
+            QLabel#pluginTrustWarning { color: #8c641c; background: #fff8e8;
+                border: 1px solid #f2ddad; border-radius: 9px; padding: 9px; }
+            QLabel#pluginManagerError { color: #c8453b; }
+            QPushButton { color: #4e5961; background: #fffefd; border: 1px solid #ddd8d1;
+                border-radius: 9px; padding: 8px 13px; }
+            QPushButton:hover { border-color: #ffaaa1; background: #fff7f5; }
+            QPushButton:disabled { color: #aaa59f; background: #f2efeb; }
+            QPushButton#primaryAction { color: white; background: #ff6b5f; border: none;
+                font-weight: 700; }
+            QPushButton#primaryAction:hover { background: #ef5d50; }
+            QPushButton#primaryAction:disabled { color: #aaa59f; background: #e5e1dc; }
+        """)
+        self._list.currentItemChanged.connect(self._show_current)
+        self._refresh.clicked.connect(self.reload)
+        self._action.clicked.connect(self._perform_primary_action)
+        self._revoke.clicked.connect(self._revoke_current)
+        close.clicked.connect(self.close)
+
+    def showManager(self) -> None:
+        self.reload()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def reload(self) -> None:
+        current_id = self._current_id()
+        records = self.canvas.projectPlugins()
+        self._records = {str(record["pluginId"]): record for record in records}
+        self._list.clear()
+        for record in records:
+            state = str(record["state"])
+            components = len(record.get("componentTypes", ()))
+            item = QListWidgetItem(
+                f"{record['label']}\n{state.upper()}  ·  {record.get('pluginVersion') or 'unversioned'}"
+                f"  ·  {components} components"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, record["pluginId"])
+            item.setToolTip("\n".join(record.get("errors", ())) or record.get("description", ""))
+            self._list.addItem(item)
+            if record["pluginId"] == current_id:
+                self._list.setCurrentItem(item)
+        self._count.setText(
+            f"{len(records)} {'package' if len(records) == 1 else 'packages'}"
+        )
+        if self._list.currentItem() is None and self._list.count():
+            self._list.setCurrentRow(0)
+        elif not self._list.count():
+            self._show_current(None)
+
+    def _current_id(self) -> str:
+        item = self._list.currentItem()
+        return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+
+    def _show_current(self, item: QListWidgetItem | None, _previous=None) -> None:
+        record = self._records.get(
+            str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+        )
+        self._error.clear()
+        if record is None:
+            self._name.setText("No project plugin packages")
+            self._description.setText("Create the plugins directory or copy a package into it.")
+            self._metadata.clear()
+            self._fingerprint.clear()
+            self._location.setText(str(self.canvas.projectPluginDirectory()))
+            self._status.clear()
+            self._warning.hide()
+            self._action.setEnabled(False)
+            self._revoke.setEnabled(False)
+            return
+        state = str(record["state"])
+        self._name.setText(str(record["label"]))
+        self._description.setText(str(record.get("description") or "No description"))
+        author = str(record.get("author") or "Unknown author")
+        types = ", ".join(record.get("componentTypes", ())) or "No declared components"
+        self._metadata.setText(f"{author}  ·  SDK {record.get('minimumSdk', 0)}\n{types}")
+        self._fingerprint.setText(str(record.get("fingerprint", "")))
+        self._location.setText(str(record.get("packageDirectory", "")))
+        status_style = {
+            "invalid": ("Invalid", "#fff0ed", "#d94e43", "#ffd0c9"),
+            "untrusted": ("Untrusted", "#fff8e8", "#9b6818", "#f0dba9"),
+            "trusted": ("Trusted", "#edf7ff", "#2876a6", "#c6e3f5"),
+            "loaded": ("Loaded", "#e8f7f2", "#138a71", "#bde8dc"),
+        }.get(state, (state.title(), "#f3f1ee", "#59656e", "#ddd8d1"))
+        self._status.setText(status_style[0])
+        self._status.setStyleSheet(
+            f"background:{status_style[1]};color:{status_style[2]};border:1px solid {status_style[3]};"
+        )
+        errors = record.get("errors", ())
+        self._error.setText("\n".join(str(error) for error in errors))
+        self._warning.setVisible(state == "untrusted")
+        self._action.setEnabled(state != "invalid")
+        self._action.setText(
+            "Trust and load" if state == "untrusted" else "Unload" if state == "loaded" else "Load"
+        )
+        self._revoke.setEnabled(state in ("trusted", "loaded"))
+
+    def _perform_primary_action(self) -> None:
+        plugin_id = self._current_id()
+        record = self._records.get(plugin_id)
+        if record is None:
+            return
+        try:
+            if record["state"] == "untrusted":
+                self.canvas.loadProjectPlugin(
+                    plugin_id, trust_fingerprint=str(record["fingerprint"])
+                )
+            elif record["state"] == "loaded":
+                self.canvas.unloadProjectPlugin(plugin_id)
+            elif record["state"] == "trusted":
+                self.canvas.loadProjectPlugin(plugin_id)
+        except Exception as error:
+            self._error.setText(str(error))
+        self.reload()
+
+    def _revoke_current(self) -> None:
+        plugin_id = self._current_id()
+        if plugin_id:
+            self.canvas.revokeProjectPluginTrust(plugin_id)
+            self.reload()
+
+
 class _CanvasEditorToolbox(QDialog):
     """Floating multi-tab editor for elements, layers, viewport and persistence."""
 
@@ -3309,7 +3613,7 @@ class _CanvasEditorToolbox(QDialog):
         self._tabs.setObjectName("canvasEditorTabs")
         self._tabs.setDocumentMode(True)
         self._tabs.setIconSize(QSize(16, 16))
-        self._tabs.tabBar().setObjectName("canvasEditorTabBar")
+        self._tabs.setTabBar(_CanvasEditorTabBar(self._tabs))
         self._tabs.tabBar().setExpanding(True)
         self._tabs.tabBar().setUsesScrollButtons(False)
         self._tab_icons = (
@@ -3460,18 +3764,17 @@ class _CanvasEditorToolbox(QDialog):
         }
         QTabBar#canvasEditorTabBar::tab {
             color: #667079; background: transparent;
-            border: none; border-bottom: 2px solid transparent;
-            border-radius: 6px; min-height: 32px; max-height: 32px;
+            border: none; border-radius: 7px;
+            min-height: 32px; max-height: 32px;
             padding: 0px 4px; margin: 0px 2px;
             font-size: 10px; font-weight: 600;
         }
         QTabBar#canvasEditorTabBar::tab:selected {
             color: #e95549; background: transparent;
-            border-bottom: 2px solid #ff6b5f; font-weight: 700;
+            border: none; font-weight: 700;
         }
         QTabBar#canvasEditorTabBar::tab:hover:!selected {
-            color: #3f474e; background: #f8f6f3;
-            border-bottom-color: #d9d4ce;
+            color: #3f474e; background: #f7f4f0;
         }
         QGroupBox {
             color: #303941; background: transparent; border: none;
@@ -6782,6 +7085,9 @@ class MonkezCanva(QWidget):
     projectTemplateInstantiated = pyqtSignal(str, str)
     documentDiagnosticsReady = pyqtSignal(dict)
     documentDiffReady = pyqtSignal(dict)
+    projectPluginsDiscovered = pyqtSignal(list)
+    projectPluginTrustChanged = pyqtSignal(str, bool, str)
+    projectPluginLoadFailed = pyqtSignal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -6808,6 +7114,10 @@ class MonkezCanva(QWidget):
         self._runtime_debugger: _CanvasRuntimeDebugger | None = None
         self._template_browser: _CanvasTemplateBrowser | None = None
         self._document_report: _CanvasDocumentReport | None = None
+        self._plugin_manager: _CanvasPluginManager | None = None
+        self._plugin_trust_store = PluginTrustStore()
+        self._project_plugin_candidates: dict[str, PluginPackageCandidate] = {}
+        self._loaded_plugin_packages: dict[str, LoadedPluginPackage] = {}
         self._workflow_executor: WorkflowExecutor | None = None
         self._workflow_node_states: dict[str, str] = {}
         self._workflow_trace: list[dict[str, Any]] = []
@@ -7047,6 +7357,147 @@ class MonkezCanva(QWidget):
             self._document_report = _CanvasDocumentReport(self)
         self._document_report.showReport()
 
+    def projectPluginDirectory(self) -> Path:
+        """Return the portable discovery directory; its code is never auto-loaded."""
+
+        return self.projectDirectoryPath() / ".monkez_canva" / "plugins"
+
+    def discoverProjectPlugins(self) -> tuple[PluginPackageCandidate, ...]:
+        """Discover and fingerprint project packages without importing Python."""
+
+        report = discover_plugin_packages(
+            self.projectPluginDirectory(), trust_store=self._plugin_trust_store
+        )
+        self._project_plugin_candidates = {
+            candidate.plugin_id: candidate for candidate in report.candidates
+        }
+        payload: list[dict[str, Any]] = []
+        for candidate in report.candidates:
+            data = candidate.to_dict()
+            loaded = self._loaded_plugin_packages.get(candidate.plugin_id)
+            if loaded is not None and loaded.candidate.fingerprint == candidate.fingerprint:
+                data["state"] = "loaded"
+                data["loadable"] = True
+            payload.append(data)
+            for error in candidate.errors:
+                self.diagnosticMessage.emit(
+                    f"Project plugin {candidate.package_dir.name!r} ignored: {error}"
+                )
+        for error in report.errors:
+            self.diagnosticMessage.emit(f"Project plugin discovery: {error}")
+        self.projectPluginsDiscovered.emit(payload)
+        return report.candidates
+
+    def projectPlugins(self) -> list[dict[str, Any]]:
+        """Return current package metadata with trust/load state, refreshing discovery."""
+
+        candidates = self.discoverProjectPlugins()
+        result = []
+        for candidate in candidates:
+            data = candidate.to_dict()
+            loaded = self._loaded_plugin_packages.get(candidate.plugin_id)
+            if loaded is not None and loaded.candidate.fingerprint == candidate.fingerprint:
+                data["state"] = "loaded"
+                data["loadable"] = True
+            result.append(data)
+        return result
+
+    def trustProjectPlugin(self, plugin_id: str, fingerprint: str = "") -> str:
+        """Trust one exact discovered package fingerprint for this process session."""
+
+        candidates = self.discoverProjectPlugins()
+        candidate = next(
+            (item for item in candidates if item.plugin_id == str(plugin_id).strip().lower()),
+            None,
+        )
+        if candidate is None:
+            raise KeyError(f"Unknown project plugin package: {plugin_id}")
+        requested = str(fingerprint).strip().lower()
+        if requested and requested != candidate.fingerprint:
+            raise PermissionError(
+                f"Plugin fingerprint mismatch for {candidate.plugin_id!r}"
+            )
+        trusted = self._plugin_trust_store.trust(candidate)
+        self.projectPluginTrustChanged.emit(candidate.plugin_id, True, trusted)
+        self.diagnosticMessage.emit(
+            f"Trusted project plugin {candidate.plugin_id!r} for SHA-256 {trusted}"
+        )
+        return trusted
+
+    def revokeProjectPluginTrust(self, plugin_id: str, *, unload: bool = True) -> bool:
+        """Unload if requested, then revoke the session fingerprint decision."""
+
+        normalized = str(plugin_id).strip().lower()
+        if unload and normalized in self._loaded_plugin_packages:
+            self.unloadProjectPlugin(normalized)
+        changed = self._plugin_trust_store.revoke(normalized)
+        if changed:
+            self.projectPluginTrustChanged.emit(normalized, False, "")
+            self.diagnosticMessage.emit(f"Revoked project plugin trust: {normalized}")
+        return changed
+
+    def loadProjectPlugin(
+        self, plugin_id: str, *, trust_fingerprint: str = ""
+    ) -> tuple[str, ...]:
+        """Execute and register one package only after exact-fingerprint trust."""
+
+        normalized = str(plugin_id).strip().lower()
+        existing = self._loaded_plugin_packages.get(normalized)
+        if existing is not None:
+            return existing.plugin.type_ids
+        candidates = self.discoverProjectPlugins()
+        candidate = next((item for item in candidates if item.plugin_id == normalized), None)
+        if candidate is None:
+            raise KeyError(f"Unknown project plugin package: {plugin_id}")
+        if trust_fingerprint:
+            self.trustProjectPlugin(normalized, trust_fingerprint)
+            candidate = next(
+                item for item in self.discoverProjectPlugins() if item.plugin_id == normalized
+            )
+        try:
+            loaded = load_trusted_plugin_package(candidate, self._plugin_trust_store)
+            try:
+                installed = self.registerElementPlugin(loaded.plugin)
+            except BaseException:
+                unload_plugin_package(loaded)
+                raise
+        except BaseException as error:
+            self.projectPluginLoadFailed.emit(normalized, str(error))
+            self.diagnosticMessage.emit(
+                f"Project plugin {normalized!r} failed to load: {error}"
+            )
+            if isinstance(error, Exception):
+                raise
+            raise RuntimeError(
+                f"Project plugin {normalized!r} failed to load: {error}"
+            ) from error
+        self._loaded_plugin_packages[normalized] = loaded
+        self.diagnosticMessage.emit(
+            f"Loaded trusted project plugin {normalized!r}: {len(installed)} components"
+        )
+        self.discoverProjectPlugins()
+        return installed
+
+    def unloadProjectPlugin(self, plugin_id: str) -> tuple[str, ...]:
+        """Unload one package module and its registry factories, preserving records."""
+
+        normalized = str(plugin_id).strip().lower()
+        loaded = self._loaded_plugin_packages.pop(normalized, None)
+        if loaded is None:
+            return ()
+        removed = self.unregisterElementPlugin(normalized)
+        unload_plugin_package(loaded)
+        self.diagnosticMessage.emit(f"Unloaded project plugin package: {normalized}")
+        self.discoverProjectPlugins()
+        return removed
+
+    def showProjectPluginManager(self) -> None:
+        """Open explicit project package discovery, trust and lifecycle controls."""
+
+        if self._plugin_manager is None:
+            self._plugin_manager = _CanvasPluginManager(self)
+        self._plugin_manager.showManager()
+
     def showDataBindingInspector(self, element_id: str = "") -> None:
         """Open the contextual Data bindings card for one element."""
 
@@ -7162,9 +7613,19 @@ class MonkezCanva(QWidget):
         """Unload registry metadata owned by one plugin; existing records stay intact."""
         removed = self._element_registry.unregister_owner(plugin_id)
         for definition in removed:
+            matching = [
+                model for model in self._document_model.elements
+                if model.type == definition.type_id
+            ]
+            placeholder = (
+                self._ensure_missing_definition(
+                    definition.type_id, matching[0].to_dict()
+                )
+                if matching else None
+            )
             for item in self._elements.values():
                 if item.kind == definition.type_id:
-                    item.definition = None
+                    item.definition = placeholder
                     item.update()
         if self._toolbox is not None:
             self._toolbox._sync_inspector(self.selectedElementId())
@@ -7470,6 +7931,7 @@ class MonkezCanva(QWidget):
             action("Command palette…", self.showCommandPalette, icon="command")
             action("Runtime debugger…", self.showRuntimeDebugger, icon="command")
             action("Document health...", self.showDocumentDiagnostics, icon="command")
+            action("Project plugins...", self.showProjectPluginManager, icon="grid")
             return menu
 
         action("Copy", self.copySelection, enabled=clipboard_objects, icon="duplicate")
@@ -11888,29 +12350,38 @@ class MonkezCanva(QWidget):
         if changed:
             self.viewportBookmarksChanged.emit(self.viewportBookmarks())
 
+    def _ensure_missing_definition(
+        self, kind: str, values: Mapping[str, Any]
+    ) -> ElementDefinition:
+        existing = self._element_registry.definition(kind)
+        if existing is not None:
+            return existing
+        self._element_registry.register(
+            ElementDefinition(
+                kind,
+                f"Missing: {kind}",
+                "Missing components",
+                float(values.get("width", 160)),
+                float(values.get("height", 80)),
+                icon="rectangle",
+                defaults={
+                    "text": values.get("text", f"Missing component\n{kind}"),
+                    "color": "#dc2626",
+                    "background": "#fef2f2",
+                },
+                plugin_id="__missing__",
+            )
+        )
+        self.diagnosticMessage.emit(
+            f"Missing component type {kind!r}; rendered a safe placeholder"
+        )
+        return self._element_registry.require(kind)
+
     def _add_element_record(self, entry: dict[str, Any]) -> str:
         values = dict(entry)
         kind = str(values["type"])
         if self._element_registry.definition(kind) is None:
-            self._element_registry.register(
-                ElementDefinition(
-                    kind,
-                    f"Missing: {kind}",
-                    "Missing components",
-                    float(values.get("width", 160)),
-                    float(values.get("height", 80)),
-                    icon="rectangle",
-                    defaults={
-                        "text": values.get("text", f"Missing component\n{kind}"),
-                        "color": "#dc2626",
-                        "background": "#fef2f2",
-                    },
-                    plugin_id="__missing__",
-                )
-            )
-            self.diagnosticMessage.emit(
-                f"Missing component type {kind!r}; rendered a safe placeholder"
-            )
+            self._ensure_missing_definition(kind, values)
         values = self._element_registry.prepare_record(
             values, allow_newer=self.isReadOnly()
         )
@@ -13382,6 +13853,10 @@ class MonkezCanva(QWidget):
             self._template_browser.close()
         if self._document_report is not None:
             self._document_report.close()
+        if self._plugin_manager is not None:
+            self._plugin_manager.close()
+        for plugin_id in tuple(self._loaded_plugin_packages):
+            self.unloadProjectPlugin(plugin_id)
         self.clearDataBindingRuntime(disconnect_sources=True)
         if self._document_model is not None and self._document_subscription:
             self._document_model.unsubscribe(self._document_subscription)

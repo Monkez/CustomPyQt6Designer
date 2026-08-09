@@ -2,6 +2,10 @@
 
 Updated: 2026-08-09
 
+- Control Pane tab highlight now uses a short custom-painted 2 px coral
+  indicator with no selected button frame. Selected icon/text color and a quiet
+  hover wash preserve recognition while making the five-tab row visually lighter.
+
 ## Current version
 
 - Working version: 0.5.0 (package rename and convenient UI loader).
@@ -371,7 +375,11 @@ Updated: 2026-08-09
   health findings and ID-based semantic diff. The detached report shows graph
   metrics and changes since the last clean save/load baseline, verifies saved
   assets and exports JSON without mutating history.
-- The automated suite contains 244 tests and covers all 36 public
+- `MC-ECOSYSTEM-PLUGIN-007` adds safe project package discovery, bounded manifests,
+  exact whole-package SHA-256 trust and explicit load/unload/revoke lifecycle.
+  The polished Plugin Manager never executes during discovery, and unload restores
+  live records to missing-component placeholders without changing IDs or data.
+- The automated suite contains 251 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

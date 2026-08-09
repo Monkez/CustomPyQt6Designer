@@ -542,7 +542,9 @@ class WidgetTests(unittest.TestCase):
         self.assertLessEqual(canvas._toolbox.height(), 760)
         self.assertFalse(canvas._toolbox._extension_inspector_host.isHidden())
         self.assertEqual(("sensor",), canvas.unregisterElementPlugin("industrial-pack"))
-        self.assertIsNone(canvas.elementRegistry().definition("sensor"))
+        self.assertEqual(
+            "__missing__", canvas.elementRegistry().definition("sensor").plugin_id
+        )
         self.assertEqual("sensor", document.element("s1").type)
         canvas.deleteLater()
 
@@ -3299,6 +3301,10 @@ class WidgetTests(unittest.TestCase):
         self.assertGreater(field._step_up.x(), field.lineEdit().x())
         self.assertEqual(5, toolbox._tabs.count())
         self.assertFalse(toolbox._tabs.tabIcon(1).isNull())
+        indicator = toolbox._tabs.tabBar()._indicator_rect()
+        self.assertGreater(indicator.width(), 0)
+        self.assertLess(indicator.width(), toolbox._tabs.tabBar().tabRect(1).width())
+        self.assertEqual(2.0, indicator.height())
 
         canvas.setEditMode(False)
         canvas.close()
@@ -3579,7 +3585,7 @@ class WidgetTests(unittest.TestCase):
         removed = canvas.disableComponentPack("dashboard")
         self.assertEqual(15, len(removed))
         self.assertIsNotNone(canvas.element(gauge))
-        self.assertIsNone(canvas.element(gauge).definition)
+        self.assertEqual("__missing__", canvas.element(gauge).definition.plugin_id)
         canvas.enableComponentPack("dashboard")
         self.assertEqual(DASHBOARD_PACK_ID, canvas.element(gauge).definition.plugin_id)
         self.assertIn((DASHBOARD_PACK_ID, False), pack_changes)

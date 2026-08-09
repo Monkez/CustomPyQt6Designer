@@ -1,0 +1,22 @@
+{
+  "format": "monkez-canva-plugin",
+  "version": 1,
+  "pluginId": "com.monkez.examples.packaged-notes",
+  "label": "Packaged Notes",
+  "pluginVersion": "1.0.0",
+  "description": "A minimal portable project-plugin package for MonkezCanva.",
+  "author": "Monkez",
+  "homepage": "https://github.com/Monkez/CustomPyQt6Designer",
+  "minimumSdk": 1,
+  "entryPoint": {
+    "file": "plugin.py",
+    "symbol": "PLUGIN"
+  },
+  "componentTypes": [
+    "packaged_note"
+  ],
+  "metadata": {
+    "license": "MIT",
+    "example": true
+  }
+}

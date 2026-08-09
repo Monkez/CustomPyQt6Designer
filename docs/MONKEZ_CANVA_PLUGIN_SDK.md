@@ -16,6 +16,54 @@ from my_company.monkez_plugin import PLUGIN
 canvas.registerElementPlugin(PLUGIN)
 ```
 
+Project package là lựa chọn có UI nhưng vẫn giữ nguyên ranh giới này: discovery
+chỉ đọc manifest và SHA-256, không import Python. Người dùng/host phải bấm rõ
+**Trust and load** cho đúng fingerprint trong phiên hiện tại. Trust không lưu vào
+project, vì vậy copy repository sang máy khác không thể tự chạy code.
+
+## Đóng gói plugin portable
+
+Đặt mỗi package trong `.monkez_canva/plugins/<package>/`:
+
+```text
+.monkez_canva/plugins/packaged-notes/
+├── plugin.json
+└── plugin.py
+```
+
+Manifest tối thiểu:
+
+```json
+{
+  "format": "monkez-canva-plugin",
+  "version": 1,
+  "pluginId": "com.example.packaged-notes",
+  "label": "Packaged Notes",
+  "pluginVersion": "1.0.0",
+  "minimumSdk": 1,
+  "entryPoint": {"file": "plugin.py", "symbol": "PLUGIN"},
+  "componentTypes": ["packaged_note"]
+}
+```
+
+`plugin.py` xuất một `ComponentPlugin` tại symbol đã khai báo. Package path phải
+relative, entry phải là `.py`, không chấp nhận symlink; manifest, số file và tổng
+dung lượng đều có giới hạn. Fingerprint bao phủ tên và nội dung mọi source/asset
+trong package; cache `__pycache__` sinh sau khi load không tham gia fingerprint.
+
+```python
+packages = canvas.discoverProjectPlugins()  # read-only, không thực thi code
+fingerprint = canvas.trustProjectPlugin("com.example.packaged-notes")
+canvas.loadProjectPlugin("com.example.packaged-notes")
+canvas.unloadProjectPlugin("com.example.packaged-notes")
+canvas.revokeProjectPluginTrust("com.example.packaged-notes")
+canvas.showProjectPluginManager()
+```
+
+Có thể truyền `trust_fingerprint=...` vào `loadProjectPlugin()` để gộp một quyết
+định trust chính xác với thao tác load. Nếu package đổi dù chỉ một byte, trust cũ
+không còn hợp lệ và stale candidate bị từ chối trước khi entry point chạy.
+
 Khi plugin chưa được cài, record vẫn được giữ nguyên và hiển thị thành Missing
 component. Khi đăng ký plugin sau đó, renderer và Inspector được khôi phục tại
 chỗ, giữ nguyên element ID, selection và document data.
@@ -120,3 +168,7 @@ cập nhật plugin manager hoặc log.
 Telemetry sensor hoàn chỉnh với vector renderer, typed output port, schema và
 Inspector auto-apply. `canva_demo.bat` tự đăng ký plugin này và hiển thị category
 **SDK examples** trong Add pane.
+
+[`examples/canva_plugin_package`](../examples/canva_plugin_package) là package
+portable hoàn chỉnh gồm `plugin.json` và entry point. Copy nguyên thư mục này vào
+`.monkez_canva/plugins/` để thử luồng discovery → Trust and load → unload/revoke.

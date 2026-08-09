@@ -350,8 +350,13 @@ diff. The Qt-free engine produces immutable severity findings, graph metrics and
 stable fingerprints; the detached report compares against the clean save/load
 baseline and exports portable JSON.
 
-Next: plugin packaging/discovery policy, signed/trusted source boundaries and
-component-plugin installation diagnostics.
+`MC-ECOSYSTEM-PLUGIN-007` completes the project package/discovery boundary with
+bounded manifests, whole-package fingerprints, non-executing scans, process-local
+exact trust and explicit load/unload/revoke APIs. The Plugin Manager exposes the
+same lifecycle and unload restores safe placeholders without replacing IDs.
+
+Next: ecosystem completion audit, large-scene performance/LOD profiling and
+optional external data-adapter packaging boundaries.
 
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
