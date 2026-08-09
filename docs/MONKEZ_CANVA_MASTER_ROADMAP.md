@@ -117,6 +117,10 @@ Completed slice (2026-08-09): floating interactive minimap, searchable document
 outline, portable viewport bookmarks, document-backed lock/hide state and
 non-destructive viewport isolation. All state-changing actions use Undo/Redo.
 
+Completed slice (2026-08-09): draggable waypoint handles, rounded orthogonal
+routes, self-loops, edge labels and stable automatic separation of parallel
+connectors. Routing parameters are portable, undoable and Inspector-editable.
+
 - searchable palette with categories, favorites and recent items — complete;
 - command palette and context-aware canvas menus — complete;
 - copy, cut, paste and duplicate with internal connector preservation — complete;
@@ -125,8 +129,8 @@ non-destructive viewport isolation. All state-changing actions use Undo/Redo.
 - mixed-value multi-selection Inspector — common-property slice complete;
 - minimap, document outline, viewport bookmarks and zoom-to-selection — complete;
 - lock, hide and isolate item — complete; group state remains;
-- editable connector waypoints, rounded orthogonal corners and reroute points;
-- edge labels, self-loops, parallel edges, crossing bridges and buses;
+- editable connector waypoints, rounded orthogonal corners and reroute points — complete;
+- edge labels, self-loops and parallel edges — complete; crossing bridges and buses remain;
 - group/frame, swimlane, collapsible group and reusable subflow;
 - automatic layout adapter with layered, tree, force and radial strategies.
 

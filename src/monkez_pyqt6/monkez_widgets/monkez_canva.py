@@ -105,6 +105,9 @@ from monkez_pyqt6.monkez_canva import (
     SnapRect,
     normalize_snap_targets,
     snap_rect,
+    deduplicate_points,
+    orthogonal_points,
+    parallel_lane_offset,
 )
 from monkez_pyqt6.monkez_canva.persistence import copy_asset_atomically
 from monkez_pyqt6.monkez_widgets._canva_commands import (
@@ -307,6 +310,9 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
         painter.drawRoundedRect(QRectF(3, 2.5, 14, 15), 2, 2)
         painter.drawRect(QRectF(6, 2.5, 7, 5))
         painter.drawRoundedRect(QRectF(6, 11, 8, 6.5), 1, 1)
+    elif name == "add":
+        painter.drawLine(QPointF(10, 3), QPointF(10, 17))
+        painter.drawLine(QPointF(3, 10), QPointF(17, 10))
     elif name == "lock":
         painter.drawRoundedRect(QRectF(4, 8, 12, 9), 2, 2)
         painter.drawArc(QRectF(6, 2.5, 8, 11), 0, 180 * 16)
@@ -1234,6 +1240,73 @@ class _CanvasElement(QGraphicsObject):
         return result
 
 
+def _rounded_polyline_path(points: list[QPointF], radius: float) -> QPainterPath:
+    points = [QPointF(x, y) for x, y in deduplicate_points((point.x(), point.y()) for point in points)]
+    path = QPainterPath(points[0])
+    if len(points) < 3 or radius <= 0:
+        for point in points[1:]:
+            path.lineTo(point)
+        return path
+    for index in range(1, len(points) - 1):
+        previous, corner, following = points[index - 1], points[index], points[index + 1]
+        incoming = corner - previous
+        outgoing = following - corner
+        incoming_length = math.hypot(incoming.x(), incoming.y())
+        outgoing_length = math.hypot(outgoing.x(), outgoing.y())
+        if incoming_length <= 0.001 or outgoing_length <= 0.001:
+            path.lineTo(corner)
+            continue
+        distance = min(float(radius), incoming_length / 2, outgoing_length / 2)
+        before = corner - incoming * (distance / incoming_length)
+        after = corner + outgoing * (distance / outgoing_length)
+        path.lineTo(before)
+        path.quadTo(corner, after)
+    path.lineTo(points[-1])
+    return path
+
+
+class _CanvasWaypointHandle(QGraphicsObject):
+    def __init__(self, connector: "_CanvasConnector", index: int) -> None:
+        super().__init__(connector)
+        self.connector = connector
+        self.index = index
+        self.setZValue(1000)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setToolTip("Drag reroute point · double-click to remove")
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(-7, -7, 14, 14)
+
+    def paint(self, painter: QPainter, _option, _widget=None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor("#ef6a5b"), 2))
+        painter.setBrush(QColor("#fffdfb"))
+        painter.drawEllipse(QRectF(-5, -5, 10, 10))
+
+    def itemChange(self, change, value):
+        if (
+            change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
+            and not self.connector._syncing_handles
+            and self.index < len(self.connector.waypoints)
+        ):
+            self.connector.waypoints[self.index] = QPointF(value)
+            self.connector.updatePath()
+        return super().itemChange(change, value)
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        self.connector.canvas.updateConnector(
+            self.connector.connector_id,
+            waypoints=[[point.x(), point.y()] for point in self.connector.waypoints],
+        )
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.connector.canvas.removeConnectorWaypoint(self.connector.connector_id, self.index)
+        event.accept()
+
+
 class _CanvasConnector(QGraphicsObject):
     """Selectable, serializable signal path between two node-like elements."""
 
@@ -1278,12 +1351,19 @@ class _CanvasConnector(QGraphicsObject):
         self._packets: list[dict[str, Any]] = []
         self._last_packet_at = 0.0
         self.waypoints = [QPointF(float(point[0]), float(point[1])) for point in options.get("waypoints", [])]
+        self.corner_radius = max(0.0, min(80.0, float(options.get("cornerRadius", 14.0))))
+        self.label = str(options.get("label", ""))
+        self.label_position = max(0.0, min(1.0, float(options.get("labelPosition", 0.5))))
+        self.parallel_spacing = max(0.0, min(120.0, float(options.get("parallelSpacing", 22.0))))
         self.metadata = dict(options.get("metadata", {}))
         self.locked = bool(options.get("locked", False))
         self.hidden = bool(options.get("hidden", False))
         self._highlight = QColor()
         self._path = QPainterPath()
         self._flow_phase = 0.0
+        self._waypoint_handles: list[_CanvasWaypointHandle] = []
+        self._syncing_handles = False
+        self._handles_editable = False
         self.setZValue(float(options.get("z", -1)))
         self.setOpacity(max(0.0, min(1.0, float(options.get("opacity", 1.0)))))
         source.changed.connect(self.updatePath)
@@ -1293,7 +1373,7 @@ class _CanvasConnector(QGraphicsObject):
         self._sync_animation()
 
     def boundingRect(self) -> QRectF:
-        margin = max(12.0, self.line_width + 9.0)
+        margin = max(28.0 if self.label else 12.0, self.line_width + 9.0)
         return self._path.boundingRect().adjusted(-margin, -margin, margin, margin)
 
     def shape(self) -> QPainterPath:
@@ -1302,36 +1382,109 @@ class _CanvasConnector(QGraphicsObject):
         return stroker.createStroke(self._path)
 
     def setEditable(self, enabled: bool) -> None:
+        self._handles_editable = bool(enabled)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, enabled)
         if not enabled:
             self.setSelected(False)
+        self._sync_waypoint_handles()
+
+    def itemChange(self, change, value):
+        result = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self._sync_waypoint_handles()
+        return result
+
+    def _lane_offset(self) -> float:
+        siblings = [
+            connector_id
+            for connector_id, connector in self.canvas._connectors.items()
+            if {connector.source.element_id, connector.target.element_id}
+            == {self.source.element_id, self.target.element_id}
+        ]
+        if self.connector_id not in siblings:
+            siblings.append(self.connector_id)
+        return parallel_lane_offset(self.connector_id, siblings, self.parallel_spacing)
 
     def updatePath(self, *_args) -> None:
         self.prepareGeometryChange()
         start = self.source.portScenePosition(self.source_port, "source")
         end = self.target.portScenePosition(self.target_port, "target")
         path = QPainterPath(start)
-        if self.route == "straight":
-            path.lineTo(end)
+        lane = self._lane_offset()
+        if self.source is self.target:
+            bounds = self.source.sceneBoundingRect()
+            reach = 54.0 + abs(lane)
+            side = 1.0 if lane >= 0 else -1.0
+            path.cubicTo(
+                QPointF(bounds.right() + reach, start.y() - reach * 0.2),
+                QPointF(bounds.center().x() + side * reach * 0.35, bounds.top() - reach),
+                end,
+            )
         elif self.route in ("orthogonal", "elbow"):
-            middle_x = (start.x() + end.x()) / 2
-            path.lineTo(QPointF(middle_x, start.y()))
-            path.lineTo(QPointF(middle_x, end.y()))
-            path.lineTo(end)
-        elif self.route == "polyline" and self.waypoints:
-            for point in self.waypoints:
-                path.lineTo(point)
-            path.lineTo(end)
+            route_points = orthogonal_points(
+                (start.x(), start.y()), (end.x(), end.y()),
+                ((point.x(), point.y()) for point in self.waypoints),
+                lane_offset=lane,
+            )
+            path = _rounded_polyline_path(
+                [QPointF(x, y) for x, y in route_points], self.corner_radius
+            )
+        elif self.waypoints:
+            path = _rounded_polyline_path(
+                [start, *self.waypoints, end], self.corner_radius
+            )
+        elif self.route in ("straight", "polyline"):
+            if math.isclose(lane, 0.0):
+                path.lineTo(end)
+            else:
+                dx, dy = end.x() - start.x(), end.y() - start.y()
+                length = max(1.0, math.hypot(dx, dy))
+                midpoint = (start + end) / 2 + QPointF(-dy / length * lane, dx / length * lane)
+                path.quadTo(midpoint, end)
         else:
             delta = max(50.0, abs(end.x() - start.x()) * 0.5)
             direction = 1 if end.x() >= start.x() else -1
+            dx, dy = end.x() - start.x(), end.y() - start.y()
+            length = max(1.0, math.hypot(dx, dy))
+            offset = QPointF(-dy / length * lane, dx / length * lane)
             path.cubicTo(
-                QPointF(start.x() + delta * direction, start.y()),
-                QPointF(end.x() - delta * direction, end.y()),
+                QPointF(start.x() + delta * direction, start.y()) + offset,
+                QPointF(end.x() - delta * direction, end.y()) + offset,
                 end,
             )
         self._path = path
+        self._sync_waypoint_handles()
         self.update()
+
+    def _sync_waypoint_handles(self) -> None:
+        if not hasattr(self, "_waypoint_handles"):
+            return
+        while len(self._waypoint_handles) > len(self.waypoints):
+            handle = self._waypoint_handles.pop()
+            handle.setParentItem(None)
+            if handle.scene() is not None:
+                handle.scene().removeItem(handle)
+            handle.deleteLater()
+        while len(self._waypoint_handles) < len(self.waypoints):
+            self._waypoint_handles.append(
+                _CanvasWaypointHandle(self, len(self._waypoint_handles))
+            )
+        visible = self._handles_editable and self.isSelected() and not self.locked
+        self._syncing_handles = True
+        try:
+            for index, (handle, point) in enumerate(zip(self._waypoint_handles, self.waypoints)):
+                handle.index = index
+                handle.setPos(point)
+                handle.setVisible(visible)
+        finally:
+            self._syncing_handles = False
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if self._handles_editable and not self.locked:
+            self.canvas.addConnectorWaypoint(self.connector_id, event.scenePos())
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1362,6 +1515,16 @@ class _CanvasConnector(QGraphicsObject):
             self._paint_arrow(painter, 0.0)
         if self.arrow_end:
             self._paint_arrow(painter, 1.0)
+        if self.label:
+            point = self._path.pointAtPercent(self.label_position)
+            metrics = painter.fontMetrics()
+            text_rect = metrics.boundingRect(self.label).adjusted(-7, -4, 7, 4)
+            text_rect.moveCenter(point.toPoint())
+            painter.setPen(QPen(QColor("#d8d4cf"), 1))
+            painter.setBrush(QColor(255, 254, 252, 242))
+            painter.drawRoundedRect(QRectF(text_rect), 6, 6)
+            painter.setPen(QColor("#334155"))
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self.label)
 
     def _paint_arrow(self, painter: QPainter, position: float) -> None:
         point = self._path.pointAtPercent(position)
@@ -1453,6 +1616,7 @@ class _CanvasConnector(QGraphicsObject):
 
     def release(self) -> None:
         self.canvas._animation_scheduler.unregister(self)
+        self._waypoint_handles.clear()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1480,6 +1644,10 @@ class _CanvasConnector(QGraphicsObject):
             "packetInterval": self.packet_interval,
             "packetIcon": self.packet_icon,
             "waypoints": [[point.x(), point.y()] for point in self.waypoints],
+            "cornerRadius": self.corner_radius,
+            "label": self.label,
+            "labelPosition": self.label_position,
+            "parallelSpacing": self.parallel_spacing,
             "metadata": dict(self.metadata),
             "opacity": self.opacity(),
             "z": self.zValue(),
@@ -1780,6 +1948,12 @@ class _CanvasCommandPalette(QDialog):
             ))
         if canvas.isolatedObjectIds():
             commands.append(("object:clear-isolate", "Clear isolation", "Object", "visibility", "eye", True, canvas.clearIsolation))
+        if len(selected) == 1 and selected[0] in canvas._connectors:
+            connector_id = selected[0]
+            commands.extend((
+                ("connector:add-waypoint", "Add reroute point", "Connector", "routing waypoint", "add", writable, lambda: canvas.addConnectorWaypoint(connector_id)),
+                ("connector:clear-waypoints", "Clear reroute points", "Connector", "routing waypoint", "delete", writable and bool(canvas.connector(connector_id).waypoints), lambda: canvas.clearConnectorWaypoints(connector_id)),
+            ))
         for alignment in ("left", "hcenter", "right", "top", "vcenter", "bottom"):
             commands.append((
                 f"arrange:{alignment}", f"Align {alignment}", "Arrange", "selection",
@@ -2358,6 +2532,17 @@ class _CanvasEditorToolbox(QDialog):
         self._line_width_field = QDoubleSpinBox()
         self._line_width_field.setRange(0.5, 40.0)
         self._line_width_field.setDecimals(1)
+        self._connector_label_edit = QLineEdit()
+        self._connector_label_edit.setPlaceholderText("Optional edge label")
+        self._label_position_field = QDoubleSpinBox()
+        self._label_position_field.setRange(0.0, 100.0)
+        self._label_position_field.setSuffix(" %")
+        self._corner_radius_field = QDoubleSpinBox()
+        self._corner_radius_field.setRange(0.0, 80.0)
+        self._corner_radius_field.setSuffix(" px")
+        self._parallel_spacing_field = QDoubleSpinBox()
+        self._parallel_spacing_field.setRange(0.0, 120.0)
+        self._parallel_spacing_field.setSuffix(" px")
         self._arrow_start_check = QCheckBox("Start")
         self._arrow_end_check = QCheckBox("End")
         arrow_row = QWidget()
@@ -2411,6 +2596,18 @@ class _CanvasEditorToolbox(QDialog):
         self._connector_z_field.setRange(-10000.0, 10000.0)
         self._points_edit = QLineEdit()
         self._points_edit.setPlaceholderText("[[x, y], [x, y]]")
+        self._waypoint_actions = QWidget()
+        waypoint_layout = QHBoxLayout(self._waypoint_actions)
+        waypoint_layout.setContentsMargins(0, 0, 0, 0)
+        waypoint_layout.setSpacing(5)
+        add_waypoint = QPushButton("Add point")
+        add_waypoint.setIcon(_canvas_icon("add"))
+        add_waypoint.clicked.connect(self._add_selected_waypoint)
+        clear_waypoints = QPushButton("Clear")
+        clear_waypoints.setIcon(_canvas_icon("delete"))
+        clear_waypoints.clicked.connect(self._clear_selected_waypoints)
+        waypoint_layout.addWidget(add_waypoint)
+        waypoint_layout.addWidget(clear_waypoints)
         self._route_label = QLabel("Route")
         self._source_label = QLabel("Source")
         self._target_label = QLabel("Target")
@@ -2436,6 +2633,14 @@ class _CanvasEditorToolbox(QDialog):
         stroke_form.addRow(self._route_label, self._route_combo)
         stroke_form.addRow("Stroke", self._line_style_combo)
         stroke_form.addRow("Width", self._line_width_field)
+        self._connector_label_label = QLabel("Edge label")
+        self._label_position_label = QLabel("Label position")
+        self._corner_radius_label = QLabel("Corner radius")
+        self._parallel_spacing_label = QLabel("Parallel spacing")
+        stroke_form.addRow(self._connector_label_label, self._connector_label_edit)
+        stroke_form.addRow(self._label_position_label, self._label_position_field)
+        stroke_form.addRow(self._corner_radius_label, self._corner_radius_field)
+        stroke_form.addRow(self._parallel_spacing_label, self._parallel_spacing_field)
         stroke_form.addRow("Arrowheads", arrow_row)
         stroke_form.addRow(self._animation_label, self._animated_check)
         stroke_form.addRow(self._effect_label, self._effect_combo)
@@ -2451,6 +2656,8 @@ class _CanvasEditorToolbox(QDialog):
         stroke_form.addRow(self._connector_opacity_label, self._connector_opacity_field)
         stroke_form.addRow(self._connector_z_label, self._connector_z_field)
         stroke_form.addRow(self._points_label, self._points_edit)
+        self._waypoint_actions_label = QLabel("Reroute")
+        stroke_form.addRow(self._waypoint_actions_label, self._waypoint_actions)
         layout.addWidget(self._stroke_group)
 
         self._colors_group = QGroupBox("Appearance")
@@ -2811,6 +3018,16 @@ class _CanvasEditorToolbox(QDialog):
                 travel_time=self._packet_duration_field.value(),
             )
 
+    def _add_selected_waypoint(self) -> None:
+        object_id = self.canvas.selectedElementId()
+        if self.canvas.connector(object_id) is not None:
+            self.canvas.addConnectorWaypoint(object_id)
+
+    def _clear_selected_waypoints(self) -> None:
+        object_id = self.canvas.selectedElementId()
+        if self.canvas.connector(object_id) is not None:
+            self.canvas.clearConnectorWaypoints(object_id)
+
     def _sync_view_controls(self) -> None:
         widgets = (
             self._grid_visible_check,
@@ -2882,6 +3099,7 @@ class _CanvasEditorToolbox(QDialog):
             ("text", self._text_edit), ("data", self._data_edit),
             ("source", self._source_edit), ("points", self._points_edit),
             ("packetIcon", self._packet_icon_edit),
+            ("connectorLabel", self._connector_label_edit),
         ):
             field.textEdited.connect(
                 lambda _text, name=key: self._schedule_inspector_apply(150, name)
@@ -2899,10 +3117,13 @@ class _CanvasEditorToolbox(QDialog):
             "packetInterval": self._packet_interval_field,
             "connectorOpacity": self._connector_opacity_field,
             "connectorZ": self._connector_z_field,
+            "labelPosition": self._label_position_field,
+            "cornerRadius": self._corner_radius_field,
+            "parallelSpacing": self._parallel_spacing_field,
         }
         for key, field in numeric_fields.items():
             field.valueChanged.connect(
-                lambda _value, name=key: self._schedule_inspector_apply(80, name)
+                lambda _value, name=key: self._schedule_inspector_apply(0, name)
             )
         for combo in (
             self._source_combo, self._target_combo, self._source_port_combo,
@@ -2928,7 +3149,11 @@ class _CanvasEditorToolbox(QDialog):
         ):
             if field:
                 self._pending_inspector_fields.add(str(field))
-            self._inspector_apply_timer.start(max(0, int(delay)))
+            if int(delay) <= 0:
+                self._inspector_apply_timer.stop()
+                self._apply_inspector()
+            else:
+                self._inspector_apply_timer.start(int(delay))
 
     def _sync_packet_controls(self, _index: int = -1) -> None:
         visible = self._effect_combo.currentText().lower() == "packet"
@@ -3002,6 +3227,10 @@ class _CanvasEditorToolbox(QDialog):
                 opacity=self._connector_opacity_field.value(),
                 z=self._connector_z_field.value(),
                 waypoints=points,
+                label=self._connector_label_edit.text(),
+                labelPosition=self._label_position_field.value() / 100.0,
+                cornerRadius=self._corner_radius_field.value(),
+                parallelSpacing=self._parallel_spacing_field.value(),
             )
         else:
             values = {key: field.value() for key, field in self._number_fields.items()}
@@ -3139,7 +3368,9 @@ class _CanvasEditorToolbox(QDialog):
             self._packet_loop_check, self._packet_duration_field,
             self._packet_interval_field, self._packet_icon_edit,
             self._connector_opacity_field,
-            self._connector_z_field, self._points_edit, *self._number_fields.values(),
+            self._connector_z_field, self._points_edit, self._connector_label_edit,
+            self._label_position_field, self._corner_radius_field,
+            self._parallel_spacing_field, *self._number_fields.values(),
         ]
         blockers = [QSignalBlocker(widget) for widget in widgets]
         for field in (self._text_edit, *self._number_fields.values()):
@@ -3198,7 +3429,12 @@ class _CanvasEditorToolbox(QDialog):
                            self._source_port_combo, self._target_label, self._target_combo,
                            self._target_port_label, self._target_port_combo,
                            self._route_label, self._route_combo, self._connector_opacity_label,
-                           self._connector_opacity_field, self._connector_z_label, self._connector_z_field):
+                           self._connector_opacity_field, self._connector_z_label, self._connector_z_field,
+                           self._connector_label_label, self._connector_label_edit,
+                           self._label_position_label, self._label_position_field,
+                           self._corner_radius_label, self._corner_radius_field,
+                           self._parallel_spacing_label, self._parallel_spacing_field,
+                           self._waypoint_actions_label, self._waypoint_actions):
                 widget.setVisible(connector)
             for widget in (
                 self._animation_label, self._animated_check, self._effect_label,
@@ -3241,6 +3477,10 @@ class _CanvasEditorToolbox(QDialog):
                 self._packet_icon_edit.setText(item.packet_icon)
                 self._connector_opacity_field.setValue(item.opacity())
                 self._connector_z_field.setValue(item.zValue())
+                self._connector_label_edit.setText(item.label)
+                self._label_position_field.setValue(item.label_position * 100.0)
+                self._corner_radius_field.setValue(item.corner_radius)
+                self._parallel_spacing_field.setValue(item.parallel_spacing)
                 self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.waypoints]))
             else:
                 self._text_edit.setText(item.text)
@@ -4283,12 +4523,14 @@ class MonkezCanva(QWidget):
                 and (not isolated or connector_id in isolated)
             )
             connector.setVisible(visible)
+            connector._handles_editable = writable_edit
             connector.setFlag(
                 QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
                 writable_edit and visible,
             )
             if not visible:
                 connector.setSelected(False)
+            connector._sync_waypoint_handles()
         if hasattr(self, "_minimap"):
             self._minimap.update()
 
@@ -4361,6 +4603,9 @@ class MonkezCanva(QWidget):
         action("Send to back", self.sendSelectedToBack, enabled=writable)
         action("Zoom to selection", self.zoomToSelection, enabled=bool(selected), icon="fit")
         if object_id in self._connectors:
+            connector = self._connectors[object_id]
+            action("Add reroute point", lambda: self.addConnectorWaypoint(object_id), enabled=writable, icon="add")
+            action("Clear reroute points", lambda: self.clearConnectorWaypoints(object_id), enabled=writable and bool(connector.waypoints), icon="delete")
             action("Send test message", lambda: self.send_a_message(object_id), enabled=writable)
         return menu
 
@@ -5052,6 +5297,9 @@ class MonkezCanva(QWidget):
         connector.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(connector)
         self._connectors[connector_id] = connector
+        for sibling in self._connectors.values():
+            if {sibling.source.element_id, sibling.target.element_id} == {source_id, target_id}:
+                sibling.updatePath()
         self._sync_object_states()
         self.connectorAdded.emit(connector_id)
         self.documentChanged.emit()
@@ -5162,6 +5410,55 @@ class MonkezCanva(QWidget):
     def connectors(self) -> list[str]:
         return list(self._connectors)
 
+    def addConnectorWaypoint(
+        self, connector_id: str, point: QPointF | tuple[float, float] | None = None,
+        index: int | None = None,
+    ) -> int:
+        connector = self._required_connector(connector_id)
+        resolved = connector._path.pointAtPercent(0.5) if point is None else QPointF(*point) if isinstance(point, tuple) else QPointF(point)
+        waypoints = [[item.x(), item.y()] for item in connector.waypoints]
+        position = len(waypoints) if index is None else max(0, min(len(waypoints), int(index)))
+        waypoints.insert(position, [resolved.x(), resolved.y()])
+        self.updateConnector(connector_id, waypoints=waypoints)
+        return position
+
+    def moveConnectorWaypoint(
+        self, connector_id: str, index: int, point: QPointF | tuple[float, float]
+    ) -> bool:
+        connector = self._required_connector(connector_id)
+        position = int(index)
+        if position < 0 or position >= len(connector.waypoints):
+            return False
+        resolved = QPointF(*point) if isinstance(point, tuple) else QPointF(point)
+        waypoints = [[item.x(), item.y()] for item in connector.waypoints]
+        waypoints[position] = [resolved.x(), resolved.y()]
+        self.updateConnector(connector_id, waypoints=waypoints)
+        return True
+
+    def removeConnectorWaypoint(self, connector_id: str, index: int) -> bool:
+        connector = self._required_connector(connector_id)
+        position = int(index)
+        if position < 0 or position >= len(connector.waypoints):
+            return False
+        waypoints = [[item.x(), item.y()] for item in connector.waypoints]
+        waypoints.pop(position)
+        self.updateConnector(connector_id, waypoints=waypoints)
+        return True
+
+    def clearConnectorWaypoints(self, connector_id: str) -> bool:
+        connector = self._required_connector(connector_id)
+        if not connector.waypoints:
+            return False
+        self.updateConnector(connector_id, waypoints=[])
+        return True
+
+    def setConnectorLabel(
+        self, connector_id: str, label: str, position: float = 0.5
+    ) -> "MonkezCanva":
+        return self.updateConnector(
+            connector_id, label=str(label), labelPosition=float(position)
+        )
+
     def updateConnector(self, connector_id: str, **values) -> "MonkezCanva":
         if not self._restoring:
             model = self._document_model.connector(connector_id)
@@ -5257,6 +5554,14 @@ class MonkezCanva(QWidget):
             connector.packet_icon = str(values["packetIcon"])
         if "waypoints" in values:
             connector.waypoints = [QPointF(float(point[0]), float(point[1])) for point in values["waypoints"]]
+        if "cornerRadius" in values:
+            connector.corner_radius = max(0.0, min(80.0, float(values["cornerRadius"])))
+        if "label" in values:
+            connector.label = str(values["label"])
+        if "labelPosition" in values:
+            connector.label_position = max(0.0, min(1.0, float(values["labelPosition"])))
+        if "parallelSpacing" in values:
+            connector.parallel_spacing = max(0.0, min(120.0, float(values["parallelSpacing"])))
         if "opacity" in values:
             connector.setOpacity(max(0.0, min(1.0, float(values["opacity"]))))
         if "z" in values:
@@ -5405,8 +5710,12 @@ class MonkezCanva(QWidget):
         if connector is None:
             return False
         connector.release()
+        endpoints = {connector.source.element_id, connector.target.element_id}
         self._scene.removeItem(connector)
         connector.deleteLater()
+        for sibling in self._connectors.values():
+            if {sibling.source.element_id, sibling.target.element_id} == endpoints:
+                sibling.updatePath()
         self.connectorRemoved.emit(str(connector_id))
         self.documentChanged.emit()
         return True
@@ -5911,6 +6220,10 @@ class MonkezCanva(QWidget):
             "packetInterval": max(0.05, float(values.get("packetInterval", 0.7))),
             "packetIcon": str(values.get("packetIcon", "")),
             "waypoints": [[float(point[0]), float(point[1])] for point in values.get("waypoints", [])],
+            "cornerRadius": max(0.0, min(80.0, float(values.get("cornerRadius", 14.0)))),
+            "label": str(values.get("label", "")),
+            "labelPosition": max(0.0, min(1.0, float(values.get("labelPosition", 0.5)))),
+            "parallelSpacing": max(0.0, min(120.0, float(values.get("parallelSpacing", 22.0)))),
             "metadata": dict(values.get("metadata", {})),
             "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
             "z": float(values.get("z", -1.0)),

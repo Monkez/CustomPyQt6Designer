@@ -168,6 +168,19 @@ ID, label, center and zoom. The minimap is a canvas child overlay, not a layout
 row or scene item, so canvas transforms never move it. It renders a lightweight
 overview and viewport rectangle and maps click/drag positions back to scene space.
 
+## Connector routing projection
+
+`monkez_canva/routing.py` owns Qt-free lane allocation, orthogonal waypoint
+expansion and point normalization. Connector records persist `waypoints`,
+`cornerRadius`, `label`, `labelPosition` and `parallelSpacing`. The Qt projection
+builds rounded paths, stable symmetric parallel lanes and explicit self-loops;
+animation, packets, hit testing and arrowheads all consume the same final path.
+
+Waypoint handles are child graphics objects created only for a selected editable
+connector. Dragging updates preview geometry; release commits one model command.
+Double-click adds/removes reroute points through public model-first APIs. Existing
+connector IDs and endpoint references never change during rerouting.
+
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading

@@ -220,6 +220,16 @@ overview plus portable center/zoom bookmarks and View-tab controls.
 Next: editable connector waypoints, rounded orthogonal corners, reroute handles,
 edge labels, parallel-edge separation and crossing bridges.
 
+### Advanced routing progress — 2026-08-09
+
+`MC-EDITOR-ROUTING-001` adds Qt-free orthogonal/lane helpers, rounded paths,
+self-loops, stable parallel-edge separation and shared edge labels. Selected
+connectors expose draggable waypoint handles; add/move/remove/clear APIs and
+Inspector/context/command actions all commit canonical records through Undo.
+
+Next: crossing bridges, edge buses and obstacle-aware routing, followed by
+group/frame, swimlane, collapsible groups and reusable subflows.
+
 ## Backlog tracking
 
 Use stable IDs `MC-PHASE-TOPIC-NNN`, for example:

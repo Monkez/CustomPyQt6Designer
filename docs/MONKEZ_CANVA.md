@@ -217,6 +217,13 @@ sang marker port khác, hoặc chọn đúng hai element rồi bấm **Connect 2
 items**. Sau đó chọn chính đường nối để Inspector hiện các thuộc tính chuyên biệt.
 Có thể đổi source/target và source/target port mà vẫn giữ nguyên ID connector.
 
+Khi chọn connector trong edit mode, mọi waypoint được hiển thị thành handle tròn
+có thể kéo trực tiếp; double-click handle để xóa, hoặc double-click trên đường để
+thêm điểm reroute. Orthogonal route hỗ trợ `cornerRadius`; nhiều connector giữa
+cùng hai node tự tách lane theo `parallelSpacing`. Self-loop, edge label và vị trí
+label theo phần trăm đường đi đều là dữ liệu lưu trong document. Packet và các
+hiệu ứng line luôn chạy theo path đã reroute.
+
 ```python
 edge = canvas.connectElements(
     "pump", "tank", connector_id="water-main",
@@ -226,11 +233,21 @@ edge = canvas.connectElements(
     lineWidth=4,
     arrowStart=False,
     arrowEnd=True,
+    cornerRadius=18,
+    label="Water flow",
+    labelPosition=0.55,
+    parallelSpacing=24,
     animated=True,
     flowColor="#06b6d4",
     flowSpeed=1.8,
     metadata={"signal": "water"},
 )
+
+canvas.addConnectorWaypoint(edge, (320, 140))
+canvas.moveConnectorWaypoint(edge, 0, (360, 160))
+canvas.removeConnectorWaypoint(edge, 0)
+canvas.clearConnectorWaypoints(edge)
+canvas.setConnectorLabel(edge, "Pressure signal", 0.65)
 canvas.updateConnector(edge, route="bezier", arrowStart=True)
 canvas.animateConnector(edge, True, speed=2.5, color="#38bdf8")
 canvas.reconnectConnector(edge, "pump-backup", "tank", "out", "water-in")

@@ -59,6 +59,7 @@ from .snapping import (
     normalize_snap_targets,
     snap_rect,
 )
+from .routing import deduplicate_points, orthogonal_points, parallel_lane_offset
 
 __all__ = [
     "CLIPBOARD_FORMAT",
@@ -102,6 +103,9 @@ __all__ = [
     "migrate_document",
     "normalize_component_ids",
     "normalize_snap_targets",
+    "deduplicate_points",
+    "orthogonal_points",
+    "parallel_lane_offset",
     "record_recent_component",
     "remap_selection_payload",
     "search_palette",

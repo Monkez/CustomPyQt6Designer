@@ -2760,6 +2760,73 @@ class WidgetTests(unittest.TestCase):
         window.close()
         window.deleteLater()
 
+    def test_canva_routing_waypoint_handles_labels_parallel_edges_and_self_loop(self) -> None:
+        canvas = MonkezCanva()
+        source = canvas.addNode("Source", -240, 0, element_id="source")
+        target = canvas.addNode("Target", 260, 100, element_id="target")
+        first = canvas.connectElements(source, target, connector_id="first")
+        second = canvas.connectElements(source, target, connector_id="second")
+        third = canvas.connectElements(source, target, connector_id="third")
+        midpoints = {
+            canvas.connector(connector_id)._path.pointAtPercent(0.5).y()
+            for connector_id in (first, second, third)
+        }
+        self.assertEqual(3, len(midpoints))
+
+        canvas.updateConnector(
+            first,
+            route="orthogonal",
+            waypoints=[[20, -80], [180, 40]],
+            cornerRadius=24,
+            label="request / response",
+            labelPosition=0.35,
+            parallelSpacing=28,
+        )
+        connector = canvas.connector(first)
+        self.assertEqual(24, connector.corner_radius)
+        self.assertEqual("request / response", connector.label)
+        self.assertAlmostEqual(0.35, connector.label_position)
+        self.assertEqual(2, len(connector.waypoints))
+
+        canvas.setEditMode(True)
+        canvas.selectElements((first,))
+        self.app.processEvents()
+        self.assertEqual(2, len(connector._waypoint_handles))
+        self.assertTrue(all(handle.isVisible() for handle in connector._waypoint_handles))
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(first)
+        self.assertEqual("request / response", toolbox._connector_label_edit.text())
+        self.assertEqual(24, toolbox._corner_radius_field.value())
+        self.assertEqual(35, toolbox._label_position_field.value())
+        QTest.qWait(850)
+        history = canvas.undoStack().index()
+        self.assertTrue(canvas.moveConnectorWaypoint(first, 0, (40, -120)))
+        self.assertEqual(QPointF(40, -120), connector.waypoints[0])
+        self.assertEqual(history + 1, canvas.undoStack().index())
+        canvas.undo()
+        self.assertEqual(QPointF(20, -80), connector.waypoints[0])
+        self.assertTrue(canvas.removeConnectorWaypoint(first, 1))
+        self.assertEqual(1, len(connector.waypoints))
+        canvas.addConnectorWaypoint(first, (150, 120))
+        self.assertEqual(2, len(connector.waypoints))
+        self.assertTrue(canvas.clearConnectorWaypoints(first))
+        self.assertEqual([], connector.waypoints)
+
+        loop = canvas.connectElements(
+            source, source, connector_id="self-loop", label="retry", arrowEnd=True
+        )
+        loop_item = canvas.connector(loop)
+        self.assertFalse(loop_item._path.isEmpty())
+        self.assertGreater(loop_item._path.boundingRect().height(), 20)
+        record = next(item for item in canvas.toDocument()["connectors"] if item["id"] == first)
+        self.assertEqual("request / response", record["label"])
+        self.assertEqual(24, record["cornerRadius"])
+
+        canvas.setEditMode(False)
+        canvas.clear()
+        canvas.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()
