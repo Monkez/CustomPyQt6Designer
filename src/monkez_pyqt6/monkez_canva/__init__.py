@@ -1,5 +1,14 @@
 """Public document/runtime foundation for the MonkezCanva editor."""
 
+from .clipboard import (
+    CLIPBOARD_FORMAT,
+    CLIPBOARD_VERSION,
+    CANVAS_CLIPBOARD_MIME_TYPE,
+    build_selection_payload,
+    decode_selection_payload,
+    remap_selection_payload,
+)
+
 from .models import (
     DOCUMENT_FORMAT,
     DOCUMENT_VERSION,
@@ -32,6 +41,9 @@ from .registry import (
 from .schema import DOCUMENT_JSON_SCHEMA, DocumentMigrationResult, migrate_document
 
 __all__ = [
+    "CLIPBOARD_FORMAT",
+    "CLIPBOARD_VERSION",
+    "CANVAS_CLIPBOARD_MIME_TYPE",
     "DOCUMENT_FORMAT",
     "DOCUMENT_VERSION",
     "DOCUMENT_JSON_SCHEMA",
@@ -52,9 +64,12 @@ __all__ = [
     "create_default_element_registry",
     "atomic_write_json",
     "backup_path",
+    "build_selection_payload",
     "build_asset_manifest",
+    "decode_selection_payload",
     "load_json_with_recovery",
     "migrate_document",
+    "remap_selection_payload",
     "DocumentMigrationResult",
     "sha256_file",
     "verify_asset_manifest",

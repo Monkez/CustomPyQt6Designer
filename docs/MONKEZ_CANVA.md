@@ -117,11 +117,28 @@ canvas.selectElements(["usb-camera-01", "result-node"])
 canvas.alignSelected("top")
 canvas.alignSelected("hcenter")
 canvas.alignSelected("center")
+
+# Clipboard giữ lại connector nằm hoàn toàn trong selection.
+payload = canvas.copySelection()     # đồng thời ghi MIME riêng vào clipboard
+new_ids = canvas.pasteSelection()    # Ctrl+V, tự remap ID và dịch 30 px
+canvas.cutSelection()                # Ctrl+X, undo được trong một bước
+canvas.duplicateSelection()          # không làm thay đổi clipboard hệ thống
+
+# Di chuyển chính xác; các lần gọi liên tiếp được merge thành một undo step.
+canvas.nudgeSelected(1, 0)
 ```
 
 Không thể dùng ID rỗng hoặc trùng. Connector giữ tham chiếu đúng khi ID endpoint
 được đổi. Signal `itemIdChanged(old_id, new_id)` cho phép business logic cập nhật
 mapping riêng.
+
+Trong edit mode, phím mũi tên dịch selection `1 px`, `Shift+mũi tên` dịch
+`10 px`, còn `Alt+mũi tên` dịch `0,1 px`. `Ctrl+C/X/V` dùng MIME
+`application/x-monkez-canva-selection+json`; dữ liệu clipboard có version,
+giới hạn kích thước/số object, không chứa code thực thi và chỉ paste element type
+đã đăng ký. Chọn nhiều object trong Inspector hiển thị `Mixed` cho giá trị khác
+nhau; việc chỉ mở Inspector không ghi đè dữ liệu, và chỉ field vừa sửa mới được
+áp dụng đồng loạt bằng một undo command.
 
 Signal chính gồm `elementAdded(str)`, `elementRemoved(str)`, `connectorAdded(str)`,
 `connectorRemoved(str)`, `elementClicked(str)`, `connectorClicked(str)`,

@@ -110,6 +110,23 @@ changes made directly to a shared `CanvasDocument` intentionally do not enter a
 particular view's local history. Persistent/document save marks the stack clean;
 autosave draft does not pretend durable changes were saved.
 
+## Selection clipboard and mixed Inspector
+
+`monkez_canva/clipboard.py` defines a Qt-free, versioned subgraph contract. Copy
+adds endpoint dependencies for explicitly selected connectors and preserves every
+connector whose endpoints are both selected. Decode enforces a 5 MiB/10,000-object
+boundary, finite JSON, global IDs and included endpoints. Paste accepts only
+registered component types, allocates collision-free IDs, remaps connector
+endpoints, offsets scene-space waypoints and commits the whole subgraph as one
+document command. The system clipboard transport is a dedicated MIME type; JSON
+never selects or imports executable Python.
+
+Keyboard nudge updates canonical records first and shares a selection-scoped
+merge key, so rapid key repeats form one undo step. Snap-to-grid applies only to
+direct graphics gestures, never while model operations are rendered. The
+multi-selection Inspector maintains an explicit mixed state per field; sync does
+not manufacture values, and auto-apply sends only fields dirtied by the user.
+
 ## Persistence and trust boundary
 
 Document format version 1 is JSON-only and does not evaluate Python. Loading

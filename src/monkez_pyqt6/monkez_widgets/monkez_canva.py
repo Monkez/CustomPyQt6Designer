@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from PyQt6.QtCore import (
+    QByteArray,
+    QMimeData,
     QSignalBlocker,
     QStandardPaths,
     QEventLoop,
@@ -41,6 +43,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -77,11 +80,15 @@ from monkez_pyqt6.monkez_canva import (
     ElementDefinition,
     ElementRegistry,
     OperationEvent,
+    CANVAS_CLIPBOARD_MIME_TYPE,
     atomic_write_json,
     backup_path,
     build_asset_manifest,
+    build_selection_payload,
     create_default_element_registry,
     load_json_with_recovery,
+    decode_selection_payload,
+    remap_selection_payload,
     verify_asset_manifest,
 )
 from monkez_pyqt6.monkez_canva.persistence import copy_asset_atomically
@@ -1100,7 +1107,7 @@ class _CanvasElement(QGraphicsObject):
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             canvas = self.scene().canvas
-            if canvas.snapToGrid and canvas.editMode:
+            if canvas.snapToGrid and canvas.editMode and not canvas._restoring:
                 size = canvas.gridSize
                 value = QPointF(round(value.x() / size) * size, round(value.y() / size) * size)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
@@ -1459,6 +1466,47 @@ class _CanvasPaneHeader(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class _CanvasNumberField(QDoubleSpinBox):
+    """Spinbox that renders a real mixed-value state until the user edits it."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._mixed_value = False
+
+    def setMixedValue(self, mixed: bool, fallback: float | None = None) -> None:
+        if fallback is not None:
+            self.setValue(float(fallback))
+        self._mixed_value = bool(mixed)
+        self.setProperty("mixedValue", self._mixed_value)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.lineEdit().setText(
+            "Mixed" if self._mixed_value else super().textFromValue(self.value())
+        )
+        self.update()
+
+    def hasMixedValue(self) -> bool:
+        return self._mixed_value
+
+    def textFromValue(self, value: float) -> str:
+        if getattr(self, "_mixed_value", False):
+            return "Mixed"
+        return super().textFromValue(value)
+
+    def stepBy(self, steps: int) -> None:
+        if self._mixed_value:
+            self.setMixedValue(False)
+        super().stepBy(steps)
+
+    def keyPressEvent(self, event) -> None:
+        if self._mixed_value and (
+            event.text() or event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)
+        ):
+            self.setMixedValue(False)
+            self.lineEdit().clear()
+        super().keyPressEvent(event)
+
+
 class _CanvasEditorToolbox(QDialog):
     """Floating multi-tab editor for elements, layers, viewport and persistence."""
 
@@ -1467,6 +1515,7 @@ class _CanvasEditorToolbox(QDialog):
         self.canvas = canvas
         self._syncing_layers = False
         self._syncing_inspector = False
+        self._pending_inspector_fields: set[str] = set()
         self._inspector_apply_timer = QTimer(self)
         self._inspector_apply_timer.setSingleShot(True)
         self._inspector_apply_timer.timeout.connect(self._apply_inspector)
@@ -1568,6 +1617,7 @@ class _CanvasEditorToolbox(QDialog):
             color: #ef5d50; background: #fff3f0; border: 1px solid #ffd3cc;
             border-radius: 9px; padding: 6px 10px; font-weight: 700;
         }
+        QLabel#canvasSelectionHint { color: #858b90; font-size: 9px; }
         QLabel#autoApplyStatus {
             color: #0f9f8f; background: #effbf8; border: 1px solid #c6eee7;
             border-radius: 9px; padding: 6px 9px; font-size: 9px; font-weight: 600;
@@ -1631,6 +1681,9 @@ class _CanvasEditorToolbox(QDialog):
         }
         QLineEdit:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
             color: #aaa6a1; background: #f4f2ef; border-color: #e5e1dc;
+        }
+        QLineEdit[mixedValue="true"], QDoubleSpinBox[mixedValue="true"] {
+            color: #8b8179; background: #faf8f5; border-color: #d7cec5;
         }
         QComboBox { padding-right: 28px; }
         QComboBox::drop-down { background: transparent; border: none; width: 27px; }
@@ -1725,7 +1778,7 @@ class _CanvasEditorToolbox(QDialog):
         buttons = QHBoxLayout()
         duplicate = QPushButton("Duplicate")
         duplicate.setIcon(_canvas_icon("duplicate"))
-        duplicate.clicked.connect(self.canvas.duplicateSelected)
+        duplicate.clicked.connect(self.canvas.duplicateSelection)
         delete = QPushButton("Delete")
         delete.setObjectName("dangerAction")
         delete.setIcon(_canvas_icon("delete", "#b91c1c"))
@@ -1763,6 +1816,11 @@ class _CanvasEditorToolbox(QDialog):
         self._id_edit = QLineEdit()
         form.addRow("Type", self._type_label)
         form.addRow("Object ID", self._id_edit)
+        self._selection_hint = QLabel()
+        self._selection_hint.setObjectName("canvasSelectionHint")
+        self._selection_hint.setWordWrap(True)
+        self._selection_hint.hide()
+        form.addRow("", self._selection_hint)
         layout.addWidget(general)
 
         self._multi_select_group = QGroupBox("Quick arrange")
@@ -1856,7 +1914,7 @@ class _CanvasEditorToolbox(QDialog):
             ("z", "Layer Z", -10000.0, 10000.0, 1),
         )
         for index, (key, label, minimum, maximum, decimals) in enumerate(fields):
-            field = QDoubleSpinBox()
+            field = _CanvasNumberField()
             field.setRange(minimum, maximum)
             field.setDecimals(decimals)
             field.setSingleStep(0.1 if key == "opacity" else 1.0)
@@ -2203,7 +2261,12 @@ class _CanvasEditorToolbox(QDialog):
             self.canvas.addMedia(path, animated=kind == "animated_image")
 
     def _choose_color(self, role: str) -> None:
-        item = self.canvas.canvasObject(self.canvas.selectedElementId())
+        items = [
+            self.canvas.canvasObject(object_id)
+            for object_id in self.canvas.selectedObjectIds()
+        ]
+        items = [item for item in items if item is not None]
+        item = items[0] if items else None
         if item is None:
             return
         if isinstance(item, _CanvasConnector):
@@ -2217,13 +2280,25 @@ class _CanvasEditorToolbox(QDialog):
             )
         chosen = QColorDialog.getColor(current, self, f"Choose {role} color")
         if chosen.isValid():
-            if isinstance(item, _CanvasConnector):
-                key = "flowColor" if role == "flow" else "color"
-                self.canvas.updateConnector(item.connector_id, **{key: chosen})
-            elif role == "flow" and item.kind == "line":
-                self.canvas.updateElement(item.element_id, flowColor=chosen)
-            else:
-                self.canvas.setElementColor(item.element_id, chosen, role)
+            use_macro = len(items) > 1
+            if use_macro:
+                self.canvas.beginCommandMacro(f"Set color on {len(items)} objects")
+            try:
+                for target in items:
+                    if isinstance(target, _CanvasConnector):
+                        key = "flowColor" if role == "flow" else "color"
+                        self.canvas.updateConnector(target.connector_id, **{key: chosen})
+                    else:
+                        key = (
+                            "flowColor" if role == "flow" and target.kind == "line"
+                            else "background" if role in ("background", "surface")
+                            else "textColor" if role in ("text", "foreground")
+                            else "color"
+                        )
+                        self.canvas.updateElement(target.element_id, **{key: chosen})
+            finally:
+                if use_macro:
+                    self.canvas.endCommandMacro()
 
     def _choose_grid_color(self) -> None:
         chosen = QColorDialog.getColor(self.canvas.gridColor, self, "Choose grid color")
@@ -2289,36 +2364,56 @@ class _CanvasEditorToolbox(QDialog):
             self._apply_inspector()
 
     def _connect_inspector_auto_apply(self) -> None:
-        for field in (
-            self._text_edit, self._data_edit, self._source_edit, self._points_edit,
-            self._packet_icon_edit,
+        for key, field in (
+            ("text", self._text_edit), ("data", self._data_edit),
+            ("source", self._source_edit), ("points", self._points_edit),
+            ("packetIcon", self._packet_icon_edit),
         ):
-            field.textEdited.connect(lambda _text: self._schedule_inspector_apply(150))
-        self._id_edit.editingFinished.connect(lambda: self._schedule_inspector_apply(0))
-        for field in (*self._number_fields.values(), self._line_width_field,
-                      self._flow_speed_field, self._flow_spacing_field,
-                      self._effect_intensity_field, self._packet_duration_field,
-                      self._packet_interval_field, self._connector_opacity_field,
-                      self._connector_z_field):
-            field.valueChanged.connect(lambda _value: self._schedule_inspector_apply(80))
+            field.textEdited.connect(
+                lambda _text, name=key: self._schedule_inspector_apply(150, name)
+            )
+        self._id_edit.editingFinished.connect(
+            lambda: self._schedule_inspector_apply(0, "id")
+        )
+        numeric_fields = {
+            **{f"geometry:{key}": field for key, field in self._number_fields.items()},
+            "lineWidth": self._line_width_field,
+            "flowSpeed": self._flow_speed_field,
+            "flowSpacing": self._flow_spacing_field,
+            "effectIntensity": self._effect_intensity_field,
+            "packetDuration": self._packet_duration_field,
+            "packetInterval": self._packet_interval_field,
+            "connectorOpacity": self._connector_opacity_field,
+            "connectorZ": self._connector_z_field,
+        }
+        for key, field in numeric_fields.items():
+            field.valueChanged.connect(
+                lambda _value, name=key: self._schedule_inspector_apply(80, name)
+            )
         for combo in (
             self._source_combo, self._target_combo, self._source_port_combo,
             self._target_port_combo, self._route_combo, self._line_style_combo,
             self._effect_combo, self._flow_direction_combo,
         ):
-            combo.currentIndexChanged.connect(lambda _index: self._schedule_inspector_apply(0))
+            combo.currentIndexChanged.connect(
+                lambda _index: self._schedule_inspector_apply(0, "choice")
+            )
         for check in (
             self._arrow_start_check, self._arrow_end_check, self._animated_check,
             self._packet_loop_check,
         ):
-            check.toggled.connect(lambda _checked: self._schedule_inspector_apply(0))
+            check.toggled.connect(
+                lambda _checked: self._schedule_inspector_apply(0, "choice")
+            )
 
-    def _schedule_inspector_apply(self, delay: int = 80) -> None:
+    def _schedule_inspector_apply(self, delay: int = 80, field: str = "") -> None:
         if (
             not self._syncing_inspector
             and not self.canvas.isReadOnly()
             and self.canvas.selectedElementId()
         ):
+            if field:
+                self._pending_inspector_fields.add(str(field))
             self._inspector_apply_timer.start(max(0, int(delay)))
 
     def _sync_packet_controls(self, _index: int = -1) -> None:
@@ -2340,8 +2435,14 @@ class _CanvasEditorToolbox(QDialog):
             self._apply_inspector_values()
         except (KeyError, PermissionError, TypeError, ValueError) as error:
             self.canvas.diagnosticMessage.emit(f"Inspector change rejected: {error}")
+        finally:
+            self._pending_inspector_fields.clear()
 
     def _apply_inspector_values(self) -> None:
+        selected_ids = self.canvas.selectedObjectIds()
+        if len(selected_ids) > 1:
+            self._apply_multi_inspector_values(selected_ids)
+            return
         element_id = self.canvas.selectedElementId()
         if not element_id:
             return
@@ -2418,14 +2519,99 @@ class _CanvasEditorToolbox(QDialog):
             self.canvas.updateElement(element_id, **values)
         self.refreshLayers()
 
+    def _apply_multi_inspector_values(self, selected_ids: list[str]) -> None:
+        element_ids = [
+            object_id for object_id in selected_ids
+            if self.canvas.element(object_id) is not None
+        ]
+        if len(element_ids) != len(selected_ids):
+            return
+        values: dict[str, Any] = {}
+        for key, field in self._number_fields.items():
+            if f"geometry:{key}" in self._pending_inspector_fields:
+                values[key] = field.value()
+        if "text" in self._pending_inspector_fields and self._content_group.isVisible():
+            values["text"] = self._text_edit.text()
+        if not values:
+            return
+        self.canvas.beginCommandMacro(f"Edit {len(element_ids)} objects")
+        try:
+            for element_id in element_ids:
+                self.canvas.updateElement(element_id, **values)
+        finally:
+            self.canvas.endCommandMacro()
+        self.refreshLayers()
+
+    @staticmethod
+    def _set_mixed_field(widget: QLineEdit | QDoubleSpinBox, values: list[Any]) -> None:
+        mixed = any(value != values[0] for value in values[1:])
+        if isinstance(widget, _CanvasNumberField):
+            widget.setMixedValue(mixed, float(values[0]))
+        elif isinstance(widget, QDoubleSpinBox):
+            widget.setValue(float(values[0]))
+        else:
+            widget.setProperty("mixedValue", mixed)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.setText("" if mixed else str(values[0]))
+            widget.setPlaceholderText("Mixed" if mixed else "")
+
+    def _sync_multi_inspector(self, items: list[_CanvasElement | _CanvasConnector]) -> None:
+        count = len(items)
+        elements = [item for item in items if isinstance(item, _CanvasElement)]
+        homogeneous_elements = len(elements) == count
+        kinds = {item.kind for item in items}
+        self._type_label.setText(
+            f"{count} × {next(iter(kinds))}" if len(kinds) == 1
+            else f"{count} mixed objects"
+        )
+        self._id_edit.clear()
+        self._id_edit.setPlaceholderText("Multiple IDs")
+        self._id_edit.setEnabled(False)
+        self._selection_hint.setText(
+            "Only common properties are shown. Mixed values stay unchanged until you edit the field."
+        )
+        self._selection_hint.show()
+        self._ports_group.hide()
+        self._media_group.hide()
+        self._stroke_group.hide()
+        self._content_group.setVisible(homogeneous_elements and len(kinds) == 1)
+        self._geometry_group.setVisible(homogeneous_elements)
+        self._colors_group.setVisible(homogeneous_elements)
+        self._data_label.hide()
+        self._data_edit.hide()
+        if not homogeneous_elements:
+            return
+        self._set_mixed_field(self._text_edit, [item.text for item in elements])
+        geometry_values = {
+            "x": [item.pos().x() for item in elements],
+            "y": [item.pos().y() for item in elements],
+            "width": [item._rect.width() for item in elements],
+            "height": [item._rect.height() for item in elements],
+            "rotation": [item.rotation() for item in elements],
+            "opacity": [item.opacity() for item in elements],
+            "z": [item.zValue() for item in elements],
+        }
+        for key, values in geometry_values.items():
+            self._set_mixed_field(self._number_fields[key], values)
+        all_lines = all(item.kind == "line" for item in elements)
+        self._color_buttons["background"].setVisible(not all_lines)
+        self._color_buttons["text"].setVisible(not all_lines)
+        self._color_buttons["flow"].setVisible(all_lines)
+
     def _sync_inspector(self, element_id: str) -> None:
         self._syncing_inspector = True
+        self._pending_inspector_fields.clear()
         self._inspector_apply_timer.stop()
+        selected_ids = self.canvas.selectedObjectIds()
+        items = [self.canvas.canvasObject(object_id) for object_id in selected_ids]
+        items = [item for item in items if item is not None]
         item = self.canvas.canvasObject(element_id)
-        selected_count = len(self.canvas.selectedElementIds())
-        self._multi_select_group.setVisible(selected_count >= 2)
+        selected_count = len(items)
+        selected_element_count = len(self.canvas.selectedElementIds())
+        self._multi_select_group.setVisible(selected_element_count >= 2)
         for index, button in enumerate(self._arrange_buttons):
-            button.setEnabled(selected_count >= (3 if index >= 6 else 2))
+            button.setEnabled(selected_element_count >= (3 if index >= 6 else 2))
         widgets = [
             self._id_edit, self._text_edit, self._data_edit, self._source_edit,
             self._ports_list, self._port_id_edit, self._port_label_edit,
@@ -2442,8 +2628,19 @@ class _CanvasEditorToolbox(QDialog):
             self._connector_z_field, self._points_edit, *self._number_fields.values(),
         ]
         blockers = [QSignalBlocker(widget) for widget in widgets]
-        if item is None:
+        for field in (self._text_edit, *self._number_fields.values()):
+            if isinstance(field, _CanvasNumberField):
+                field.setMixedValue(False)
+            else:
+                field.setProperty("mixedValue", False)
+                field.style().unpolish(field)
+                field.style().polish(field)
+        self._text_edit.setPlaceholderText("")
+        if selected_count == 0 or item is None:
             self._type_label.setText("No selection")
+            self._id_edit.setEnabled(True)
+            self._id_edit.setPlaceholderText("")
+            self._selection_hint.hide()
             self._id_edit.clear()
             self._text_edit.clear()
             self._data_edit.clear()
@@ -2454,7 +2651,12 @@ class _CanvasEditorToolbox(QDialog):
             self._media_group.hide()
             self._stroke_group.hide()
             self._colors_group.hide()
+        elif selected_count > 1:
+            self._sync_multi_inspector(items)
         else:
+            self._id_edit.setEnabled(True)
+            self._id_edit.setPlaceholderText("")
+            self._selection_hint.hide()
             self._type_label.setText(item.kind)
             self._id_edit.setText(item.element_id)
             connector = isinstance(item, _CanvasConnector)
@@ -2558,7 +2760,7 @@ class _CanvasEditorToolbox(QDialog):
                     self._packet_icon_edit.setText(item.packet_icon)
                     self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.points]))
         del blockers
-        self._sync_extension_inspector(item)
+        self._sync_extension_inspector(item if selected_count == 1 else None)
         self._syncing_inspector = False
         self._sync_packet_controls()
 
@@ -3085,6 +3287,7 @@ class MonkezCanva(QWidget):
         self._background_image = ""
         self._background_image_mode = 0
         self._message_payloads: dict[str, dict[str, Any]] = {}
+        self._clipboard_paste_count = 0
         self._element_registry = create_default_element_registry()
         self._background_pixmap = QPixmap()
         self._project_directory = ""
@@ -3156,6 +3359,30 @@ class MonkezCanva(QWidget):
         redo_shortcut = QShortcut(QKeySequence.StandardKey.Redo, self)
         redo_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         redo_shortcut.activated.connect(self.redo)
+        self._editor_shortcuts: list[QShortcut] = []
+        for standard_key, callback in (
+            (QKeySequence.StandardKey.Copy, self.copySelection),
+            (QKeySequence.StandardKey.Cut, self.cutSelection),
+            (QKeySequence.StandardKey.Paste, self.pasteSelection),
+        ):
+            shortcut = QShortcut(QKeySequence(standard_key), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(callback)
+            self._editor_shortcuts.append(shortcut)
+        for sequence, dx, dy in (
+            ("Left", -1.0, 0.0), ("Right", 1.0, 0.0),
+            ("Up", 0.0, -1.0), ("Down", 0.0, 1.0),
+            ("Shift+Left", -10.0, 0.0), ("Shift+Right", 10.0, 0.0),
+            ("Shift+Up", 0.0, -10.0), ("Shift+Down", 0.0, 10.0),
+            ("Alt+Left", -0.1, 0.0), ("Alt+Right", 0.1, 0.0),
+            ("Alt+Up", 0.0, -0.1), ("Alt+Down", 0.0, 0.1),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(
+                lambda x=dx, y=dy: self.nudgeSelected(x, y)
+            )
+            self._editor_shortcuts.append(shortcut)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._emit_history_state()
 
@@ -3252,6 +3479,140 @@ class MonkezCanva(QWidget):
             if connector.isSelected()
         )
         return selected
+
+    def selectionClipboardPayload(self) -> dict[str, Any]:
+        """Return the selected subgraph without accessing the system clipboard."""
+
+        return build_selection_payload(
+            self._document_model.to_dict(), self.selectedObjectIds()
+        )
+
+    def copySelection(self) -> dict[str, Any]:
+        """Copy selected nodes and every internal connector as versioned JSON."""
+
+        payload = self.selectionClipboardPayload()
+        if not payload["elements"]:
+            return {}
+        encoded = json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+        mime = QMimeData()
+        mime.setData(CANVAS_CLIPBOARD_MIME_TYPE, QByteArray(encoded))
+        mime.setText(encoded.decode("utf-8"))
+        QApplication.clipboard().setMimeData(mime)
+        self._clipboard_paste_count = 0
+        self.diagnosticMessage.emit(
+            f"Copied {len(payload['elements'])} elements and "
+            f"{len(payload['connectors'])} connectors"
+        )
+        return payload
+
+    def cutSelection(self) -> dict[str, Any]:
+        """Copy then remove the exact current selection as one undoable command."""
+
+        self._ensure_writable()
+        selected = self.selectedObjectIds()
+        payload = self.copySelection()
+        if not payload:
+            return {}
+
+        def remove_selected(document: CanvasDocument) -> None:
+            for object_id in selected:
+                if document.connector(object_id) is not None:
+                    document.remove_connector(object_id)
+            for object_id in selected:
+                if document.element(object_id) is not None:
+                    document.remove_element(object_id)
+
+        self._push_document_mutation(
+            remove_selected, f"Cut {len(selected)} object{'s' if len(selected) != 1 else ''}"
+        )
+        return payload
+
+    def pasteSelection(
+        self,
+        payload: dict[str, Any] | str | bytes | None = None,
+        *,
+        offset: tuple[float, float] | None = None,
+    ) -> list[str]:
+        """Paste a validated clipboard subgraph and return all new object IDs."""
+
+        self._ensure_writable()
+        if payload is None:
+            mime = QApplication.clipboard().mimeData()
+            if mime is None or not mime.hasFormat(CANVAS_CLIPBOARD_MIME_TYPE):
+                return []
+            payload = bytes(mime.data(CANVAS_CLIPBOARD_MIME_TYPE))
+            self._clipboard_paste_count += 1
+            distance = 30.0 * self._clipboard_paste_count
+            offset = offset or (distance, distance)
+        else:
+            payload = decode_selection_payload(payload)
+            offset = offset or (30.0, 30.0)
+        occupied = {*self._elements, *self._connectors}
+        elements, connectors, _id_map = remap_selection_payload(
+            payload, occupied, offset=offset
+        )
+        for index, record in enumerate(elements):
+            kind = str(record.get("type", "")).lower()
+            definition = self._element_registry.definition(kind)
+            if definition is None:
+                raise ValueError(f"Clipboard element type is not registered: {kind}")
+            elements[index] = definition.prepare_record(record)
+
+        def add_records(document: CanvasDocument) -> None:
+            for record in elements:
+                document.add_element(record)
+            for record in connectors:
+                document.add_connector(record)
+
+        if not self._push_document_mutation(
+            add_records,
+            f"Paste {len(elements) + len(connectors)} objects",
+        ):
+            return []
+        new_ids = [str(record["id"]) for record in (*elements, *connectors)]
+        self.selectElements(new_ids)
+        self.diagnosticMessage.emit(
+            f"Pasted {len(elements)} elements and {len(connectors)} connectors"
+        )
+        return new_ids
+
+    def duplicateSelection(self) -> list[str]:
+        """Duplicate the full selected subgraph without replacing clipboard data."""
+
+        payload = self.selectionClipboardPayload()
+        if not payload["elements"]:
+            return []
+        return self.pasteSelection(payload, offset=(30.0, 30.0))
+
+    def nudgeSelected(self, dx: float, dy: float) -> bool:
+        """Move selected elements by an exact delta as one mergeable command."""
+
+        if not self._edit_mode:
+            return False
+        element_ids = tuple(self.selectedElementIds())
+        if not element_ids or (not float(dx) and not float(dy)):
+            return False
+
+        def move(document: CanvasDocument) -> None:
+            for element_id in element_ids:
+                record = document.element(element_id)
+                if record is not None:
+                    values = record.to_dict()
+                    document.update_element(
+                        element_id,
+                        {
+                            "x": float(values.get("x", 0.0)) + float(dx),
+                            "y": float(values.get("y", 0.0)) + float(dy),
+                        },
+                    )
+
+        return self._push_document_mutation(
+            move,
+            f"Nudge {len(element_ids)} object{'s' if len(element_ids) != 1 else ''}",
+            merge_key=f"nudge:{','.join(sorted(element_ids))}",
+        )
 
     def addElement(
         self,
@@ -3688,25 +4049,10 @@ class MonkezCanva(QWidget):
         return self
 
     def duplicateSelected(self) -> str:
-        item = self.canvasObject(self.selectedElementId())
-        if item is None:
-            return ""
-        if isinstance(item, _CanvasConnector):
-            values = item.to_dict()
-            values.pop("id", None)
-            values.pop("type", None)
-            source_id = values.pop("source")
-            target_id = values.pop("target")
-            color = values.pop("color")
-            return self.connectElements(source_id, target_id, color, **values)
-        values = item.to_dict()
-        values.pop("id", None)
-        kind = values.pop("type")
-        x = values.pop("x") + 30
-        y = values.pop("y") + 30
-        width = values.pop("width")
-        height = values.pop("height")
-        return self.addElement(kind, x, y, width, height, **values)
+        """Compatibility helper returning the first ID from graph duplication."""
+
+        duplicated = self.duplicateSelection()
+        return duplicated[0] if duplicated else ""
 
     def bringSelectedToFront(self) -> None:
         self._ensure_writable()

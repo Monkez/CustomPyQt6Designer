@@ -159,6 +159,14 @@ Updated: 2026-08-09
 
 ## Latest verification
 
+- `MC-EDITOR-SELECTION-001` begins Phase 2 with a strict, versioned graph
+  clipboard. Ctrl+C/X/V and public APIs preserve internal connectors, remap IDs,
+  endpoints and waypoints, and make cut/paste/duplicate atomic in history.
+  Arrow, Shift+Arrow and Alt+Arrow nudge by 1/10/0.1 pixels with mergeable undo.
+  Multi-selection Inspector fields display a real `Mixed` state and update only
+  the explicitly changed common properties. Native Windows visual QA at 448x710
+  confirmed readable mixed states, balanced geometry cards and unclipped controls.
+
 - `MC-EDITOR-PANE-002` polishes the Floating Cards Control Pane at native Windows
   scale: its icon tabs are now a single compact segmented bar; all field/card
   spacing follows a consistent rhythm; geometry inputs expand as an even two-
@@ -231,7 +239,7 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 151 tests and covers all 36 public
+- The automated suite contains 156 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

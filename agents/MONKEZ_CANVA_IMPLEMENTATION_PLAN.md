@@ -1,6 +1,6 @@
 # MonkezCanva implementation plan for agents
 
-Updated: 2026-08-08
+Updated: 2026-08-09
 Status: active master plan
 User-facing roadmap: `docs/MONKEZ_CANVA_MASTER_ROADMAP.md`
 
@@ -173,6 +173,18 @@ nonessential hidden work and preserves completion of explicitly sent packets.
 
 Next: Phase 2 professional editor UX, beginning with clipboard, keyboard nudge
 and mixed-value multi-selection Inspector behavior.
+
+### Editor UX progress — 2026-08-09
+
+`MC-EDITOR-SELECTION-001` completes the first Phase 2 slice. The Qt-free
+clipboard module validates and remaps portable subgraphs; canvas APIs and
+Ctrl+C/X/V preserve internal connectors and commit cut/paste/duplicate atomically.
+Arrow shortcuts support exact 1/10/0.1-pixel nudging with compressed history.
+The Inspector renders persistent `Mixed` states for common multi-selection
+properties and applies only explicitly edited fields in one macro command.
+
+Next: searchable palette/favorites/recent items and a context-aware command
+palette, followed by smart guides and configurable snap targets.
 
 ## Backlog tracking
 

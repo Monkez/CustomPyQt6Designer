@@ -99,12 +99,17 @@ Runtime metrics and a configurable frame interval support profiling.
 
 ## Phase 2 — Professional editor UX
 
+Completed slice (2026-08-09): versioned graph clipboard with internal-connector
+preservation and collision-safe ID/endpoint remapping; atomic cut/paste/duplicate;
+1/10/0.1-pixel keyboard nudge with compressed undo; and a true mixed-value
+multi-selection Inspector for common geometry, content and appearance controls.
+
 - searchable palette with categories, favorites and recent items;
 - command palette and context-aware menus;
-- copy, cut, paste and duplicate with internal connector preservation;
-- keyboard nudge, distribute, equal-size and smart alignment guides;
+- copy, cut, paste and duplicate with internal connector preservation — complete;
+- keyboard nudge — complete; equal-size and smart alignment guides remain;
 - configurable snap targets: grid, center, edge, port and nearby object;
-- mixed-value multi-selection Inspector;
+- mixed-value multi-selection Inspector — common-property slice complete;
 - minimap, document outline, viewport bookmarks and zoom-to-selection;
 - lock, hide and isolate item/group;
 - editable connector waypoints, rounded orthogonal corners and reroute points;

@@ -656,7 +656,9 @@ class WidgetTests(unittest.TestCase):
         restored.clear()
         restored.deleteLater()
         canvas.setEditMode(False)
+        canvas.setEditMode(False)
         canvas.clear()
+        canvas.close()
         canvas.deleteLater()
 
     def test_canva_packet_messages_and_splitter_branch_propagation(self) -> None:
@@ -774,6 +776,118 @@ class WidgetTests(unittest.TestCase):
         canvas.hide()
         canvas.clear()
         self.assertEqual(0, canvas.animationStats()["registeredTargets"])
+        canvas.deleteLater()
+
+    def test_canva_graph_clipboard_cut_paste_and_nudge_are_atomic(self) -> None:
+        canvas = MonkezCanva()
+        source = canvas.addNode("Source", 10, 20, element_id="source")
+        target = canvas.addNode("Target", 230, 20, element_id="target")
+        edge = canvas.connectElements(
+            source, target, connector_id="edge", route="orthogonal",
+            waypoints=[[120, 40]],
+        )
+        canvas.setEditMode(True)
+        canvas.selectElements([source, target])
+
+        payload = canvas.copySelection()
+        self.assertEqual(2, len(payload["elements"]))
+        self.assertEqual([edge], [record["id"] for record in payload["connectors"]])
+        self.assertTrue(QApplication.clipboard().mimeData().hasFormat(
+            "application/x-monkez-canva-selection+json"
+        ))
+
+        before_paste = canvas.undoStack().count()
+        pasted = canvas.pasteSelection(payload, offset=(100, 50))
+        self.assertEqual(3, len(pasted))
+        self.assertEqual(before_paste + 1, canvas.undoStack().count())
+        pasted_elements = [object_id for object_id in pasted if canvas.element(object_id)]
+        pasted_edge = next(object_id for object_id in pasted if canvas.connector(object_id))
+        self.assertEqual(110, canvas.element(pasted_elements[0]).pos().x())
+        self.assertEqual(70, canvas.element(pasted_elements[0]).pos().y())
+        self.assertEqual(
+            set(pasted_elements),
+            {canvas.connector(pasted_edge).source.element_id, canvas.connector(pasted_edge).target.element_id},
+        )
+        self.assertEqual(QPointF(220, 90), canvas.connector(pasted_edge).waypoints[0])
+        self.assertEqual(set(pasted), set(canvas.selectedObjectIds()))
+        canvas.undo()
+        self.assertTrue(all(canvas.canvasObject(object_id) is None for object_id in pasted))
+        canvas.redo()
+        self.assertTrue(all(canvas.canvasObject(object_id) is not None for object_id in pasted))
+
+        canvas.selectElements([edge])
+        cut_payload = canvas.cutSelection()
+        self.assertEqual(2, len(cut_payload["elements"]))
+        self.assertIsNone(canvas.connector(edge))
+        self.assertIsNotNone(canvas.element(source))
+        self.assertIsNotNone(canvas.element(target))
+        canvas.undo()
+        self.assertIsNotNone(canvas.connector(edge))
+
+        canvas.selectElements([source, target])
+        original = {key: QPointF(canvas.element(key).pos()) for key in (source, target)}
+        history_index = canvas.undoStack().index()
+        self.assertTrue(canvas.nudgeSelected(1, 0))
+        self.assertTrue(canvas.nudgeSelected(10, -10))
+        self.assertEqual(history_index + 1, canvas.undoStack().index())
+        for key in (source, target):
+            self.assertEqual(original[key] + QPointF(11, -10), canvas.element(key).pos())
+        canvas.undo()
+        for key in (source, target):
+            self.assertEqual(original[key], canvas.element(key).pos())
+
+        canvas.setEditMode(False)
+        canvas.clear()
+        canvas.close()
+        canvas.deleteLater()
+
+    def test_canva_multi_inspector_preserves_mixed_values_until_edited(self) -> None:
+        canvas = MonkezCanva()
+        first = canvas.addNode("First", 10, 20, element_id="first")
+        second = canvas.addNode("Second", 210, 80, element_id="second")
+        canvas.updateElement(second, width=240, opacity=0.6)
+        canvas.setEditMode(True)
+        canvas.selectElements([first, second])
+        toolbox = canvas._toolbox
+        toolbox._tabs.setCurrentIndex(1)
+        toolbox._sync_inspector(first)
+
+        self.assertEqual("2 × node", toolbox._type_label.text())
+        self.assertFalse(toolbox._id_edit.isEnabled())
+        self.assertTrue(toolbox._geometry_group.isVisibleTo(toolbox))
+        self.assertTrue(toolbox._number_fields["x"].hasMixedValue())
+        self.assertEqual("Mixed", toolbox._number_fields["x"].text())
+        self.assertTrue(toolbox._number_fields["width"].hasMixedValue())
+        self.assertEqual("Mixed", toolbox._text_edit.placeholderText())
+
+        history_index = canvas.undoStack().index()
+        toolbox._number_fields["opacity"].setValue(0.75)
+        QTest.qWait(180)
+        self.assertAlmostEqual(0.75, canvas.element(first).opacity())
+        self.assertAlmostEqual(0.75, canvas.element(second).opacity())
+        self.assertEqual("First", canvas.element(first).text)
+        self.assertEqual("Second", canvas.element(second).text)
+        self.assertEqual(history_index + 1, canvas.undoStack().index())
+        canvas.undo()
+        self.assertAlmostEqual(1.0, canvas.element(first).opacity())
+        self.assertAlmostEqual(0.6, canvas.element(second).opacity())
+
+        canvas.show()
+        canvas.view().viewport().setFocus()
+        self.app.processEvents()
+        first_x = canvas.element(first).pos().x()
+        second_x = canvas.element(second).pos().x()
+        QTest.keyClick(
+            canvas.view().viewport(), Qt.Key.Key_Right,
+            Qt.KeyboardModifier.ShiftModifier,
+        )
+        self.app.processEvents()
+        self.assertEqual(first_x + 10, canvas.element(first).pos().x())
+        self.assertEqual(second_x + 10, canvas.element(second).pos().x())
+
+        canvas.setEditMode(False)
+        canvas.clear()
+        canvas.close()
         canvas.deleteLater()
 
     def test_canva_node_ports_drag_connection_and_click_signals(self) -> None:
