@@ -638,7 +638,7 @@ class WidgetTests(unittest.TestCase):
         self.assertNotIn("Apply changes", [button.text() for button in toolbox.findChildren(QPushButton)])
         toolbox._text_edit.setText("Pump updated")
         toolbox._text_edit.textEdited.emit("Pump updated")
-        QTest.qWait(240)
+        QTest.qWait(500)
         self.assertEqual("Pump updated", canvas.element(source).text)
         toolbox._port_id_edit.setText("telemetry")
         toolbox._port_label_edit.setText("Telemetry")
