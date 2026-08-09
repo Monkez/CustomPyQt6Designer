@@ -277,6 +277,14 @@ The 1,000-concurrent-ticket headless scenario is part of the unit suite. Next:
 workflow component definitions/executor, replay, aggregate link metrics and
 failure-edge routing.
 
+`MC-RUNTIME-PACKET-002` completes portable replay and aggregate link diagnostics.
+Versioned bounded fixtures capture JSON-only inputs plus expected relative event,
+route and terminal-state signatures. Normal runtime execution produces a structured
+match/divergence comparison. A bounded tracker pairs concurrent segments, attributes
+terminal drops and exposes delivery, throughput and latency avg/min/max/p50/p95.
+Canvas save/load/replay APIs, signals and the Runtime Debugger Links tab use this
+same Qt-free state. Repeatable visual QA covers fan-out metrics and a timed-out link.
+
 ### Workflow execution progress — 2026-08-09
 
 `MC-RUNTIME-WORKFLOW-001` implements the Qt-free graph compiler/executor and the
@@ -287,8 +295,8 @@ badges, packet visualization, context/command actions, a conditional Inspector
 card and the Workflow tab in Runtime Debugger. The demo enables the pack and
 runs a Source → Transform → Sink example.
 
-Next runtime slices: recurring timer scheduling, bounded queue/backpressure,
-replay fixtures, link metrics and explicit workflow failure-edge conventions.
+Next runtime slices: recurring timer scheduling, bounded queue/backpressure and
+explicit workflow failure-edge conventions.
 
 ### Declarative data-binding progress — 2026-08-09
 

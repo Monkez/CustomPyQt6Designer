@@ -790,12 +790,50 @@ class WidgetTests(unittest.TestCase):
         self.assertIn("completed", [event["event"] for event in canvas.runtimeTrace("trace-1")])
         self.assertNotIn("payload", canvas.toDocument())
 
+        fixture_source = canvas.sendMessageTicket(
+            incoming,
+            message_id="fixture-source",
+            payload={"value": 84},
+            branch_policy="first",
+            travel_time=0.1,
+        )
+        QTest.qWait(250)
+        self.assertEqual("completed", fixture_source.status)
+        fixture = canvas.captureMessageReplay(
+            fixture_source.message_id, fixture_id="widget-fixture"
+        )
+        replay_results = []
+        canvas.runtimeReplayCompleted.connect(
+            lambda message_id, comparison: replay_results.append(
+                (message_id, comparison)
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            replay_path = Path(directory) / "packet.packet-replay.json"
+            canvas.saveMessageReplay(fixture_source.message_id, replay_path)
+            loaded_fixture = canvas.loadMessageReplay(replay_path)
+            self.assertEqual("incoming", loaded_fixture["entryId"])
+            replayed = canvas.replayMessage(
+                fixture,
+                message_id="fixture-replayed",
+                travel_time=0.1,
+            )
+            QTest.qWait(250)
+        self.assertEqual("completed", replayed.status)
+        self.assertEqual("fixture-replayed", replay_results[-1][0])
+        self.assertTrue(replay_results[-1][1]["matched"])
+        metrics = {metric["objectId"]: metric for metric in canvas.runtimeLinkMetrics()}
+        self.assertGreaterEqual(metrics["incoming"]["arrived"], 3)
+        self.assertGreater(metrics["incoming"]["latencyMs"]["p95"], 0)
+
         canvas.showRuntimeDebugger()
         self.app.processEvents()
         debugger = canvas._runtime_debugger
         self.assertTrue(debugger.isVisible())
+        self.assertEqual(5, debugger._tabs.count())
         self.assertGreaterEqual(debugger._messages.count(), 1)
         self.assertGreaterEqual(debugger._trace.count(), 1)
+        self.assertGreaterEqual(debugger._links.count(), 2)
 
         cancelled = canvas.sendMessageTicket(
             incoming, message_id="cancel-1", travel_time=1.0
@@ -3466,7 +3504,7 @@ class WidgetTests(unittest.TestCase):
 
         canvas.showRuntimeDebugger()
         self.app.processEvents()
-        self.assertEqual(4, canvas._runtime_debugger._tabs.count())
+        self.assertEqual(5, canvas._runtime_debugger._tabs.count())
         self.assertEqual(7, canvas._runtime_debugger._bindings.count())
         self.assertTrue(canvas.dataBindingTrace())
 

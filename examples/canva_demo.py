@@ -72,6 +72,12 @@ def main() -> int:
             event["sequence"], event["event"], event["messageId"], event["objectId"],
         )
     )
+    canvas.runtimeReplayCompleted.connect(
+        lambda message_id, comparison: logger.info(
+            "runtimeReplayCompleted -> %s matched=%s mismatches=%s",
+            message_id, comparison["matched"], comparison["mismatches"],
+        )
+    )
     canvas.workflowTraceEvent.connect(
         lambda event: logger.info(
             "workflowTrace -> #%s %s node=%s token=%s",
@@ -413,6 +419,7 @@ def main() -> int:
     logger.info("Shortcut option 2: hold Ctrl, press D, then press E")
     logger.info("When successful, logs will show 'Editor shortcut received' and toolbox state")
     logger.info("Open the packet debugger with Ctrl+K, then search 'runtime debugger'")
+    logger.info("Debugger Links shows throughput/latency; completed messages can be replayed")
     logger.info("Workflow Pack is enabled; select a workflow node to edit/run it")
     logger.info("Dashboard, Industrial and Software component packs are enabled")
     logger.info("Select an element and open Inspector > Data bindings for live data")

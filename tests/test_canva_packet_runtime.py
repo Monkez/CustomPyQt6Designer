@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from monkez_pyqt6.monkez_canva import PacketRuntime
+from monkez_pyqt6.monkez_canva import (
+    MAX_REPLAY_BYTES,
+    PacketRuntime,
+    decode_packet_replay,
+    encode_packet_replay,
+)
 
 
 class FakeClock:
@@ -121,6 +126,64 @@ class PacketRuntimeTests(unittest.TestCase):
             runtime.complete(ticket.message_id, "ingress")
         self.assertFalse(runtime.tickets(include_completed=False))
         self.assertEqual(1000, runtime.clear_completed())
+
+    def test_replay_fixture_round_trip_and_divergence_comparison(self) -> None:
+        ticket = self.runtime.create(
+            "original", "edge-a", payload={"value": 7},
+            metadata={"topic": "demo"}, priority=4, branch_policy="first",
+        )
+        self.runtime.start_segment(ticket.message_id, "edge-a")
+        self.clock.advance(0.25)
+        self.runtime.arrive_segment(ticket.message_id, "edge-a")
+        self.runtime.complete(ticket.message_id, "edge-a")
+
+        fixture = self.runtime.capture_replay("original", fixture_id="fixture-a")
+        restored = decode_packet_replay(encode_packet_replay(fixture))
+        self.assertEqual(fixture, restored)
+        self.assertTrue(self.runtime.compare_replay(restored, "original").matched)
+        self.assertNotIn("timestamp", restored.expected_events[0])
+        self.assertEqual(0.0, restored.expected_events[0]["offset"])
+
+        divergent = self.runtime.create("divergent", "edge-a", payload={"value": 7})
+        self.runtime.start_segment(divergent.message_id, "edge-b")
+        self.runtime.arrive_segment(divergent.message_id, "edge-b")
+        self.runtime.complete(divergent.message_id, "edge-b")
+        comparison = self.runtime.compare_replay(restored, "divergent")
+        self.assertFalse(comparison.matched)
+        self.assertIn("event sequence diverged", comparison.mismatches)
+
+    def test_link_metrics_pair_latency_throughput_and_terminal_drops(self) -> None:
+        delivered = self.runtime.create("delivered", "edge")
+        self.runtime.start_segment(delivered.message_id, "edge")
+        self.clock.advance(0.4)
+        self.runtime.arrive_segment(delivered.message_id, "edge")
+        self.runtime.complete(delivered.message_id, "edge")
+
+        timed_out = self.runtime.create("timeout", "edge", timeout=1.0)
+        self.runtime.start_segment(timed_out.message_id, "edge")
+        self.clock.advance(1.1)
+        self.runtime.expire()
+
+        metric = self.runtime.link_metrics("edge", window=2.0)[0]
+        self.assertEqual(2, metric["started"])
+        self.assertEqual(1, metric["arrived"])
+        self.assertEqual(1, metric["timedOut"])
+        self.assertEqual(0, metric["inFlight"])
+        self.assertAlmostEqual(0.5, metric["deliveryRate"])
+        self.assertAlmostEqual(400.0, metric["latencyMs"]["average"])
+        self.assertAlmostEqual(0.5, metric["throughputPerSecond"])
+        self.assertEqual(1, self.runtime.reset_link_metrics("edge"))
+        self.assertFalse(self.runtime.link_metrics())
+
+    def test_replay_boundary_rejects_oversized_and_non_json_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "too large"):
+            decode_packet_replay(b"x" * (MAX_REPLAY_BYTES + 1))
+        ticket = self.runtime.create("not-portable", "edge", payload=object())
+        self.runtime.start_segment(ticket.message_id, "edge")
+        self.runtime.arrive_segment(ticket.message_id, "edge")
+        self.runtime.complete(ticket.message_id, "edge")
+        with self.assertRaisesRegex(TypeError, "Replay payload"):
+            self.runtime.capture_replay(ticket.message_id)
 
 
 if __name__ == "__main__":

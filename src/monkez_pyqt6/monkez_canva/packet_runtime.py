@@ -7,6 +7,14 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from .packet_diagnostics import (
+    PacketLinkMetricsTracker,
+    PacketReplayComparison,
+    PacketReplayFixture,
+    build_packet_replay_fixture,
+    decode_packet_replay,
+)
+
 
 MESSAGE_STATES = (
     "queued",
@@ -113,6 +121,7 @@ class PacketRuntime:
         self._sequence = 0
         self._paused = False
         self._breakpoints: set[str] = set()
+        self._link_metrics = PacketLinkMetricsTracker()
 
     @property
     def paused(self) -> bool:
@@ -319,6 +328,55 @@ class PacketRuntime:
             values = values[-max(0, int(limit)):]
         return tuple(values)
 
+    def capture_replay(
+        self, message_id: str, *, fixture_id: str = ""
+    ) -> PacketReplayFixture:
+        ticket = self._tickets.get(str(message_id))
+        if ticket is None:
+            raise KeyError(f"Unknown message ticket: {message_id}")
+        if not ticket.done:
+            raise RuntimeError("Replay fixtures require a terminal message ticket")
+        return build_packet_replay_fixture(
+            ticket.snapshot(ticket.completed_at),
+            (event.to_dict() for event in self.trace(message_id=ticket.message_id)),
+            fixture_id=fixture_id,
+        )
+
+    def compare_replay(
+        self,
+        fixture: PacketReplayFixture | Mapping[str, Any] | bytes | str,
+        message_id: str,
+    ) -> PacketReplayComparison:
+        replay = (
+            fixture if isinstance(fixture, PacketReplayFixture)
+            else decode_packet_replay(fixture)
+        )
+        ticket = self._tickets.get(str(message_id))
+        if ticket is None:
+            raise KeyError(f"Unknown message ticket: {message_id}")
+        if not ticket.done:
+            raise RuntimeError("Replay comparison requires a terminal message ticket")
+        return replay.compare(
+            status=ticket.status,
+            route=ticket.visited,
+            events=(event.to_dict() for event in self.trace(message_id=message_id)),
+        )
+
+    def link_metrics(
+        self,
+        object_id: str = "",
+        *,
+        now: float | None = None,
+        window: float = 60.0,
+    ) -> tuple[dict[str, Any], ...]:
+        current = self._clock() if now is None else float(now)
+        return self._link_metrics.snapshots(
+            object_id=str(object_id), now=current, window=window
+        )
+
+    def reset_link_metrics(self, object_id: str = "") -> int:
+        return self._link_metrics.reset(str(object_id))
+
     def clear_completed(self) -> int:
         removable = [key for key, ticket in self._tickets.items() if ticket.done]
         for key in removable:
@@ -337,6 +395,7 @@ class PacketRuntime:
         self._trace.clear()
         self._breakpoints.clear()
         self._paused = False
+        self._link_metrics.reset()
 
     def _required_active(self, message_id: str) -> MessageTicket:
         ticket = self._tickets.get(str(message_id))
@@ -365,6 +424,12 @@ class PacketRuntime:
             dict(detail or {}),
         )
         self._trace.append(trace)
+        self._link_metrics.observe(
+            trace.event,
+            trace.message_id,
+            trace.object_id,
+            trace.timestamp,
+        )
         if len(self._trace) > self._max_trace_events:
             del self._trace[:len(self._trace) - self._max_trace_events]
         if self._event_sink is not None:

@@ -2,7 +2,7 @@
 
 Updated: 2026-08-09
 
-- Current release gate: 265 tests and 54 subtests pass; Ruff is clean; wheel and
+- Current release gate: 268 tests and 54 subtests pass; Ruff is clean; wheel and
   sdist build successfully on the project Python 3.11 environment.
 
 - `MC-CORE-PERFORMANCE-002` adds adaptive Full/Compact/Overview LOD, public
@@ -324,6 +324,12 @@ Updated: 2026-08-09
   timeline, details and controls; breakpoint badges render directly on canvas.
   Headless coverage includes 1,000 concurrent tickets and offscreen QA captures
   two paused messages plus a frozen packet at a splitter graph.
+- `MC-RUNTIME-PACKET-002` adds bounded, versioned packet replay fixtures and
+  per-link runtime diagnostics. Replays run through the real graph and report
+  structured status/route/event divergence. Link snapshots expose delivery,
+  in-flight/drop counters, throughput windows and latency avg/min/max/p50/p95.
+  Runtime Debugger adds Replay/Save controls plus a Links tab; repeatable visual
+  QA covers fan-out delivery and timeout attribution.
 - `MC-RUNTIME-WORKFLOW-001` adds the opt-in 29-component Workflow Pack and a
   deterministic Qt-free executor. Source/Sink boundaries, routing, timing and
   logic components compile from the portable document and support logical-time

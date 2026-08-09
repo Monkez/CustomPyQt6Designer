@@ -72,7 +72,7 @@ def render(path: Path) -> None:
     canvas.showRuntimeDebugger()
     debugger = canvas._runtime_debugger
     debugger.resize(650, 590)
-    debugger._tabs.setCurrentIndex(3)
+    debugger._tabs.setCurrentIndex(4)
     app.processEvents()
 
     margin = 18

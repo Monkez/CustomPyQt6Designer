@@ -425,6 +425,44 @@ payload, metadata và lỗi. Toolbar hỗ trợ Pause/Resume, Step, breakpoint t
 dict)`, `runtimeTraceEvent(dict)`, `runtimePausedChanged(bool)` và
 `runtimeBreakpointsChanged(list)` dùng để xây debugger riêng trong ứng dụng host.
 
+#### Replay fixture và link metrics
+
+Ticket đã kết thúc có thể được đóng gói thành fixture JSON portable. Fixture chứa
+input, options, expected terminal state, route và sequence sự kiện theo offset tương
+đối; không chứa graphics object, timer hoặc timestamp tuyệt đối. Khi replay trên
+graph hiện tại, comparator phát hiện route/status/event divergence. File được giới
+hạn 1 MiB và 10.000 event, validate trước khi chạy và lưu atomically.
+
+```python
+fixture = canvas.captureMessageReplay("alarm-1042", fixture_id="alarm-regression")
+canvas.saveMessageReplay("alarm-1042", "tests/alarm.packet-replay.json")
+
+loaded = canvas.loadMessageReplay("tests/alarm.packet-replay.json")
+replayed = canvas.replayMessage(
+    loaded,
+    message_id="alarm-regression-run-2",
+    travel_time=0.1,  # tùy chọn để test/QA nhanh hơn
+)
+
+canvas.runtimeReplayCompleted.connect(
+    lambda message_id, result: print(message_id, result["matched"], result["mismatches"])
+)
+```
+
+`runtimeLinkMetrics()` ghép từng `segment_started` với `segment_arrived` và trả về
+started/arrived/in-flight, failure/timeout/cancel, delivery rate, throughput theo
+cửa sổ thời gian cùng latency average/min/max/p50/p95. Sample được giới hạn bộ nhớ;
+metric là runtime state nên không làm dirty project. Tab **Links** của Runtime
+Debugger cho phép đổi cửa sổ 10 giây, 60 giây, 5 phút hoặc 15 phút, xem chi tiết và
+reset riêng link đang chọn hoặc toàn bộ.
+
+```python
+for metric in canvas.runtimeLinkMetrics(window=60):
+    print(metric["objectId"], metric["throughputPerSecond"], metric["latencyMs"]["p95"])
+
+canvas.resetRuntimeLinkMetrics("network-edge")
+```
+
 ### Splitter
 
 Splitter là junction có một input và 2–12 output, có ID và port như node. Packet

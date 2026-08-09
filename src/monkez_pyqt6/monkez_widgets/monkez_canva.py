@@ -114,8 +114,10 @@ from monkez_pyqt6.monkez_canva import (
     LayoutResult,
     LoadedPluginPackage,
     MessageTicket,
+    MAX_REPLAY_BYTES,
     OperationEvent,
     PacketRuntime,
+    PacketReplayFixture,
     RuntimeTraceEvent,
     WORKFLOW_COMPONENT_DEFINITIONS,
     WORKFLOW_PLUGIN_ID,
@@ -149,6 +151,7 @@ from monkez_pyqt6.monkez_canva import (
     record_recent_component,
     search_palette,
     decode_selection_payload,
+    decode_packet_replay,
     remap_selection_payload,
     verify_asset_manifest,
     SMART_GUIDES_KEY,
@@ -6683,6 +6686,16 @@ class _CanvasRuntimeDebugger(QDialog):
         cancel.setIcon(_canvas_icon("delete"))
         cancel.clicked.connect(self._cancel_selected)
         toolbar.addWidget(cancel)
+        replay = QPushButton("Replay")
+        replay.setIcon(_canvas_icon("refresh"))
+        replay.setToolTip("Replay the selected completed message and compare its route")
+        replay.clicked.connect(self._replay_selected)
+        toolbar.addWidget(replay)
+        save_replay = QToolButton()
+        save_replay.setIcon(_canvas_icon("save"))
+        save_replay.setToolTip("Save selected message as a portable replay fixture")
+        save_replay.clicked.connect(self._save_selected_replay)
+        toolbar.addWidget(save_replay)
         toolbar.addStretch(1)
         clear = QToolButton()
         clear.setIcon(_canvas_icon("refresh"))
@@ -6718,8 +6731,31 @@ class _CanvasRuntimeDebugger(QDialog):
         self._tabs.addTab(self._messages, "Messages")
         self._tabs.addTab(self._trace, "Timeline")
         self._tabs.addTab(workflow_page, "Workflow")
+        links_page = QWidget()
+        links_layout = QVBoxLayout(links_page)
+        links_layout.setContentsMargins(0, 0, 0, 0)
+        links_actions = QHBoxLayout()
+        links_actions.addWidget(QLabel("Throughput window"))
+        self._metrics_window = QComboBox()
+        for label, seconds in (("10 s", 10.0), ("60 s", 60.0), ("5 min", 300.0), ("15 min", 900.0)):
+            self._metrics_window.addItem(label, seconds)
+        self._metrics_window.setCurrentIndex(1)
+        self._metrics_window.currentIndexChanged.connect(self._refresh_links)
+        links_actions.addWidget(self._metrics_window)
+        links_actions.addStretch(1)
+        reset_links = QToolButton()
+        reset_links.setIcon(_canvas_icon("refresh"))
+        reset_links.setToolTip("Reset selected link metrics, or all metrics if none is selected")
+        reset_links.clicked.connect(self._reset_link_metrics)
+        links_actions.addWidget(reset_links)
+        links_layout.addLayout(links_actions)
+        self._links = QListWidget()
+        self._links.currentItemChanged.connect(self._sync_link_details)
+        links_layout.addWidget(self._links, 1)
+        self._tabs.addTab(links_page, "Links")
         self._bindings = QListWidget()
         self._tabs.addTab(self._bindings, "Bindings")
+        self._tabs.currentChanged.connect(self._sync_runtime_tab_details)
         root.addWidget(self._tabs, 1)
 
         details = QFrame()
@@ -6736,6 +6772,10 @@ class _CanvasRuntimeDebugger(QDialog):
             lambda _message_id, _snapshot: self._refresh_messages()
         )
         canvas.runtimeTraceEvent.connect(lambda _event: self._refresh_trace())
+        canvas.runtimeLinkMetricsChanged.connect(lambda _metrics: self._refresh_links())
+        canvas.runtimeReplayCompleted.connect(
+            lambda _message_id, _comparison: self._refresh_messages()
+        )
         canvas.runtimePausedChanged.connect(self._sync_pause_state)
         canvas.runtimeBreakpointsChanged.connect(
             lambda _breakpoints: self._refresh_trace()
@@ -6756,12 +6796,14 @@ class _CanvasRuntimeDebugger(QDialog):
         self._refresh_messages()
         self._refresh_trace()
         self._refresh_workflow()
+        self._refresh_links()
         self._refresh_bindings()
 
     def showEvent(self, event) -> None:
         self._refresh_messages()
         self._refresh_trace()
         self._refresh_workflow()
+        self._refresh_links()
         self._refresh_bindings()
         super().showEvent(event)
 
@@ -6827,6 +6869,38 @@ class _CanvasRuntimeDebugger(QDialog):
                 f"{event.get('nodeId', '')}  {event.get('connectorId', '')}{suffix}"
             )
 
+    def _refresh_links(self) -> None:
+        current = self._selected_link_id()
+        self._links.clear()
+        selected_row = -1
+        window = float(self._metrics_window.currentData() or 60.0)
+        for row, metric in enumerate(self.canvas.runtimeLinkMetrics(window=window)):
+            object_id = str(metric["objectId"])
+            latency = metric["latencyMs"]
+            color = (
+                "#dc2626" if metric["dropped"] else
+                "#2563eb" if metric["inFlight"] else "#0f9f8f"
+            )
+            item = QListWidgetItem(
+                _canvas_icon("connector", color),
+                f"{object_id}  ·  {metric['arrived']}/{metric['started']} delivered"
+                f"  ·  {metric['throughputPerSecond']:.2f}/s\n"
+                f"avg {latency['average']:.1f} ms  ·  p95 {latency['p95']:.1f} ms"
+                f"  ·  {metric['inFlight']} in flight  ·  {metric['dropped']} dropped",
+            )
+            item.setData(Qt.ItemDataRole.UserRole, object_id)
+            item.setToolTip(
+                f"Delivery rate: {metric['deliveryRate'] * 100:.1f}%\n"
+                f"Latency min/max: {latency['minimum']:.1f}/{latency['maximum']:.1f} ms\n"
+                f"Failed: {metric['failed']} · Timed out: {metric['timedOut']} · "
+                f"Cancelled: {metric['cancelled']}"
+            )
+            self._links.addItem(item)
+            if object_id == current:
+                selected_row = row
+        if selected_row >= 0:
+            self._links.setCurrentRow(selected_row)
+
     def _refresh_bindings(self) -> None:
         self._bindings.clear()
         colors = {
@@ -6885,8 +6959,32 @@ class _CanvasRuntimeDebugger(QDialog):
         item = self._messages.currentItem()
         return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
 
+    def _selected_link_id(self) -> str:
+        item = self._links.currentItem()
+        return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+
+    def _sync_link_details(self, current: QListWidgetItem | None, _previous=None) -> None:
+        if current is None or self._tabs.currentIndex() != 3:
+            return
+        metrics = self.canvas.runtimeLinkMetrics(
+            str(current.data(Qt.ItemDataRole.UserRole)),
+            window=float(self._metrics_window.currentData() or 60.0),
+        )
+        if not metrics:
+            return
+        metric = metrics[0]
+        latency = metric["latencyMs"]
+        self._details.setText(
+            f"<b>{metric['objectId']}</b> · {metric['arrived']}/{metric['started']} delivered"
+            f" · {metric['throughputPerSecond']:.2f} packets/s<br>"
+            f"Latency: avg {latency['average']:.1f} ms · p50 {latency['p50']:.1f} ms"
+            f" · p95 {latency['p95']:.1f} ms<br>"
+            f"In flight: {metric['inFlight']} · Failed: {metric['failed']} · "
+            f"Timed out: {metric['timedOut']} · Cancelled: {metric['cancelled']}"
+        )
+
     def _sync_details(self, current: QListWidgetItem | None, _previous=None) -> None:
-        if current is None:
+        if current is None or self._tabs.currentIndex() != 0:
             return
         ticket = self.canvas.messageTicket(
             str(current.data(Qt.ItemDataRole.UserRole))
@@ -6904,6 +7002,12 @@ class _CanvasRuntimeDebugger(QDialog):
             + (f"<br><span style='color:#dc2626'>{snapshot['error']}</span>"
                if snapshot["error"] else "")
         )
+
+    def _sync_runtime_tab_details(self, index: int) -> None:
+        if index == 0:
+            self._sync_details(self._messages.currentItem())
+        elif index == 3:
+            self._sync_link_details(self._links.currentItem())
 
     def _toggle_pause(self) -> None:
         if self.canvas.runtimePaused():
@@ -6940,9 +7044,45 @@ class _CanvasRuntimeDebugger(QDialog):
         if message_id:
             self.canvas.cancelMessage(message_id)
 
+    def _replay_selected(self) -> None:
+        message_id = self._selected_message_id()
+        ticket = self.canvas.messageTicket(message_id)
+        if ticket is None or not ticket.done:
+            self.canvas.diagnosticMessage.emit(
+                "Select a completed message ticket before replaying"
+            )
+            return
+        self.canvas.replayMessage(self.canvas.captureMessageReplay(message_id))
+
+    def _save_selected_replay(self) -> None:
+        message_id = self._selected_message_id()
+        ticket = self.canvas.messageTicket(message_id)
+        if ticket is None or not ticket.done:
+            self.canvas.diagnosticMessage.emit(
+                "Select a completed message ticket before saving a replay fixture"
+            )
+            return
+        path, _selected = QFileDialog.getSaveFileName(
+            self,
+            "Save packet replay fixture",
+            f"{message_id}.packet-replay.json",
+            "Packet replay (*.packet-replay.json);;JSON (*.json)",
+        )
+        if path:
+            self.canvas.saveMessageReplay(message_id, path)
+
     def _clear_completed(self) -> None:
         self.canvas.clearRuntimeHistory()
         self._refresh_messages()
+
+    def _reset_link_metrics(self) -> None:
+        object_id = self._selected_link_id()
+        count = self.canvas.resetRuntimeLinkMetrics(object_id)
+        scope = object_id or "all links"
+        self.canvas.diagnosticMessage.emit(
+            f"Reset packet metrics for {scope}: {count} record(s)"
+        )
+        self._refresh_links()
 
     def _run_workflow(self) -> None:
         executor = self.canvas.activeWorkflowExecutor()
@@ -7423,6 +7563,8 @@ class MonkezCanva(QWidget):
     runtimeTraceEvent = pyqtSignal(dict)
     runtimePausedChanged = pyqtSignal(bool)
     runtimeBreakpointsChanged = pyqtSignal(list)
+    runtimeLinkMetricsChanged = pyqtSignal(list)
+    runtimeReplayCompleted = pyqtSignal(str, dict)
     workflowTraceEvent = pyqtSignal(dict)
     workflowNodeStateChanged = pyqtSignal(str, str)
     workflowFinished = pyqtSignal(dict)
@@ -10948,6 +11090,11 @@ class MonkezCanva(QWidget):
         self.messageTicketChanged.emit(
             ticket.message_id, ticket.snapshot(trace.timestamp)
         )
+        if trace.event in (
+            "segment_started", "segment_arrived", "completed", "failed",
+            "timed_out", "cancelled",
+        ):
+            self.runtimeLinkMetricsChanged.emit(self.runtimeLinkMetrics())
 
     def messageTicket(self, message_id: str) -> MessageTicket | None:
         return self._packet_runtime.ticket(message_id)
@@ -10969,6 +11116,113 @@ class MonkezCanva(QWidget):
                 message_id=message_id, event=event, limit=limit
             )
         ]
+
+    def captureMessageReplay(
+        self, message_id: str, *, fixture_id: str = ""
+    ) -> dict[str, Any]:
+        """Capture one completed packet as a portable deterministic fixture."""
+
+        return self._packet_runtime.capture_replay(
+            message_id, fixture_id=fixture_id
+        ).to_dict()
+
+    def saveMessageReplay(
+        self, message_id: str, path: str | Path, *, fixture_id: str = ""
+    ) -> str:
+        target = atomic_write_json(
+            path, self.captureMessageReplay(message_id, fixture_id=fixture_id)
+        )
+        self.diagnosticMessage.emit(f"Saved packet replay fixture: {target}")
+        return str(target)
+
+    def loadMessageReplay(self, source: str | Path | bytes | Mapping[str, Any]) -> dict[str, Any]:
+        """Load and validate a replay fixture without starting a packet."""
+
+        payload: bytes | str | Mapping[str, Any]
+        if isinstance(source, Path):
+            if source.stat().st_size > MAX_REPLAY_BYTES:
+                raise ValueError("Packet replay fixture is too large")
+            payload = source.read_bytes()
+        elif isinstance(source, str) and not source.lstrip().startswith("{"):
+            try:
+                candidate = Path(source)
+                if candidate.is_file():
+                    if candidate.stat().st_size > MAX_REPLAY_BYTES:
+                        raise ValueError("Packet replay fixture is too large")
+                    payload = candidate.read_bytes()
+                else:
+                    payload = source
+            except OSError:
+                payload = source
+        else:
+            payload = source
+        return decode_packet_replay(payload).to_dict()
+
+    def replayMessage(
+        self,
+        fixture: PacketReplayFixture | str | Path | bytes | Mapping[str, Any],
+        *,
+        message_id: str = "",
+        travel_time: float | None = None,
+        compare: bool = True,
+    ) -> MessageTicket:
+        """Replay a fixture against the current graph and report divergence."""
+
+        if isinstance(fixture, PacketReplayFixture):
+            replay = fixture
+        else:
+            replay = decode_packet_replay(self.loadMessageReplay(fixture))
+        resolved_id = str(
+            message_id or f"{replay.fixture_id}-{uuid.uuid4().hex[:6]}"
+        )
+        metadata = dict(replay.metadata)
+        metadata["_monkezReplayFixture"] = replay.fixture_id
+        ticket = self.sendMessageTicket(
+            replay.entry_id,
+            message_id=resolved_id,
+            payload=replay.payload,
+            metadata=metadata,
+            priority=replay.priority,
+            ttl=replay.ttl,
+            timeout=replay.timeout,
+            branch_policy=replay.branch_policy,
+            break_on_arrival=replay.break_on_arrival,
+            travel_time=travel_time,
+        )
+        if compare:
+            def finish_replay(changed_id: str, snapshot: dict[str, Any]) -> None:
+                if changed_id != resolved_id or snapshot.get("status") not in (
+                    "completed", "cancelled", "failed", "timed_out",
+                ):
+                    return
+                self.messageTicketChanged.disconnect(finish_replay)
+                comparison = self._packet_runtime.compare_replay(
+                    replay, resolved_id
+                ).to_dict()
+                self.runtimeReplayCompleted.emit(resolved_id, comparison)
+                result = "matched" if comparison["matched"] else "diverged"
+                self.diagnosticMessage.emit(
+                    f"Packet replay {resolved_id}: {result}"
+                )
+
+            if ticket.done:
+                comparison = self._packet_runtime.compare_replay(
+                    replay, resolved_id
+                ).to_dict()
+                self.runtimeReplayCompleted.emit(resolved_id, comparison)
+            else:
+                self.messageTicketChanged.connect(finish_replay)
+        return ticket
+
+    def runtimeLinkMetrics(
+        self, object_id: str = "", *, window: float = 60.0
+    ) -> list[dict[str, Any]]:
+        return list(self._packet_runtime.link_metrics(object_id, window=window))
+
+    def resetRuntimeLinkMetrics(self, object_id: str = "") -> int:
+        count = self._packet_runtime.reset_link_metrics(object_id)
+        self.runtimeLinkMetricsChanged.emit(self.runtimeLinkMetrics())
+        return count
 
     def runtimePaused(self) -> bool:
         return self._packet_runtime.paused

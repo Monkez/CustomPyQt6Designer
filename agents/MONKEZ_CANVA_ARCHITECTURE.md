@@ -91,6 +91,16 @@ the queue with breakpoint bypass and returns tickets to in-flight state. The
 detached `_CanvasRuntimeDebugger` is only a signal/API client and owns no runtime
 truth, allowing applications to replace it with their own debugger safely.
 
+`monkez_canva/packet_diagnostics.py` owns the diagnostic projection. Portable
+`PacketReplayFixture` records JSON-only inputs and expected relative event/route
+signatures; decoding is versioned and bounded before allocation. Replaying still
+uses the normal `PacketRuntime`/Canvas route, then `PacketReplayComparison` reports
+status, route or event divergence. It never injects a captured trace as truth.
+`PacketLinkMetricsTracker` pairs segment events by `(message, connector)`, attributes
+terminal drops to every pending segment and keeps bounded latency/arrival samples.
+The Qt debugger reads public snapshots and emits no metric mutations except an
+explicit reset, so headless hosts receive identical counters and percentiles.
+
 Selection is an ordered ID set exposed by `selectedElementIds()` and
 `selectionSetChanged(list)`. Alignment is one document mutation even though it
 moves several graphics items, so autosave and Undo receive one coherent state.
