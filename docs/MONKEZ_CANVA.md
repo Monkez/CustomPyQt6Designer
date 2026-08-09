@@ -54,6 +54,35 @@ tên; thanh tab dùng icon 16 px, hover rất nhẹ và selected state không c�
 đóng khung như một button. Tab active chỉ đổi icon/chữ sang coral và hiện
 một vạch ngắn 2 px căn giữa, giúp thanh tab thoáng và không nhảy bố cục.
 
+## Hiệu năng scene lớn và LOD
+
+Tab **View > Rendering** có ba chế độ:
+
+- **Auto**: giữ full detail khi làm việc gần, chuyển sang silhouette gọn khi
+  zoom xa hoặc scene có từ 1.000/10.000 object;
+- **Quality**: luôn vẽ label, port, plugin renderer, bridge và visual effect;
+- **Speed**: ưu tiên thao tác trên scene rất lớn hoặc GPU yếu.
+
+Auto không làm mất ngữ nghĩa tương tác: object đang chọn vẫn full detail,
+packet đang truyền vẫn hiển thị, còn export PNG/SVG/PDF luôn dùng Quality.
+Grid tự giãn bước vẽ theo lũy thừa khi zoom xa để không tạo nhiễu,
+nhưng `gridSize` dùng cho snap và dữ liệu project không thay đổi.
+Policy và metrics không ghi vào document, do đó không làm dirty project.
+
+```python
+canvas.setPerformanceMode("auto")  # auto | quality | speed
+print(canvas.performanceMode())
+print(canvas.performanceStats())
+print(canvas.renderProfileForLod(0.2, object_count=10_000))
+canvas.resetPerformanceStats()
+```
+
+Chạy `benchmark_canva.bat` để tạo `canva_performance.json` và log trực tiếp
+cho các scene 100, 1.000, 10.000 node. Baseline Windows/Python 3.11/Qt 6.4.2
+ngày 2026-08-09 ghi nhận load lần lượt khoảng 55 ms, 556 ms, 6,6 s;
+frame overview 10.000 node vẽ 1.672 item nhìn thấy trong khoảng 33 ms.
+Số liệu gốc nằm trong `docs/benchmarks/MONKEZ_CANVA_PERFORMANCE_2026-08-09.json`.
+
 Có thể phân bố đều từ ba element trở lên:
 
 ```python

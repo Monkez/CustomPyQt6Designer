@@ -9,6 +9,15 @@ test.bat
 build.bat
 ```
 
+## MonkezCanva large-scene baseline
+
+Run `benchmark_canva.bat` from the repository root. It uses the managed Python
+3.11 environment, exercises native 100/1,000/10,000-node scenes at detail and
+overview zoom, streams output into `canva_performance.log` and writes structured
+metrics to `canva_performance.json`. Compare frame metrics only when viewport,
+Python, Qt, OS and connector option match. The release baseline is retained in
+`docs/benchmarks/`.
+
 - `setup.bat` tạo môi trường Python 3.11 và cài runtime, Designer, camera, build,
   lint trong cùng một virtual environment.
 - `lint.bat` kiểm tra lỗi cú pháp, import/biến không dùng và các lỗi Python tĩnh

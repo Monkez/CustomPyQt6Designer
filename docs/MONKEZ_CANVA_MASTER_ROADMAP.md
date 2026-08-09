@@ -97,6 +97,23 @@ Visible-scene culling bounds repaint work; hidden decorative animation and loops
 pause, while explicitly sent packets still finish and release blocking callers.
 Runtime metrics and a configurable frame interval support profiling.
 
+### 1.6 Large-scene rendering and measurable performance
+
+Completed (2026-08-09): `MC-CORE-PERFORMANCE-002` adds a Qt-free render policy
+with Full, Compact and Overview tiers. Auto mode resolves a tier from zoom,
+selection and 1,000/10,000-object pressure; Quality and Speed are explicit
+overrides. Elements, groups and connectors omit labels, ports, plugin internals,
+crossing bridges and decorative effects only when their profile allows it.
+Selected objects retain detail in Auto, active packets remain visible at every
+tier and export forces transactional full-quality rendering.
+
+Document attachment now batches graphics creation, visibility reconciliation,
+parallel-edge updates and notifications instead of doing global work per item.
+The public frame tracker reports bounded average/p95/max paint time, visible paint
+counts and tier counts. `benchmark_canva.bat` produces a machine-readable baseline
+for 100, 1,000 and 10,000 real `QGraphicsItem` nodes. The first committed Windows
+baseline is stored under `docs/benchmarks/`.
+
 ## Phase 2 — Professional editor UX
 
 Completed slice (2026-08-09): versioned graph clipboard with internal-connector
@@ -299,7 +316,7 @@ unload. A standalone portable package example documents the complete contract.
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;
-- performance scenarios at 100, 1,000 and 10,000 nodes;
+- performance scenarios at 100, 1,000 and 10,000 nodes â€” complete baseline;
 - packet scenarios at 10, 100 and 1,000 concurrent messages;
 - keyboard-only editor paths and high-DPI visual checks;
 - no timers, movies or resources left active after object deletion;

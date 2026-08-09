@@ -94,6 +94,7 @@ Các script tiện dụng:
 | `canva_demo.bat` | Chạy MonkezCanva demo; nhấn `Ctrl+D`, sau đó `E` để edit. |
 | `splash_demo.bat` | Chạy demo splash screen thiết kế bằng Designer. |
 | `benchmark_splash.bat` | Đo thời gian import và paint đầu. |
+| `benchmark_canva.bat` | Benchmark scene Canvas 100, 1.000, 10.000 node và xuất JSON/log. |
 | `build_splash_demo.bat` | Build và xác minh app EXE demo tải nền nặng. |
 | `run_splash_exe_demo.bat` | Mở app EXE demo tải nền nặng. |
 | `test.bat` | Chạy toàn bộ test ở chế độ không cần màn hình. |

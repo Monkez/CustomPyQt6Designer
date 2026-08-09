@@ -358,6 +358,17 @@ same lifecycle and unload restores safe placeholders without replacing IDs.
 Next: ecosystem completion audit, large-scene performance/LOD profiling and
 optional external data-adapter packaging boundaries.
 
+### Large-scene performance progress â€” 2026-08-09
+
+`MC-CORE-PERFORMANCE-002` completes the missing 100/1,000/10,000-node quality
+gate with deterministic Full/Compact/Overview profiles, a public bounded frame
+tracker, Control Pane mode selection, export-quality isolation and coalesced
+full-document graphics projection. The reproducible native benchmark and committed
+environment-tagged JSON baseline make later regressions directly comparable.
+
+Next: optional external data-adapter package contract, then packet replay/link
+metrics and recurring workflow scheduling/backpressure slices.
+
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
 selected icon color, field focus states, card title clearance and JSON editor

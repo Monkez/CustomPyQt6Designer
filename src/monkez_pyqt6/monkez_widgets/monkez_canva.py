@@ -98,6 +98,7 @@ from monkez_pyqt6.monkez_canva import (
     TemplateCatalog,
     normalize_template_id,
     CanvasPageConfig,
+    CanvasPerformancePolicy,
     DataBindingEngine,
     DocumentDiagnosticsReport,
     DocumentDiff,
@@ -123,6 +124,8 @@ from monkez_pyqt6.monkez_canva import (
     PaletteEntry,
     PluginPackageCandidate,
     PluginTrustStore,
+    PerformanceTracker,
+    RenderProfile,
     CANVAS_CLIPBOARD_MIME_TYPE,
     atomic_write_json,
     backup_path,
@@ -166,6 +169,8 @@ from monkez_pyqt6.monkez_canva import (
     normalize_port_record,
     validate_port_value,
     unload_plugin_package,
+    adaptive_grid_step,
+    estimate_transform_lod,
     parallel_lane_offset,
     segment_intersection,
 )
@@ -771,7 +776,11 @@ class _CanvasScene(QGraphicsScene):
             painter.restore()
         if not self.canvas.gridVisible:
             return
-        size = self.canvas.gridSize
+        transform = painter.worldTransform()
+        lod = estimate_transform_lod(
+            transform.m11(), transform.m12(), transform.m21(), transform.m22()
+        )
+        size = adaptive_grid_step(self.canvas.gridSize, lod)
         left = math.floor(rect.left() / size) * size
         top = math.floor(rect.top() / size) * size
         minor = QColor(self.canvas.gridColor)
@@ -968,11 +977,23 @@ class _CanvasElement(QGraphicsObject):
         self.update()
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        profile = self.canvas._render_profile(
+            painter, selected=self.isSelected(), has_packets=bool(self._packets)
+        )
+        self.canvas._record_rendered_item("element", profile.tier)
+        painter.setRenderHint(
+            QPainter.RenderHint.Antialiasing, profile.draw_details
+        )
         rect = self._rect.adjusted(2, 2, -2, -2)
         outline = self._highlight if self._highlight.isValid() else self.color
         painter.setPen(QPen(outline, 2.0))
         painter.setBrush(self.background)
+
+        if not profile.draw_details:
+            self._paint_reduced_detail(painter, rect, outline, profile)
+            if self.isSelected():
+                self._paint_selection_handles(painter, rect)
+            return
 
         if self.definition is not None and self.definition.renderer_factory is not None:
             try:
@@ -1068,10 +1089,7 @@ class _CanvasElement(QGraphicsObject):
             painter.drawText(rect.adjusted(10, 6, -10, -6), Qt.AlignmentFlag.AlignCenter, self.text)
 
         if self.isSelected():
-            painter.setBrush(QColor("#ffffff"))
-            painter.setPen(QPen(QColor("#2563eb"), 1.5))
-            for point in (rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()):
-                painter.drawRect(QRectF(point.x() - 4, point.y() - 4, 8, 8))
+            self._paint_selection_handles(painter, rect)
         if self.definition is not None and "workflow" in self.definition.capabilities:
             _paint_workflow_state(
                 painter,
@@ -1080,6 +1098,57 @@ class _CanvasElement(QGraphicsObject):
             )
         if self.canvas._has_runtime_breakpoint(self.element_id):
             _paint_breakpoint_badge(painter, rect.topRight() + QPointF(-7, 7))
+
+    def _paint_reduced_detail(
+        self,
+        painter: QPainter,
+        rect: QRectF,
+        outline: QColor,
+        profile: RenderProfile,
+    ) -> None:
+        """Draw a stable silhouette while omitting expensive item internals."""
+
+        if self.kind == "line":
+            self._paint_line(painter, rect, profile=profile)
+            return
+        if self.kind in ("image", "animated_image") and profile.draw_text:
+            self._paint_media(painter, rect, smooth=False)
+            return
+        painter.setPen(QPen(outline, 1.6))
+        painter.setBrush(self.background)
+        if self.kind in ("ellipse", "splitter"):
+            painter.drawEllipse(rect)
+        elif self.kind == "diamond":
+            path = QPainterPath(QPointF(rect.center().x(), rect.top()))
+            path.lineTo(QPointF(rect.right(), rect.center().y()))
+            path.lineTo(QPointF(rect.center().x(), rect.bottom()))
+            path.lineTo(QPointF(rect.left(), rect.center().y()))
+            path.closeSubpath()
+            painter.drawPath(path)
+        elif self.kind == "triangle":
+            path = QPainterPath(QPointF(rect.center().x(), rect.top()))
+            path.lineTo(rect.bottomRight())
+            path.lineTo(rect.bottomLeft())
+            path.closeSubpath()
+            painter.drawPath(path)
+        else:
+            painter.drawRoundedRect(rect, 7, 7)
+        if profile.draw_text:
+            painter.setPen(self.text_color)
+            painter.drawText(
+                rect.adjusted(7, 4, -7, -4),
+                Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                self.text,
+            )
+
+    @staticmethod
+    def _paint_selection_handles(painter: QPainter, rect: QRectF) -> None:
+        painter.setBrush(QColor("#ffffff"))
+        painter.setPen(QPen(QColor("#2563eb"), 1.5))
+        for point in (
+            rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()
+        ):
+            painter.drawRect(QRectF(point.x() - 4, point.y() - 4, 8, 8))
 
     def _paint_centered_text(self, painter: QPainter, rect: QRectF) -> None:
         painter.setPen(self.text_color)
@@ -1187,7 +1256,9 @@ class _CanvasElement(QGraphicsObject):
             side = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}[side]
         return self._port_triangle_path(point, side)
 
-    def _paint_media(self, painter: QPainter, rect: QRectF) -> None:
+    def _paint_media(
+        self, painter: QPainter, rect: QRectF, *, smooth: bool = True
+    ) -> None:
         pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
         painter.drawRoundedRect(rect, 8, 8)
         if pixmap.isNull():
@@ -1197,7 +1268,11 @@ class _CanvasElement(QGraphicsObject):
         scaled = pixmap.scaled(
             rect.size().toSize(),
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            (
+                Qt.TransformationMode.SmoothTransformation
+                if smooth
+                else Qt.TransformationMode.FastTransformation
+            ),
         )
         target = QRectF(
             rect.center().x() - scaled.width() / 2,
@@ -1207,7 +1282,13 @@ class _CanvasElement(QGraphicsObject):
         )
         painter.drawPixmap(target, scaled, QRectF(scaled.rect()))
 
-    def _paint_line(self, painter: QPainter, rect: QRectF) -> None:
+    def _paint_line(
+        self,
+        painter: QPainter,
+        rect: QRectF,
+        *,
+        profile: RenderProfile | None = None,
+    ) -> None:
         points = self.points
         if not points:
             points = [QPointF(rect.left(), rect.center().y()), QPointF(rect.right(), rect.center().y())]
@@ -1226,17 +1307,19 @@ class _CanvasElement(QGraphicsObject):
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
-        if self.animated:
+        draw_effects = profile is None or profile.draw_effects
+        draw_decorations = profile is None or profile.draw_connector_decorations
+        if self.animated and draw_effects:
             _paint_path_effect(
                 painter, path, self.animation_effect, self.flow_color,
                 self.line_width, self._line_phase, self.flow_spacing,
                 self.effect_intensity,
             )
-        if self._packets:
+        if self._packets and draw_effects:
             _paint_packets(painter, path, self._packets)
-        if self.arrow_start and len(points) > 1:
+        if self.arrow_start and len(points) > 1 and draw_decorations:
             self._paint_line_arrow(painter, points[0], points[1])
-        if self.arrow_end and len(points) > 1:
+        if self.arrow_end and len(points) > 1 and draw_decorations:
             self._paint_line_arrow(painter, points[-1], points[-2])
 
     def _animation_active(self) -> bool:
@@ -1531,7 +1614,11 @@ class _CanvasGroup(QGraphicsObject):
         self.setCursor(Qt.CursorShape.SizeAllCursor if movable else Qt.CursorShape.ArrowCursor)
 
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        profile = self.canvas._render_profile(painter, selected=self.isSelected())
+        self.canvas._record_rendered_item("group", profile.tier)
+        painter.setRenderHint(
+            QPainter.RenderHint.Antialiasing, profile.draw_details
+        )
         rect = QRectF(0, 0, self._rect.width(), self.display_height)
         surface = QColor(self.background)
         surface.setAlpha(226 if self.kind == "subflow" else 178)
@@ -1546,6 +1633,19 @@ class _CanvasGroup(QGraphicsObject):
         painter.setPen(pen)
         painter.setBrush(surface)
         painter.drawRoundedRect(rect, 13, 13)
+
+        if not profile.draw_details:
+            if profile.draw_text:
+                painter.setPen(QColor("#27323a"))
+                font = QFont(painter.font())
+                font.setBold(True)
+                painter.setFont(font)
+                painter.drawText(
+                    rect.adjusted(12, 0, -12, 0),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    self.text,
+                )
+            return
 
         header_height = min(42.0, rect.height())
         header = QPainterPath()
@@ -1823,6 +1923,8 @@ class _CanvasConnector(QGraphicsObject):
         return result
 
     def _lane_offset(self) -> float:
+        if self.canvas._bulk_rendering:
+            return 0.0
         siblings = [
             connector_id
             for connector_id, connector in self.canvas._connectors.items()
@@ -1935,7 +2037,13 @@ class _CanvasConnector(QGraphicsObject):
         super().mouseDoubleClickEvent(event)
 
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        profile = self.canvas._render_profile(
+            painter, selected=self.isSelected(), has_packets=bool(self._packets)
+        )
+        self.canvas._record_rendered_item("connector", profile.tier)
+        painter.setRenderHint(
+            QPainter.RenderHint.Antialiasing, profile.draw_details
+        )
         if self.isSelected():
             painter.setPen(QPen(QColor(37, 99, 235, 80), self.line_width + 7, Qt.PenStyle.SolidLine))
             painter.drawPath(self._path)
@@ -1950,7 +2058,7 @@ class _CanvasConnector(QGraphicsObject):
             pen.setStyle(Qt.PenStyle.DashDotLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        if self.bus_style in ("trunk", "double"):
+        if self.bus_style in ("trunk", "double") and profile.draw_details:
             bus_pen = QPen(pen)
             bus_pen.setStyle(Qt.PenStyle.SolidLine)
             bus_pen.setWidthF(max(self.line_width, self.bus_width))
@@ -1967,21 +2075,21 @@ class _CanvasConnector(QGraphicsObject):
                 painter.drawPath(self._path)
         else:
             painter.drawPath(self._path)
-        if self.animated:
+        if self.animated and profile.draw_effects:
             _paint_path_effect(
                 painter, self._path, self.animation_effect, self.flow_color,
                 self.line_width, self._flow_phase, self.flow_spacing,
                 self.effect_intensity,
             )
-        if self.bridge_crossings:
+        if self.bridge_crossings and profile.draw_connector_decorations:
             self._paint_crossing_bridges(painter, pen)
-        if self._packets:
+        if self._packets and profile.draw_effects:
             _paint_packets(painter, self._path, self._packets)
-        if self.arrow_start:
+        if self.arrow_start and profile.draw_connector_decorations:
             self._paint_arrow(painter, 0.0)
-        if self.arrow_end:
+        if self.arrow_end and profile.draw_connector_decorations:
             self._paint_arrow(painter, 1.0)
-        if self.label:
+        if self.label and profile.draw_connector_labels:
             point = self._path.pointAtPercent(self.label_position)
             metrics = painter.fontMetrics()
             text_rect = metrics.boundingRect(self.label).adjusted(-7, -4, 7, 4)
@@ -1991,7 +2099,10 @@ class _CanvasConnector(QGraphicsObject):
             painter.drawRoundedRect(QRectF(text_rect), 6, 6)
             painter.setPen(QColor("#334155"))
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self.label)
-        if self.canvas._has_runtime_breakpoint(self.connector_id):
+        if (
+            profile.draw_connector_decorations
+            and self.canvas._has_runtime_breakpoint(self.connector_id)
+        ):
             _paint_breakpoint_badge(
                 painter, self._path.pointAtPercent(0.5) + QPointF(0, -16)
             )
@@ -4715,6 +4826,31 @@ class _CanvasEditorToolbox(QDialog):
         navigation_layout.addLayout(move_row, 2, 0, 1, 3)
         layout.addWidget(navigation)
 
+        performance = _CanvasCardGroup("Rendering")
+        performance_layout = QVBoxLayout(performance)
+        self._performance_mode_combo = QComboBox()
+        for label, value in (
+            ("Auto (recommended)", "auto"),
+            ("Quality", "quality"),
+            ("Speed", "speed"),
+        ):
+            self._performance_mode_combo.addItem(label, value)
+        self._performance_mode_combo.setToolTip(
+            "Auto reduces detail only when zoomed out or when the scene is large"
+        )
+        self._performance_mode_combo.currentIndexChanged.connect(
+            self._change_performance_mode
+        )
+        self._performance_hint = QLabel()
+        self._performance_hint.setObjectName("canvasSelectionHint")
+        self._performance_hint.setWordWrap(True)
+        performance_layout.addWidget(self._performance_mode_combo)
+        performance_layout.addWidget(self._performance_hint)
+        layout.addWidget(performance)
+        self.canvas.performanceModeChanged.connect(
+            lambda _mode: self._sync_performance_controls()
+        )
+
         auto_layout = _CanvasCardGroup("Auto layout")
         auto_layout_grid = QGridLayout(auto_layout)
         self._layout_strategy_combo = QComboBox()
@@ -5064,6 +5200,7 @@ class _CanvasEditorToolbox(QDialog):
             self._smart_guides_check,
             self._snap_distance_field,
             self._minimap_check,
+            self._performance_mode_combo,
             *self._snap_checks.values(),
         )
         blockers = [QSignalBlocker(widget) for widget in widgets]
@@ -5077,8 +5214,28 @@ class _CanvasEditorToolbox(QDialog):
         self._smart_guides_check.setChecked(self.canvas.smartGuidesVisible())
         self._snap_distance_field.setValue(self.canvas.snapDistance())
         self._minimap_check.setChecked(self.canvas.minimapVisible())
+        self._sync_performance_controls()
         self._sync_viewport_bookmarks()
         del blockers
+
+    def _change_performance_mode(self, _index: int = -1) -> None:
+        mode = self._performance_mode_combo.currentData()
+        if mode:
+            self.canvas.setPerformanceMode(str(mode))
+        self._sync_performance_controls()
+
+    def _sync_performance_controls(self) -> None:
+        mode = self.canvas.performanceMode()
+        blocker = QSignalBlocker(self._performance_mode_combo)
+        index = self._performance_mode_combo.findData(mode)
+        self._performance_mode_combo.setCurrentIndex(max(0, index))
+        del blocker
+        hints = {
+            "auto": "Full detail nearby; compact silhouettes when zoomed out.",
+            "quality": "Always render every label, port and visual effect.",
+            "speed": "Minimal rendering for very large or low-power displays.",
+        }
+        self._performance_hint.setText(hints[mode])
 
     def _update_snap_targets(self, _checked: bool = False) -> None:
         self.canvas.setSnapTargets(
@@ -6756,6 +6913,8 @@ class _CanvasView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAcceptDrops(True)
+        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
         self._right_pan_active = False
         self._right_pan_origin = None
         self._right_pan_start = None
@@ -6770,6 +6929,27 @@ class _CanvasView(QGraphicsView):
         self._connection_preview.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self._connection_preview.hide()
         scene.addItem(self._connection_preview)
+
+    def paintEvent(self, event) -> None:
+        tracker = getattr(self.canvas, "_performance_tracker", None)
+        if tracker is None:
+            super().paintEvent(event)
+            return
+        tracker.begin_frame()
+        started = time.perf_counter_ns()
+        try:
+            super().paintEvent(event)
+        finally:
+            elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000.0
+            transform = self.transform()
+            lod = estimate_transform_lod(
+                transform.m11(), transform.m12(), transform.m21(), transform.m22()
+            )
+            tracker.finish_frame(
+                elapsed_ms,
+                object_count=self.canvas._performance_object_count(),
+                lod=lod,
+            )
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -7088,6 +7268,7 @@ class MonkezCanva(QWidget):
     projectPluginsDiscovered = pyqtSignal(list)
     projectPluginTrustChanged = pyqtSignal(str, bool, str)
     projectPluginLoadFailed = pyqtSignal(str, str)
+    performanceModeChanged = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -7142,8 +7323,12 @@ class MonkezCanva(QWidget):
         self._last_recovery_source = ""
         self._asset_integrity_issues: list[str] = []
         self._restoring = False
+        self._bulk_rendering = False
         self._document_render_notification = False
         self._animations: dict[str, QPropertyAnimation] = {}
+        self._performance_policy = CanvasPerformancePolicy()
+        self._performance_tracker = PerformanceTracker()
+        self._force_quality_render = False
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
         self._groups: dict[str, _CanvasGroup] = {}
@@ -7281,6 +7466,77 @@ class MonkezCanva(QWidget):
 
     def animationFrameInterval(self) -> int:
         return self._animation_scheduler.timer.interval()
+
+    def setPerformanceMode(self, mode: str) -> None:
+        """Select ``auto``, ``quality`` or ``speed`` rendering for this view."""
+
+        updated = self._performance_policy.with_mode(mode)
+        if updated == self._performance_policy:
+            return
+        self._performance_policy = updated
+        self._performance_tracker.reset()
+        self._view.viewport().update()
+        self.performanceModeChanged.emit(updated.mode)
+        self.diagnosticMessage.emit(
+            f"Canvas performance mode changed: {updated.mode}"
+        )
+
+    def performanceMode(self) -> str:
+        return self._performance_policy.mode
+
+    def performanceStats(self) -> dict[str, Any]:
+        """Return bounded viewport render timings and LOD paint counts."""
+
+        result = self._performance_tracker.snapshot()
+        result["mode"] = self._performance_policy.mode
+        return result
+
+    def resetPerformanceStats(self) -> None:
+        self._performance_tracker.reset()
+
+    def renderProfileForLod(
+        self,
+        lod: float,
+        *,
+        object_count: int | None = None,
+        selected: bool = False,
+        has_packets: bool = False,
+    ) -> dict[str, bool | str]:
+        """Resolve the public Qt-free render contract for diagnostics/tests."""
+
+        count = self._performance_object_count() if object_count is None else object_count
+        return self._performance_policy.resolve(
+            lod, count, selected=selected, has_packets=has_packets
+        ).to_dict()
+
+    def _performance_object_count(self) -> int:
+        return len(self._elements) + len(self._connectors) + len(self._groups)
+
+    def _render_profile(
+        self,
+        painter: QPainter,
+        *,
+        selected: bool = False,
+        has_packets: bool = False,
+    ) -> RenderProfile:
+        transform = painter.worldTransform()
+        lod = estimate_transform_lod(
+            transform.m11(), transform.m12(), transform.m21(), transform.m22()
+        )
+        policy = (
+            self._performance_policy.with_mode("quality")
+            if self._force_quality_render
+            else self._performance_policy
+        )
+        return policy.resolve(
+            lod,
+            self._performance_object_count(),
+            selected=selected,
+            has_packets=has_packets,
+        )
+
+    def _record_rendered_item(self, kind: str, tier: str) -> None:
+        self._performance_tracker.record_paint(kind, tier)
 
     def elementRegistry(self) -> ElementRegistry:
         """Return this canvas' component registry."""
@@ -8288,12 +8544,13 @@ class MonkezCanva(QWidget):
         item.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(item)
         self._elements[element_id] = item
-        self._sync_object_states()
-        if self._edit_mode:
-            self._scene.clearSelection()
-            item.setSelected(True)
-        self.elementAdded.emit(element_id)
-        self.documentChanged.emit()
+        if not self._bulk_rendering:
+            self._sync_object_states()
+            if self._edit_mode:
+                self._scene.clearSelection()
+                item.setSelected(True)
+            self.elementAdded.emit(element_id)
+            self.documentChanged.emit()
         return element_id
 
     def addText(self, text: str, x: float = 0, y: float = 0, **options) -> str:
@@ -9742,7 +9999,7 @@ class MonkezCanva(QWidget):
             raise KeyError("Both connector endpoints must exist")
         source_port = str(options.get("sourcePort", ""))
         target_port = str(options.get("targetPort", ""))
-        if source.supports_ports and target.supports_ports and (
+        if not self._bulk_rendering and source.supports_ports and target.supports_ports and (
             not source_port or not target_port
         ):
             source_candidates = (
@@ -9771,15 +10028,16 @@ class MonkezCanva(QWidget):
                         break
                 if source_port and target_port:
                     break
-        if source.supports_ports and not source_port:
+        if not self._bulk_rendering and source.supports_ports and not source_port:
             source_port = next(
                 (port["id"] for port in source.ports if port["mode"] in ("output", "free")), ""
             )
-        if target.supports_ports and not target_port:
+        if not self._bulk_rendering and target.supports_ports and not target_port:
             target_port = next(
                 (port["id"] for port in target.ports if port["mode"] in ("input", "free")), ""
             )
-        self._validate_connection_ports(source, source_port, target, target_port)
+        if not self._bulk_rendering:
+            self._validate_connection_ports(source, source_port, target, target_port)
         options["sourcePort"] = source_port
         options["targetPort"] = target_port
         connector_id = str(connector_id or uuid.uuid4().hex[:10])
@@ -9800,12 +10058,15 @@ class MonkezCanva(QWidget):
         connector.packetArrived.connect(self._on_packet_arrived)
         self._scene.addItem(connector)
         self._connectors[connector_id] = connector
-        for sibling in self._connectors.values():
-            if {sibling.source.element_id, sibling.target.element_id} == {source_id, target_id}:
-                sibling.updatePath()
-        self._sync_object_states()
-        self.connectorAdded.emit(connector_id)
-        self.documentChanged.emit()
+        if not self._bulk_rendering:
+            for sibling in self._connectors.values():
+                if {sibling.source.element_id, sibling.target.element_id} == {
+                    source_id, target_id
+                }:
+                    sibling.updatePath()
+            self._sync_object_states()
+            self.connectorAdded.emit(connector_id)
+            self.documentChanged.emit()
         return connector_id
 
     def _validate_connection_ports(
@@ -11165,22 +11426,38 @@ class MonkezCanva(QWidget):
     def clear(self) -> None:
         if self._restoring:
             self.clearDataBindingRuntime()
-        element_ids = list(self._elements)
-        group_ids = list(self._groups)
-        use_macro = not self._restoring and len(element_ids) + len(group_ids) > 1
-        if use_macro:
-            self.beginCommandMacro("Clear canvas")
-        try:
-            for element_id in element_ids:
-                self.removeElement(element_id)
-            for group_id in group_ids:
-                if self._restoring:
-                    self._remove_group_graphics(group_id)
-                else:
-                    self.removeGroup(group_id)
-        finally:
+        if self._bulk_rendering:
+            for connector in tuple(self._connectors.values()):
+                connector.release()
+                self._scene.removeItem(connector)
+                connector.deleteLater()
+            self._connectors.clear()
+            for item in tuple(self._elements.values()):
+                item.release()
+                self._scene.removeItem(item)
+                item.deleteLater()
+            self._elements.clear()
+            for group in tuple(self._groups.values()):
+                self._scene.removeItem(group)
+                group.deleteLater()
+            self._groups.clear()
+        else:
+            element_ids = list(self._elements)
+            group_ids = list(self._groups)
+            use_macro = not self._restoring and len(element_ids) + len(group_ids) > 1
             if use_macro:
-                self.endCommandMacro()
+                self.beginCommandMacro("Clear canvas")
+            try:
+                for element_id in element_ids:
+                    self.removeElement(element_id)
+                for group_id in group_ids:
+                    if self._restoring:
+                        self._remove_group_graphics(group_id)
+                    else:
+                        self.removeGroup(group_id)
+            finally:
+                if use_macro:
+                    self.endCommandMacro()
         self._message_payloads.clear()
         self._runtime_pending_arrivals.clear()
         self._packet_runtime.clear()
@@ -12426,8 +12703,9 @@ class MonkezCanva(QWidget):
         item = _CanvasGroup(self, dict(entry))
         self._scene.addItem(item)
         self._groups[item.group_id] = item
-        self._sync_object_states()
-        self.groupAdded.emit(item.group_id)
+        if not self._bulk_rendering:
+            self._sync_object_states()
+            self.groupAdded.emit(item.group_id)
         return item.group_id
 
     def _apply_group_record(self, group_id: str, entry: dict[str, Any]) -> None:
@@ -13337,47 +13615,75 @@ class MonkezCanva(QWidget):
         if data.get("format") != "monkez-canva":
             raise ValueError("Unsupported MonkezCanva document")
         previous = self._restoring
+        previous_bulk = self._bulk_rendering
         self._restoring = True
-        scene = data.get("scene", {})
-        width = max(100.0, float(scene.get("width", self._scene.sceneRect().width())))
-        height = max(100.0, float(scene.get("height", self._scene.sceneRect().height())))
-        self._scene.setSceneRect(-width / 2, -height / 2, width, height)
-        self._grid_visible = bool(scene.get("gridVisible", self._grid_visible))
-        self._snap_to_grid = bool(scene.get("snapToGrid", self._snap_to_grid))
-        self._snap_targets = normalize_snap_targets(
-            scene.get(SNAP_TARGETS_KEY, self._snap_targets)
-        )
-        self._snap_distance = max(
-            1.0, min(40.0, float(scene.get(SNAP_DISTANCE_KEY, self._snap_distance)))
-        )
-        self._smart_guides_visible = bool(
-            scene.get(SMART_GUIDES_KEY, self._smart_guides_visible)
-        )
-        self._grid_size = max(4, int(scene.get("gridSize", self._grid_size)))
-        self._grid_style = max(0, min(len(_GRID_STYLES) - 1, int(scene.get("gridStyle", self._grid_style))))
-        self._grid_color = _color(scene.get("gridColor", self._grid_color), "#e2e8f0")
-        self._background_color = _color(scene.get("backgroundColor", self._background_color), "#f8fafc")
-        self._background_image = str(scene.get("backgroundImage", ""))
-        self._background_image_mode = max(
-            0,
-            min(len(_BACKGROUND_IMAGE_MODES) - 1, int(scene.get("backgroundImageMode", 0))),
-        )
-        self._background_pixmap = QPixmap(self._background_image) if self._background_image else QPixmap()
-        self._apply_palette_preferences(scene)
-        self._apply_navigation_preferences(scene)
-        self.clear()
-        for entry in data.get("elements", []):
-            self._add_element_record(dict(entry))
-        for entry in data.get("connectors", []):
-            self._add_connector_record(dict(entry))
-        for group in tuple(self._groups.values()):
-            self._scene.removeItem(group)
-            group.deleteLater()
-        self._groups.clear()
-        for entry in data.get("groups", []):
-            self._add_group_record(dict(entry))
-        self._sync_data_binding_definitions()
-        self._restoring = previous
+        self._bulk_rendering = True
+        try:
+            scene = data.get("scene", {})
+            width = max(
+                100.0, float(scene.get("width", self._scene.sceneRect().width()))
+            )
+            height = max(
+                100.0, float(scene.get("height", self._scene.sceneRect().height()))
+            )
+            self._scene.setSceneRect(-width / 2, -height / 2, width, height)
+            self._grid_visible = bool(scene.get("gridVisible", self._grid_visible))
+            self._snap_to_grid = bool(scene.get("snapToGrid", self._snap_to_grid))
+            self._snap_targets = normalize_snap_targets(
+                scene.get(SNAP_TARGETS_KEY, self._snap_targets)
+            )
+            self._snap_distance = max(
+                1.0,
+                min(40.0, float(scene.get(SNAP_DISTANCE_KEY, self._snap_distance))),
+            )
+            self._smart_guides_visible = bool(
+                scene.get(SMART_GUIDES_KEY, self._smart_guides_visible)
+            )
+            self._grid_size = max(4, int(scene.get("gridSize", self._grid_size)))
+            self._grid_style = max(
+                0,
+                min(
+                    len(_GRID_STYLES) - 1,
+                    int(scene.get("gridStyle", self._grid_style)),
+                ),
+            )
+            self._grid_color = _color(
+                scene.get("gridColor", self._grid_color), "#e2e8f0"
+            )
+            self._background_color = _color(
+                scene.get("backgroundColor", self._background_color), "#f8fafc"
+            )
+            self._background_image = str(scene.get("backgroundImage", ""))
+            self._background_image_mode = max(
+                0,
+                min(
+                    len(_BACKGROUND_IMAGE_MODES) - 1,
+                    int(scene.get("backgroundImageMode", 0)),
+                ),
+            )
+            self._background_pixmap = (
+                QPixmap(self._background_image)
+                if self._background_image
+                else QPixmap()
+            )
+            self._apply_palette_preferences(scene)
+            self._apply_navigation_preferences(scene)
+            self.clear()
+            for entry in data.get("elements", []):
+                self._add_element_record(dict(entry))
+            for entry in data.get("connectors", []):
+                self._add_connector_record(dict(entry))
+            for entry in data.get("groups", []):
+                self._add_group_record(dict(entry))
+            self._sync_data_binding_definitions()
+        finally:
+            self._bulk_rendering = previous_bulk
+            self._restoring = previous
+        self._sync_parallel_connector_paths()
+        self._sync_object_states()
+        if self._toolbox is not None:
+            self._toolbox.refreshLayers()
+            self._toolbox._sync_inspector(self.selectedElementId())
         self._scene.invalidate(self._scene.sceneRect(), QGraphicsScene.SceneLayer.BackgroundLayer)
         if not previous:
             self._document_render_notification = True
@@ -13385,6 +13691,18 @@ class MonkezCanva(QWidget):
                 self.documentChanged.emit()
             finally:
                 self._document_render_notification = False
+
+    def _sync_parallel_connector_paths(self) -> None:
+        endpoint_groups: dict[tuple[str, str], list[_CanvasConnector]] = defaultdict(list)
+        for connector in self._connectors.values():
+            endpoints = tuple(
+                sorted((connector.source.element_id, connector.target.element_id))
+            )
+            endpoint_groups[endpoints].append(connector)
+        for siblings in endpoint_groups.values():
+            if len(siblings) > 1:
+                for connector in siblings:
+                    connector.updatePath()
 
     def fitContent(self) -> None:
         bounds = self._scene.itemsBoundingRect()

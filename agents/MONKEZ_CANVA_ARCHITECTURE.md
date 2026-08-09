@@ -499,6 +499,26 @@ menu and command palette all call the same public method.
 5. Declarative data bindings and throttled live chart updates.
 6. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
 7. Large-scene profiling, level-of-detail rendering and culling tests.
+
+## Large-scene render boundary
+
+`monkez_canva/performance.py` owns the Qt-free `CanvasPerformancePolicy`, immutable
+`RenderProfile` and bounded `PerformanceTracker`. Policy resolution consumes only
+mode, transform LOD, object count, selection and packet-critical state. It never
+reads or mutates the portable document.
+
+The Qt adapter starts/finishes a tracker sample around `_CanvasView.paintEvent`.
+Each visible element/group/connector records its resolved tier. QGraphicsScene
+continues to own spatial culling; the item painter only chooses how much detail to
+draw. Background painting uses `adaptive_grid_step()` to maintain a minimum
+screen-space grid interval without changing the snap grid. Export temporarily
+sets `_force_quality_render` inside its existing
+transaction and restores it in `finally`.
+
+Full document projection uses `_bulk_rendering`: graphics are constructed without
+per-item visibility walks or lifecycle notifications, then parallel connectors,
+object state, Layers and Inspector reconcile once. Incremental document operations
+still preserve their granular signals and item identity.
 8. Collaboration after operation IDs and conflict semantics are stable.
 
 ## Verification focus

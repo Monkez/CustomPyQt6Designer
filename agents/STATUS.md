@@ -2,6 +2,12 @@
 
 Updated: 2026-08-09
 
+- `MC-CORE-PERFORMANCE-002` adds adaptive Full/Compact/Overview LOD, public
+  render-frame metrics, Auto/Quality/Speed controls, full-quality export isolation
+  and coalesced document projection. The native 100/1,000/10,000-node baseline is
+  reproducible through `benchmark_canva.bat`; 10,000 nodes attach in about 6.6 s
+  and the measured visible overview paint averages about 33 ms on the recorded
+  Windows/Python 3.11/Qt 6.4.2 environment.
 - Control Pane tab highlight now uses a short custom-painted 2 px coral
   indicator with no selected button frame. Selected icon/text color and a quiet
   hover wash preserve recognition while making the five-tab row visually lighter.
@@ -379,7 +385,7 @@ Updated: 2026-08-09
   exact whole-package SHA-256 trust and explicit load/unload/revoke lifecycle.
   The polished Plugin Manager never executes during discovery, and unload restores
   live records to missing-component placeholders without changing IDs or data.
-- The automated suite contains 251 tests and covers all 36 public
+- The automated suite contains 259 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

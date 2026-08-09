@@ -96,10 +96,12 @@ def export_render_state(canvas, scope: str, *, transparent: bool) -> Iterator[tu
     visibility = {object_id: item.isVisible() for object_id, item in object_items.items()}
     selection = {object_id: item.isSelected() for object_id, item in object_items.items()}
     suppress_background = bool(getattr(canvas._scene, "_suppress_export_background", False))
+    force_quality = bool(getattr(canvas, "_force_quality_render", False))
     guides = canvas._scene._smart_guides
     try:
         canvas._scene._smart_guides = ()
         canvas._scene._suppress_export_background = bool(transparent)
+        canvas._force_quality_render = True
         for object_id, item in object_items.items():
             item.setSelected(False)
             if object_id not in included:
@@ -113,6 +115,7 @@ def export_render_state(canvas, scope: str, *, transparent: bool) -> Iterator[tu
         yield bounds, included
     finally:
         canvas._scene._suppress_export_background = suppress_background
+        canvas._force_quality_render = force_quality
         canvas._scene._smart_guides = guides
         for object_id, item in object_items.items():
             item.setVisible(visibility[object_id])

@@ -179,6 +179,16 @@ from .snapping import (
     normalize_snap_targets,
     snap_rect,
 )
+from .performance import (
+    PERFORMANCE_MODES,
+    RENDER_TIERS,
+    CanvasPerformancePolicy,
+    PerformanceTracker,
+    RenderProfile,
+    adaptive_grid_step,
+    estimate_transform_lod,
+    normalize_performance_mode,
+)
 from .routing import (
     deduplicate_points,
     obstacle_avoiding_route,
@@ -209,6 +219,8 @@ from .typed_ports import (
 )
 
 __all__ = [
+    "PERFORMANCE_MODES",
+    "RENDER_TIERS",
     "BRANCH_POLICIES",
     "BINDING_STATES",
     "BINDING_TARGET_PREFIXES",
@@ -247,6 +259,7 @@ __all__ = [
     "ComponentPack",
     "ComponentPlugin",
     "CanvasDocument",
+    "CanvasPerformancePolicy",
     "BUILTIN_ELEMENT_DEFINITIONS",
     "ConnectorModel",
     "DASHBOARD_PACK_ID",
@@ -264,6 +277,7 @@ __all__ = [
     "OperationEvent",
     "PaletteEntry",
     "PacketRuntime",
+    "PerformanceTracker",
     "PLUGIN_MANIFEST_NAME",
     "PLUGIN_PACKAGE_FORMAT",
     "PLUGIN_PACKAGE_STATES",
@@ -276,6 +290,7 @@ __all__ = [
     "RuntimeTraceEvent",
     "PortModel",
     "ResourceModel",
+    "RenderProfile",
     "SceneModel",
     "SnapGuide",
     "SnapRect",
@@ -310,12 +325,15 @@ __all__ = [
     "decode_selection_payload",
     "decode_canvas_template",
     "discover_plugin_packages",
+    "adaptive_grid_step",
+    "estimate_transform_lod",
     "load_json_with_recovery",
     "load_trusted_plugin_package",
     "layout_graph",
     "migrate_document",
     "normalize_component_ids",
     "normalize_plugin_id",
+    "normalize_performance_mode",
     "normalize_template_id",
     "normalize_snap_targets",
     "deduplicate_points",

@@ -1,0 +1,160 @@
+{
+  "format": "monkez-canva-performance",
+  "version": 1,
+  "capturedAt": "2026-08-09T11:17:21.099265+00:00",
+  "environment": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python": "3.11.15",
+    "qt": "6.4.2",
+    "pyqt": "6.4.2"
+  },
+  "viewport": {
+    "width": 1280,
+    "height": 760
+  },
+  "samplesPerView": 5,
+  "withConnectors": false,
+  "cases": [
+    {
+      "nodes": 100,
+      "connectors": 0,
+      "loadMs": 54.6905,
+      "detail": {
+        "frameCount": 5,
+        "sampleCount": 5,
+        "lastFrameMs": 2.4733,
+        "averageFrameMs": 2.668,
+        "p95FrameMs": 3.4439,
+        "maxFrameMs": 3.4439,
+        "objectCount": 100,
+        "lod": 1.0,
+        "paintedObjects": 20,
+        "paintCounts": {
+          "element": 20
+        },
+        "tierCounts": {
+          "full": 20
+        },
+        "mode": "auto",
+        "coldGrabMs": 5.09,
+        "grabAverageMs": 4.1519,
+        "grabMaxMs": 4.7875
+      },
+      "overview": {
+        "frameCount": 5,
+        "sampleCount": 5,
+        "lastFrameMs": 13.6326,
+        "averageFrameMs": 12.1382,
+        "p95FrameMs": 13.6326,
+        "maxFrameMs": 13.6326,
+        "objectCount": 100,
+        "lod": 0.6782,
+        "paintedObjects": 100,
+        "paintCounts": {
+          "element": 100
+        },
+        "tierCounts": {
+          "full": 100
+        },
+        "mode": "auto",
+        "coldGrabMs": 15.1769,
+        "grabAverageMs": 13.539,
+        "grabMaxMs": 14.9449
+      }
+    },
+    {
+      "nodes": 1000,
+      "connectors": 0,
+      "loadMs": 556.0474,
+      "detail": {
+        "frameCount": 5,
+        "sampleCount": 5,
+        "lastFrameMs": 2.7711,
+        "averageFrameMs": 2.638,
+        "p95FrameMs": 3.0187,
+        "maxFrameMs": 3.0187,
+        "objectCount": 1000,
+        "lod": 1.0,
+        "paintedObjects": 20,
+        "paintCounts": {
+          "element": 20
+        },
+        "tierCounts": {
+          "full": 20
+        },
+        "mode": "auto",
+        "coldGrabMs": 4.4758,
+        "grabAverageMs": 3.9694,
+        "grabMaxMs": 4.2402
+      },
+      "overview": {
+        "frameCount": 5,
+        "sampleCount": 5,
+        "lastFrameMs": 7.1658,
+        "averageFrameMs": 7.015,
+        "p95FrameMs": 7.2979,
+        "maxFrameMs": 7.2979,
+        "objectCount": 1000,
+        "lod": 0.2253,
+        "paintedObjects": 399,
+        "paintCounts": {
+          "element": 399
+        },
+        "tierCounts": {
+          "overview": 399
+        },
+        "mode": "auto",
+        "coldGrabMs": 8.1516,
+        "grabAverageMs": 8.4922,
+        "grabMaxMs": 8.897
+      }
+    },
+    {
+      "nodes": 10000,
+      "connectors": 0,
+      "loadMs": 6556.7646,
+      "detail": {
+        "frameCount": 5,
+        "sampleCount": 5,
+        "lastFrameMs": 3.1014,
+        "averageFrameMs": 2.5965,
+        "p95FrameMs": 3.1014,
+        "maxFrameMs": 3.1014,
+        "objectCount": 10000,
+        "lod": 1.0,
+        "paintedObjects": 20,
+        "paintCounts": {
+          "element": 20
+        },
+        "tierCounts": {
+          "full": 20
+        },
+        "mode": "auto",
+        "coldGrabMs": 4.9347,
+        "grabAverageMs": 3.9149,
+        "grabMaxMs": 4.4867
+      },
+      "overview": {
+        "frameCount": 5,
+        "sampleCount": 5,
+        "lastFrameMs": 31.814,
+        "averageFrameMs": 31.3787,
+        "p95FrameMs": 32.0441,
+        "maxFrameMs": 32.0441,
+        "objectCount": 10000,
+        "lod": 0.2,
+        "paintedObjects": 1672,
+        "paintCounts": {
+          "element": 1672
+        },
+        "tierCounts": {
+          "overview": 1672
+        },
+        "mode": "auto",
+        "coldGrabMs": 32.6206,
+        "grabAverageMs": 32.9115,
+        "grabMaxMs": 33.502
+      }
+    }
+  ]
+}
