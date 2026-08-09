@@ -92,6 +92,9 @@ def main() -> int:
             "componentPackChanged -> %s enabled=%s", pack_id, enabled
         )
     )
+    canvas.exportCompleted.connect(
+        lambda path, format_name, scope: logger.info("exportCompleted -> %s [%s/%s]", path, scope, format_name)
+    )
     canvas.enableWorkflowComponents()
     canvas.enableAllComponentPacks()
     canvas.setPersistenceKey("demo-workspace")

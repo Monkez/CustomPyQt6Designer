@@ -37,6 +37,8 @@ from PyQt6.QtGui import (
     QIcon,
     QKeySequence,
     QMovie,
+    QPageLayout,
+    QPageSize,
     QPainter,
     QPainterPath,
     QPainterPathStroker,
@@ -45,6 +47,7 @@ from PyQt6.QtGui import (
     QShortcut,
     QUndoStack,
 )
+from PyQt6.QtPrintSupport import QPageSetupDialog, QPrinter, QPrintPreviewDialog
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QAbstractItemView,
@@ -89,6 +92,7 @@ from monkez_pyqt6.monkez_canva import (
     BindingUpdate,
     COMPONENT_PACKS,
     ComponentPack,
+    CanvasPageConfig,
     DataBindingEngine,
     ElementDefinition,
     ElementRegistry,
@@ -120,6 +124,7 @@ from monkez_pyqt6.monkez_canva import (
     load_json_with_recovery,
     layout_graph,
     normalize_component_ids,
+    normalize_page_config,
     record_recent_component,
     search_palette,
     decode_selection_payload,
@@ -140,6 +145,8 @@ from monkez_pyqt6.monkez_canva import (
     obstacle_avoiding_route,
     evaluate_directed_ports,
     evaluate_port_pair,
+    export_dot,
+    export_mermaid,
     normalize_port_record,
     validate_port_value,
     parallel_lane_offset,
@@ -162,6 +169,11 @@ from monkez_pyqt6.monkez_widgets._canva_pack_renderers import (
     paint_component_pack_item,
 )
 from monkez_pyqt6.monkez_widgets._canva_minimap import CanvasMinimap
+from monkez_pyqt6.monkez_widgets._canva_export import (
+    configure_paged_device,
+    export_graphic,
+    print_canvas,
+)
 
 
 _GRID_STYLES = ("lines", "dots", "cross")
@@ -668,6 +680,11 @@ def _canvas_icon(name: str, color: str = "#475569") -> QIcon:
         painter.drawLine(QPointF(8, 9), QPointF(11, 12))
         painter.drawLine(QPointF(11, 12), QPointF(14, 10))
         painter.drawLine(QPointF(14, 10), QPointF(17, 14))
+    elif name == "export":
+        painter.drawRoundedRect(QRectF(3, 10, 14, 7), 2, 2)
+        painter.drawLine(QPointF(10, 13), QPointF(10, 3))
+        painter.drawLine(QPointF(10, 3), QPointF(6.5, 6.5))
+        painter.drawLine(QPointF(10, 3), QPointF(13.5, 6.5))
     elif name in ("chevron_up", "chevron_down"):
         if name == "chevron_up":
             painter.drawLine(QPointF(5, 12), QPointF(10, 7))
@@ -710,6 +727,8 @@ class _CanvasScene(QGraphicsScene):
         painter.restore()
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
+        if getattr(self, "_suppress_export_background", False):
+            return
         painter.fillRect(rect, self.canvas.backgroundColor)
         pixmap = self.canvas._background_pixmap
         if not pixmap.isNull():
@@ -2520,6 +2539,60 @@ class _CanvasCommandPalette(QDialog):
             ("runtime:step", "Step next packet", "Runtime", "debug breakpoint", "arrow_right", canvas.runtimePaused() and bool(canvas.messageTickets(False)), canvas.stepRuntime),
             ("workflow:enable-pack", "Enable workflow component pack", "Workflow", "source sink transform filter delay queue runtime", "node", not canvas.workflowComponentsEnabled(), canvas.enableWorkflowComponents),
             ("save:project", "Save project workspace", "Save", "persistent durable", "save", writable, canvas.savePersistent),
+                (
+                    "export:scene",
+                    "Export canvas image or document",
+                    "Export",
+                    "png transparent svg pdf",
+                    "export",
+                    True,
+                    canvas.exportGraphicToDialog,
+                ),
+                (
+                    "export:selection",
+                    "Export selected objects",
+                    "Export",
+                    "selection png transparent svg pdf",
+                    "export",
+                    bool(selected),
+                    lambda: canvas.exportGraphicToDialog("selection"),
+                ),
+                (
+                    "export:dot",
+                    "Export Graphviz DOT",
+                    "Export",
+                    "graph exchange dot",
+                    "export",
+                    bool(canvas.elements()),
+                    canvas.exportDotToDialog,
+                ),
+                (
+                    "export:mermaid",
+                    "Export Mermaid flowchart",
+                    "Export",
+                    "graph exchange markdown",
+                    "export",
+                    bool(canvas.elements()),
+                    canvas.exportMermaidToDialog,
+                ),
+                (
+                    "print:preview",
+                    "Print preview",
+                    "Export",
+                    "page paper pdf printer",
+                    "export",
+                    bool(canvas.elements()),
+                    canvas.showPrintPreview,
+                ),
+                (
+                    "print:page-setup",
+                    "Page setup",
+                    "Export",
+                    "paper size orientation margin print",
+                    "export",
+                    True,
+                    canvas.showPageSetup,
+                ),
             ("group:import", "Import reusable subflow", "Group", "template json", "folder", writable, canvas.importSubflowFromDialog),
         ))
         if selected:
@@ -5713,6 +5786,13 @@ class _CanvasQuickToolbar(QFrame):
             "Save project workspace", 36, "save",
         )
         self._save_button.setObjectName("quickSave")
+        self._button(
+            "",
+            lambda _checked=False: canvas.exportGraphicToDialog(),
+            "Export canvas",
+            36,
+            "export",
+        )
         self._separator(layout)
         self._undo_button = self._button("", canvas.undo, "Undo", 34, "undo")
         self._redo_button = self._button("", canvas.redo, "Redo", 34, "redo")
@@ -6127,6 +6207,7 @@ class MonkezCanva(QWidget):
     dataBindingBatchApplied = pyqtSignal(list)
     dataSourceBound = pyqtSignal(str)
     componentPackChanged = pyqtSignal(str, bool)
+    exportCompleted = pyqtSignal(str, str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -6141,6 +6222,7 @@ class MonkezCanva(QWidget):
         self._grid_style = 0
         self._background_image = ""
         self._background_image_mode = 0
+        self._export_page_config = CanvasPageConfig()
         self._palette_favorites: tuple[str, ...] = ()
         self._palette_recent: tuple[str, ...] = ()
         self._viewport_bookmarks: tuple[dict[str, Any], ...] = ()
@@ -6715,6 +6797,16 @@ class MonkezCanva(QWidget):
             action("Toggle grid", lambda: self.setGridVisible(not self.gridVisible), enabled=writable, icon="grid")
             action("Show all objects", self.showAllObjects, enabled=writable, icon="eye")
             action("Clear isolation", self.clearIsolation, enabled=bool(self._isolated_ids), icon="focus")
+            export_menu = menu.addMenu(_canvas_icon("export"), "Export")
+            export_menu.addAction(
+                _canvas_icon("export"),
+                "Canvas image / SVG / PDF…",
+                self.exportGraphicToDialog,
+            )
+            export_menu.addAction("Graphviz DOT…", self.exportDotToDialog)
+            export_menu.addAction("Mermaid flowchart…", self.exportMermaidToDialog)
+            export_menu.addAction("Page setup…", self.showPageSetup)
+            export_menu.addAction("Print preview…", self.showPrintPreview)
             action("Command palette…", self.showCommandPalette, icon="command")
             action("Runtime debugger…", self.showRuntimeDebugger, icon="command")
             return menu
@@ -6777,6 +6869,12 @@ class MonkezCanva(QWidget):
         action("Bring to front", self.bringSelectedToFront, enabled=writable)
         action("Send to back", self.sendSelectedToBack, enabled=writable)
         action("Zoom to selection", self.zoomToSelection, enabled=bool(selected), icon="fit")
+        action(
+            "Export selection…",
+            lambda: self.exportGraphicToDialog("selection"),
+            enabled=bool(selected),
+            icon="export",
+        )
         if object_id in self._connectors:
             connector = self._connectors[object_id]
             action("Route around obstacles", lambda: self.autoRouteConnector(object_id), enabled=writable, icon="focus")
@@ -11126,6 +11224,205 @@ class MonkezCanva(QWidget):
 
     def toJson(self, indent: int | None = 2) -> str:
         return json.dumps(self.toDocument(), ensure_ascii=False, indent=indent)
+
+    def exportPageConfiguration(self) -> dict[str, Any]:
+        """Return the current PDF/print page configuration."""
+
+        return self._export_page_config.to_dict()
+
+    def setExportPageConfiguration(self, configuration: CanvasPageConfig | Mapping[str, Any]) -> "MonkezCanva":
+        """Set validated PDF/print page configuration for this canvas session."""
+
+        self._export_page_config = normalize_page_config(configuration)
+        return self
+
+    def exportGraphic(
+        self,
+        path: str | Path,
+        *,
+        scope: str = "scene",
+        format: str = "",
+        transparent: bool = False,
+        padding: float = 24.0,
+        scale: float = 1.0,
+    ) -> Path:
+        """Export the full scene or selection to PNG, SVG or PDF.
+
+        Selection handles, smart guides, the floating toolbar and Inspector are
+        never included. ``transparent=True`` suppresses the canvas background
+        and grid, which is most useful for PNG and SVG assets.
+        """
+
+        target = export_graphic(
+            self,
+            path,
+            scope=scope,
+            format_name=format,
+            transparent=transparent,
+            padding=padding,
+            scale=scale,
+            page_config=self._export_page_config,
+        )
+        normalized_format = str(format or target.suffix).lower().lstrip(".")
+        self.exportCompleted.emit(str(target), normalized_format, str(scope))
+        self.diagnosticMessage.emit(f"Exported {scope} as {normalized_format.upper()}: {target}")
+        return target
+
+    def exportScene(self, path: str | Path, **options: Any) -> Path:
+        """Convenience wrapper for :meth:`exportGraphic` with scene scope."""
+
+        return self.exportGraphic(path, scope="scene", **options)
+
+    def exportSelection(self, path: str | Path, **options: Any) -> Path:
+        """Convenience wrapper for :meth:`exportGraphic` with selection scope."""
+
+        return self.exportGraphic(path, scope="selection", **options)
+
+    def exportGraphicToDialog(self, scope: str = "scene") -> str:
+        """Ask for a PNG/SVG/PDF target and export the requested scope."""
+
+        normalized_scope = "scene" if isinstance(scope, bool) else str(scope)
+        filters = "PNG image (*.png);;Transparent PNG (*.png);;Scalable Vector Graphics (*.svg);;PDF document (*.pdf)"
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self.window(),
+            f"Export canvas {normalized_scope}",
+            "monkez-canva.png",
+            filters,
+        )
+        if not path:
+            return ""
+        suffix = ".svg" if "Vector" in selected_filter else ".pdf" if "PDF" in selected_filter else ".png"
+        target = Path(path)
+        if not target.suffix:
+            target = target.with_suffix(suffix)
+        transparent = "Transparent" in selected_filter
+        return str(
+            self.exportGraphic(
+                target,
+                scope=normalized_scope,
+                transparent=transparent,
+            )
+        )
+
+    def exportDot(
+        self,
+        path: str | Path,
+        *,
+        scope: str = "scene",
+        include_positions: bool = True,
+    ) -> Path:
+        """Export a Graphviz DOT representation without requiring Graphviz."""
+
+        object_ids = None if scope == "scene" else self.selectedObjectIds()
+        if scope != "scene" and not object_ids:
+            raise ValueError("Select at least one canvas object before exporting DOT")
+        target = Path(path).expanduser().resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            export_dot(
+                self._document_model,
+                object_ids,
+                graph_name=self.objectName() or "MonkezCanva",
+                include_positions=include_positions,
+            ),
+            encoding="utf-8",
+        )
+        self.exportCompleted.emit(str(target), "dot", scope)
+        self.diagnosticMessage.emit(f"Exported {scope} as DOT: {target}")
+        return target
+
+    def exportMermaid(
+        self,
+        path: str | Path,
+        *,
+        scope: str = "scene",
+        direction: str = "LR",
+    ) -> Path:
+        """Export a constrained Mermaid flowchart suitable for Markdown."""
+
+        object_ids = None if scope == "scene" else self.selectedObjectIds()
+        if scope != "scene" and not object_ids:
+            raise ValueError("Select at least one canvas object before exporting Mermaid")
+        target = Path(path).expanduser().resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            export_mermaid(self._document_model, object_ids, direction=direction),
+            encoding="utf-8",
+        )
+        self.exportCompleted.emit(str(target), "mermaid", scope)
+        self.diagnosticMessage.emit(f"Exported {scope} as Mermaid: {target}")
+        return target
+
+    def exportDotToDialog(self, scope: str = "scene") -> str:
+        normalized_scope = "scene" if isinstance(scope, bool) else str(scope)
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self.window(), "Export Graphviz DOT", "monkez-canva.dot", "Graphviz DOT (*.dot)"
+        )
+        return str(self.exportDot(path, scope=normalized_scope)) if path else ""
+
+    def exportMermaidToDialog(self, scope: str = "scene") -> str:
+        normalized_scope = "scene" if isinstance(scope, bool) else str(scope)
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self.window(),
+            "Export Mermaid flowchart",
+            "monkez-canva.mmd",
+            "Mermaid (*.mmd *.mermaid);;Markdown (*.md)",
+        )
+        return str(self.exportMermaid(path, scope=normalized_scope)) if path else ""
+
+    def printTo(self, printer: QPrinter, *, scope: str = "scene") -> None:
+        """Render the canvas onto a caller-owned ``QPrinter``."""
+
+        print_canvas(
+            self,
+            printer,
+            scope=scope,
+            page_config=self._export_page_config,
+        )
+
+    def showPageSetup(self) -> bool:
+        """Open the native page setup dialog and retain its settings in-session."""
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        configure_paged_device(printer, self._export_page_config)
+        dialog = QPageSetupDialog(printer, self.window())
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        layout = printer.pageLayout()
+        page_ids = {
+            QPageSize.PageSizeId.A3: "A3",
+            QPageSize.PageSizeId.A4: "A4",
+            QPageSize.PageSizeId.A5: "A5",
+            QPageSize.PageSizeId.Letter: "LETTER",
+            QPageSize.PageSizeId.Legal: "LEGAL",
+        }
+        page_size = page_ids.get(layout.pageSize().id(), self._export_page_config.size)
+        margins = layout.margins(QPageLayout.Unit.Millimeter)
+        self._export_page_config = normalize_page_config(
+            {
+                "size": page_size,
+                "orientation": (
+                    "landscape" if layout.orientation() == QPageLayout.Orientation.Landscape else "portrait"
+                ),
+                "margin_left_mm": margins.left(),
+                "margin_top_mm": margins.top(),
+                "margin_right_mm": margins.right(),
+                "margin_bottom_mm": margins.bottom(),
+                "resolution": printer.resolution(),
+            }
+        )
+        self.diagnosticMessage.emit("Export page configuration updated")
+        return True
+
+    def showPrintPreview(self, scope: str = "scene") -> None:
+        """Open a native print preview using the shared page configuration."""
+
+        normalized_scope = "scene" if isinstance(scope, bool) else str(scope)
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        dialog = QPrintPreviewDialog(printer, self.window())
+        dialog.setWindowTitle(f"MonkezCanva print preview · {normalized_scope}")
+        dialog.paintRequested.connect(lambda target: self.printTo(target, scope=normalized_scope))
+        dialog.exec()
 
     def saveDocument(self, path: str | Path) -> Path:
         self._ensure_writable()

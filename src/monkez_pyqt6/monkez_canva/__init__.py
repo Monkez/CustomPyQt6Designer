@@ -66,6 +66,17 @@ from .component_packs import (
     component_packs,
     register_component_pack,
 )
+from .exchange import (
+    EXPORT_PAGE_ORIENTATIONS,
+    EXPORT_PAGE_SIZES,
+    GRAPH_DIRECTIONS,
+    CanvasPageConfig,
+    GraphSelection,
+    export_dot,
+    export_mermaid,
+    normalize_page_config,
+    select_graph,
+)
 
 from .models import (
     DOCUMENT_FORMAT,
@@ -233,6 +244,11 @@ __all__ = [
     "segment_intersection",
     "simplify_collinear",
     "GROUP_KINDS",
+    "GRAPH_DIRECTIONS",
+    "EXPORT_PAGE_ORIENTATIONS",
+    "EXPORT_PAGE_SIZES",
+    "CanvasPageConfig",
+    "GraphSelection",
     "descendant_element_ids",
     "group_bounds",
     "normalize_group_kind",
@@ -263,4 +279,8 @@ __all__ = [
     "component_pack",
     "component_packs",
     "register_component_pack",
+    "export_dot",
+    "export_mermaid",
+    "normalize_page_config",
+    "select_graph",
 ]

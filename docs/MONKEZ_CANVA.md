@@ -711,6 +711,55 @@ new_group = canvas.loadSubflowTemplate(
 )
 ```
 
+## Export hình ảnh, tài liệu và graph
+
+Floatbar có nút **Export** độc lập với Save. Canvas có thể xuất toàn scene hoặc
+selection hiện tại sang PNG, PNG nền trong suốt, SVG vector và PDF. Inspector,
+selection handle, smart guide, minimap và floatbar không xuất hiện trong kết quả.
+Trạng thái selected/visible của mọi object được phục hồi nguyên vẹn sau khi render.
+
+```python
+canvas.exportScene("output/diagram.png", scale=2)
+canvas.exportScene("output/diagram-transparent.png", transparent=True)
+canvas.exportSelection("output/selected.svg", padding=16)
+
+canvas.setExportPageConfiguration({
+    "size": "A4",                 # A3, A4, A5, LETTER, LEGAL
+    "orientation": "landscape",  # portrait | landscape
+    "margin_left_mm": 10,
+    "margin_top_mm": 10,
+    "margin_right_mm": 10,
+    "margin_bottom_mm": 10,
+    "resolution": 180,
+})
+canvas.exportScene("output/diagram.pdf")
+canvas.showPageSetup()
+canvas.showPrintPreview()
+```
+
+`exportGraphic(path, scope=..., format=..., transparent=..., padding=..., scale=...)`
+là API chung. `exportCompleted(path, format, scope)` được phát sau khi file hợp lệ
+đã được tạo. Export là read-only: không làm dirty document, không tạo Undo command
+và dùng được cả khi document đang ở compatibility read-only mode.
+
+Graph exchange không phụ thuộc Graphviz, Mermaid CLI hay Qt:
+
+```python
+canvas.exportDot("output/pipeline.dot")
+canvas.exportMermaid("output/pipeline.mmd", direction="LR")
+
+from monkez_pyqt6.monkez_canva import export_dot, export_mermaid
+dot_text = export_dot(canvas.documentModel(), ["source", "transform", "sink"])
+mermaid_text = export_mermaid(canvas.documentModel(), direction="TB")
+```
+
+DOT giữ stable ID, component type, port ID, arrow direction, kích thước và vị trí.
+Mermaid dùng alias an toàn, shape phù hợp cho decision/database/terminator/note và
+escape nội dung để có thể nhúng trực tiếp vào Markdown. Khi export một group hoặc
+nhiều node, nested member và connector nội bộ được tự động đưa vào phạm vi.
+Các thao tác này có trong menu chuột phải và Ctrl+K; Page setup và Print preview
+dùng native Qt dialog với cùng một cấu hình trang trong phiên chạy.
+
 ## Lưu và đọc tài liệu
 
 ```python

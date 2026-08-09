@@ -390,6 +390,24 @@ Registry defaults must be applied before generic port fallbacks. This invariant
 ensures workflow and pack definitions retain their declared typed ports; fallback
 `in`/`out` ports are created only for definitions that omit a port schema.
 
+## Export and graph-exchange boundary
+
+`monkez_canva/exchange.py` is the Qt-free selection and text-export boundary.
+`select_graph()` validates requested stable IDs, expands nested groups and includes
+connectors whose endpoints both belong to the selected graph. DOT and Mermaid
+consume this identical resolved scope, so headless automation and the visible
+editor cannot disagree about graph membership. Text escaping is format-specific;
+neither exporter executes templates or invokes an external process.
+
+`monkez_widgets/_canva_export.py` is the Qt adapter for PNG, SVG, PDF and printing.
+One render-state context temporarily hides excluded objects, clears selection and
+smart-guide artifacts, optionally suppresses background/grid painting, then
+restores all original state in `finally`. Export therefore never mutates the
+document, history, runtime state or persistent project. PDF and `QPrinter` share
+the public Qt-free `CanvasPageConfig`; the native Page Setup dialog only updates
+that in-session value. All UI actions call the public facade methods rather than
+painting or writing files independently.
+
 ## Roadmap
 
 1. Clipboard, keyboard nudging and true mixed-value property editing.

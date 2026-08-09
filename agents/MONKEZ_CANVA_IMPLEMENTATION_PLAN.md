@@ -316,6 +316,18 @@ reconciliation and validated `property.<schema-name>` data bindings are covered.
 Next ecosystem slices: PNG/SVG/PDF export, page/print configuration, DOT/Mermaid
 exchange, public SDK/example plugin and document diagnostics/diff.
 
+### Export and graph-exchange progress — 2026-08-09
+
+`MC-ECOSYSTEM-EXPORT-001` completes scene/selection PNG, transparent PNG, SVG and
+PDF export through one native Qt render pipeline. Editor-only state is suppressed
+and restored transactionally. Public page configuration, native Page Setup,
+Print Preview, floatbar/context/Ctrl+K discovery and `exportCompleted` diagnostics
+share the same API. The Qt-free `exchange.py` layer adds nested-scope resolution,
+deterministic DOT output and constrained Mermaid flowcharts with safe escaping.
+
+Next: constrained DOT import, reusable document templates, public component SDK
+plus example plugin, then document diff/diagnostics reports.
+
 `MC-EDITOR-PANE-005` removes the remaining Windows native spin-button artifacts
 with owned borderless steppers. It also refines the five-tab segmented bar,
 selected icon color, field focus states, card title clearance and JSON editor

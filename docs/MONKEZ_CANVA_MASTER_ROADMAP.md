@@ -246,6 +246,15 @@ live values drive pack-specific properties without persisting runtime state.
 - document diff and diagnostics report;
 - collaboration only after operation IDs and conflict semantics are stable.
 
+Completed slice (2026-08-09): `MC-ECOSYSTEM-EXPORT-001` adds one native export
+pipeline for scene/selection PNG, transparent PNG, SVG and PDF. It suppresses
+editor artifacts, restores visibility/selection transactionally and shares a
+validated A3/A4/A5/Letter/Legal page configuration with native Page Setup and
+Print Preview. Qt-free deterministic DOT and constrained Mermaid exporters keep
+stable IDs, labels, component shapes, ports, arrow direction and nested-selection
+semantics. Floatbar, context menus, Ctrl+K, public APIs and demo diagnostics use
+the same implementation. DOT import remains the next graph-exchange slice.
+
 ## Cross-phase quality gates
 
 - compatibility and migration tests for every document version;

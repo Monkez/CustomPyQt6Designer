@@ -29,6 +29,8 @@ echo [TIP] Select a connector, then use Debugger ^> Breakpoint, Pause, Step and 
 echo [TIP] Dashboard, Industrial and Software packs are enabled in this demo
 echo [TIP] Select the KPI, Tank or Service to edit its component-specific properties
 echo [TIP] Right-click blank canvas ^> Component packs, or Ctrl+K, to enable/disable packs
+echo [TIP] Use the export icon on the floating toolbar for PNG, transparent PNG, SVG or PDF
+echo [TIP] Ctrl+K, search "export" for selection, DOT, Mermaid, page setup and print preview
 echo.
 
 ".venv311\Scripts\python.exe" -u "examples\canva_demo.py"

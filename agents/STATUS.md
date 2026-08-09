@@ -338,7 +338,14 @@ Updated: 2026-08-09
   support transient validated bindings such as `property.value`; disabling or a
   missing runtime preserves document records and stable IDs. Composite offscreen
   QA covers 12 representative items plus the selected Tank Inspector at 1638×760.
-- The automated suite contains 215 tests and covers all 36 public
+- `MC-ECOSYSTEM-EXPORT-001` begins Phase 5 with native scene/selection PNG,
+  transparent PNG, SVG and PDF export; shared page configuration, native Page
+  Setup and Print Preview; and Qt-free deterministic DOT/Mermaid output. Export
+  transactions suppress editor artifacts and restore selection/visibility. The
+  floatbar, context menu, Ctrl+K, public APIs and demo diagnostics share the same
+  pipeline. Offscreen visual QA exported a 1102×670 mixed software/dashboard/
+  industrial scene with clean bounds, grid and connectors and no editor chrome.
+- The automated suite contains 222 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.
