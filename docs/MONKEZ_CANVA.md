@@ -545,6 +545,9 @@ Control Pane dùng thanh tab icon dạng segmented, card bo góc và lưới thu
 hai cột. Spinbox dùng chevron SVG đóng gói cùng thư viện nên không phụ thuộc
 kiểu nút mặc định của Windows. Các thay đổi Inspector vẫn tự apply; footer phân
 biệt `Session saved`, `Unsaved changes`, `Saved` và trạng thái read-only.
+Card đặt tiêu đề hoàn toàn bên trong bề mặt nên không còn đường viền cắt qua chữ;
+vùng tăng/giảm của spinbox có separator nhẹ và trạng thái hover riêng. Thanh tab
+dùng selected state coral nhẹ, không chiếm layout và không làm dịch chuyển canvas.
 
 Toàn bộ hiệu ứng line/connector, packet và `animateElement()` chia sẻ một clock
 của canvas. `animationStats()` cho biết số target, tick và repaint; dùng
@@ -568,8 +571,13 @@ checkpoint, lưu bền, history và viewport tools. Các hướng nâng cấp ti
 - registry để ứng dụng tự đăng ký element/plugin mới;
 - nhúng QWidget bất kỳ vào scene;
 - clipboard copy/paste đa item hoặc multi-user collaboration;
-- data binding declarative, routing connector tránh vật cản và auto layout;
+- data binding declarative và auto layout;
 - chart axis/series editor và data-type validation giữa các port.
+
+Route `Auto` hiện tự tránh các element hình chữ nhật với clearance cấu hình được.
+Crossing bridge làm rõ đường nằm trên tại giao điểm; connector hỗ trợ bus style
+`Trunk`/`Double`, độ rộng và `busId`. Các tùy chọn có public API, context action,
+Inspector auto-apply và được lưu cùng project.
 
 Các phần này nên được phát triển thành lớp extension riêng thay vì làm class lõi
 phình to. Xem kiến trúc và roadmap trong `agents/MONKEZ_CANVA_ARCHITECTURE.md`.

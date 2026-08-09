@@ -2827,6 +2827,68 @@ class WidgetTests(unittest.TestCase):
         canvas.clear()
         canvas.deleteLater()
 
+    def test_canva_auto_routing_crossing_bridges_and_bus_options(self) -> None:
+        canvas = MonkezCanva()
+        source = canvas.addNode("Source", -320, -48, element_id="source")
+        obstacle = canvas.addElement(
+            "rectangle", -80, -85, 180, 170, element_id="obstacle"
+        )
+        target = canvas.addNode("Target", 260, -48, element_id="target")
+        routed = canvas.connectElements(
+            source,
+            target,
+            connector_id="routed",
+            route="auto",
+            obstacleClearance=24,
+            bridgeCrossings=True,
+            bridgeSize=9,
+            busStyle="double",
+            busWidth=12,
+            busId="data-bus",
+        )
+        connector = canvas.connector(routed)
+        self.assertEqual("auto", connector.route)
+        self.assertGreater(connector._path.elementCount(), 2)
+        obstacle_rect = canvas.element(obstacle).sceneBoundingRect().adjusted(-23, -23, 23, 23)
+        for first, second in connector._path_segments():
+            midpoint = (first + second) / 2
+            self.assertFalse(obstacle_rect.contains(midpoint))
+        self.assertEqual("double", connector.bus_style)
+        self.assertEqual("data-bus", connector.bus_id)
+
+        canvas.setConnectorBus(routed, "control-bus", style="trunk", width=16)
+        canvas.setConnectorBridges(routed, False, size=11)
+        self.assertEqual("trunk", connector.bus_style)
+        self.assertEqual(16, connector.bus_width)
+        self.assertEqual("control-bus", connector.bus_id)
+        self.assertFalse(connector.bridge_crossings)
+        self.assertEqual(11, connector.bridge_size)
+        canvas.autoRouteConnector(routed, clearance=30)
+        self.assertEqual(30, connector.obstacle_clearance)
+
+        record = next(
+            item for item in canvas.toDocument()["connectors"] if item["id"] == routed
+        )
+        self.assertEqual("auto", record["route"])
+        self.assertEqual("trunk", record["busStyle"])
+        self.assertEqual("control-bus", record["busId"])
+        self.assertFalse(record["bridgeCrossings"])
+
+        top = canvas.addNode("Top", 0, -300, element_id="top")
+        bottom = canvas.addNode("Bottom", 0, 260, element_id="bottom")
+        crossing = canvas.connectElements(
+            top, bottom, connector_id="crossing", route="straight"
+        )
+        canvas.updateConnector(routed, route="straight", bridgeCrossings=True)
+        canvas.connector(routed)._bridge_cache_revision = -1
+        self.assertTrue(
+            canvas.connector(routed)._crossing_bridges()
+            or canvas.connector(crossing)._crossing_bridges()
+        )
+
+        canvas.clear()
+        canvas.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

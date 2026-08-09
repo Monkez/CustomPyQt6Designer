@@ -171,15 +171,23 @@ overview and viewport rectangle and maps click/drag positions back to scene spac
 ## Connector routing projection
 
 `monkez_canva/routing.py` owns Qt-free lane allocation, orthogonal waypoint
-expansion and point normalization. Connector records persist `waypoints`,
-`cornerRadius`, `label`, `labelPosition` and `parallelSpacing`. The Qt projection
-builds rounded paths, stable symmetric parallel lanes and explicit self-loops;
-animation, packets, hit testing and arrowheads all consume the same final path.
+expansion, point normalization, rectangular obstacle routing and proper segment
+intersection. Connector records persist `waypoints`, `cornerRadius`, `label`,
+`labelPosition`, `parallelSpacing`, obstacle clearance, bridge and bus options.
+The obstacle router uses a deterministic rectilinear visibility grid plus A* with
+a bend penalty. The Qt projection builds rounded paths, stable symmetric parallel
+lanes, explicit self-loops and cached crossing bridges; animation, packets, hit
+testing and arrowheads all consume the same final path.
 
 Waypoint handles are child graphics objects created only for a selected editable
 connector. Dragging updates preview geometry; release commits one model command.
 Double-click adds/removes reroute points through public model-first APIs. Existing
 connector IDs and endpoint references never change during rerouting.
+
+`route=auto` derives obstacles from visible non-endpoint element scene bounds and
+reruns when element geometry changes. Bridge caches are keyed by a canvas-wide
+routing revision. `busStyle=trunk|double` changes only projection stroke layers;
+`busId` remains portable semantic metadata for later runtime bus grouping.
 
 ## Persistence and trust boundary
 
@@ -254,7 +262,7 @@ without leaking scheduler implementation details.
 1. Clipboard, keyboard nudging and true mixed-value property editing.
 2. Searchable palette, command palette and contextual actions.
 3. Typed ports, advanced routing and group/subflow rendering.
-4. Port data types, cardinality rules, obstacle-avoiding routing and auto layout.
+4. Port data types, cardinality rules and auto layout.
 5. Declarative data bindings and throttled live chart updates.
 6. Optional `QGraphicsProxyWidget` adapter with explicit ownership.
 7. Large-scene profiling, level-of-detail rendering and culling tests.

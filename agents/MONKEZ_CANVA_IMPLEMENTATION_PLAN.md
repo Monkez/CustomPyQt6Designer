@@ -217,8 +217,8 @@ portable element/connector properties committed atomically; isolate remains a
 non-destructive view filter. `MC-EDITOR-MINIMAP-001` adds a floating interactive
 overview plus portable center/zoom bookmarks and View-tab controls.
 
-Next: editable connector waypoints, rounded orthogonal corners, reroute handles,
-edge labels, parallel-edge separation and crossing bridges.
+Completed: editable connector waypoints, rounded orthogonal corners, reroute
+handles, edge labels, parallel-edge separation and crossing bridges.
 
 ### Advanced routing progress — 2026-08-09
 
@@ -227,8 +227,13 @@ self-loops, stable parallel-edge separation and shared edge labels. Selected
 connectors expose draggable waypoint handles; add/move/remove/clear APIs and
 Inspector/context/command actions all commit canonical records through Undo.
 
-Next: crossing bridges, edge buses and obstacle-aware routing, followed by
-group/frame, swimlane, collapsible groups and reusable subflows.
+`MC-EDITOR-ROUTING-002` adds deterministic obstacle-aware Manhattan routing,
+proper crossing detection with cached bridge rendering and semantic bus styles
+(`trunk`, `double`, width and ID). Inspector, context actions and public APIs use
+the same canonical connector fields and remain undoable.
+
+Next: group/frame, swimlane, collapsible groups and reusable subflows, followed
+by typed port compatibility and auto-layout adapters.
 
 ## Backlog tracking
 

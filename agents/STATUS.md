@@ -263,7 +263,15 @@ Updated: 2026-08-09
   visual system. Splitter elements provide one-to-many port junctions; addressable
   packets sent through `send_a_message()` propagate across all splitter branches.
 
-- The automated suite contains 170 tests and covers all 36 public
+- `MC-EDITOR-ROUTING-002` adds obstacle-aware auto routing, crossing bridges and
+  `trunk`/`double` bus projection with portable clearance, bridge, width and bus-ID
+  settings. Geometry helpers remain Qt-free; connector APIs, context actions and
+  Inspector fields write canonical undoable records.
+- `MC-EDITOR-PANE-003` refines the approved Floating Cards pane after native UI
+  review: card titles sit inside an uninterrupted border, spin controls use subtle
+  integrated stepper surfaces, and icon-led segmented tabs have a flatter selected
+  state with tighter, consistent spacing.
+- The automated suite contains 174 tests and covers all 36 public
   runtime components and 35 Designer plugins.
 - Canonical and legacy module launchers both report 0.5.0; source doctor
   verification targets all 35 Designer plugins.

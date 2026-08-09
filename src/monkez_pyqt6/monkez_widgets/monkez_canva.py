@@ -107,7 +107,9 @@ from monkez_pyqt6.monkez_canva import (
     snap_rect,
     deduplicate_points,
     orthogonal_points,
+    obstacle_avoiding_route,
     parallel_lane_offset,
+    segment_intersection,
 )
 from monkez_pyqt6.monkez_canva.persistence import copy_asset_atomically
 from monkez_pyqt6.monkez_widgets._canva_commands import (
@@ -1355,6 +1357,12 @@ class _CanvasConnector(QGraphicsObject):
         self.label = str(options.get("label", ""))
         self.label_position = max(0.0, min(1.0, float(options.get("labelPosition", 0.5))))
         self.parallel_spacing = max(0.0, min(120.0, float(options.get("parallelSpacing", 22.0))))
+        self.obstacle_clearance = max(0.0, min(160.0, float(options.get("obstacleClearance", 20.0))))
+        self.bridge_crossings = bool(options.get("bridgeCrossings", True))
+        self.bridge_size = max(3.0, min(30.0, float(options.get("bridgeSize", 7.0))))
+        self.bus_style = str(options.get("busStyle", "none")).lower()
+        self.bus_width = max(2.0, min(80.0, float(options.get("busWidth", 10.0))))
+        self.bus_id = str(options.get("busId", ""))
         self.metadata = dict(options.get("metadata", {}))
         self.locked = bool(options.get("locked", False))
         self.hidden = bool(options.get("hidden", False))
@@ -1364,6 +1372,8 @@ class _CanvasConnector(QGraphicsObject):
         self._waypoint_handles: list[_CanvasWaypointHandle] = []
         self._syncing_handles = False
         self._handles_editable = False
+        self._bridge_cache_revision = -1
+        self._bridge_cache: list[tuple[QPointF, float]] = []
         self.setZValue(float(options.get("z", -1)))
         self.setOpacity(max(0.0, min(1.0, float(options.get("opacity", 1.0)))))
         source.changed.connect(self.updatePath)
@@ -1420,6 +1430,25 @@ class _CanvasConnector(QGraphicsObject):
                 QPointF(bounds.center().x() + side * reach * 0.35, bounds.top() - reach),
                 end,
             )
+        elif self.route == "auto":
+            obstacles = [
+                (
+                    bounds.x(), bounds.y(), bounds.width(), bounds.height()
+                )
+                for element_id, item in self.canvas._elements.items()
+                if item.isVisible()
+                and element_id not in (self.source.element_id, self.target.element_id)
+                for bounds in (item.sceneBoundingRect(),)
+            ]
+            anchors = [start, *self.waypoints, end]
+            routed: list[QPointF] = []
+            for first, second in zip(anchors, anchors[1:]):
+                segment = obstacle_avoiding_route(
+                    (first.x(), first.y()), (second.x(), second.y()), obstacles,
+                    clearance=self.obstacle_clearance,
+                )
+                routed.extend(QPointF(x, y) for x, y in segment[1 if routed else 0:])
+            path = _rounded_polyline_path(routed, self.corner_radius)
         elif self.route in ("orthogonal", "elbow"):
             route_points = orthogonal_points(
                 (start.x(), start.y()), (end.x(), end.y()),
@@ -1453,6 +1482,7 @@ class _CanvasConnector(QGraphicsObject):
                 end,
             )
         self._path = path
+        self.canvas._routing_revision += 1
         self._sync_waypoint_handles()
         self.update()
 
@@ -1502,13 +1532,31 @@ class _CanvasConnector(QGraphicsObject):
             pen.setStyle(Qt.PenStyle.DashDotLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(self._path)
+        if self.bus_style in ("trunk", "double"):
+            bus_pen = QPen(pen)
+            bus_pen.setStyle(Qt.PenStyle.SolidLine)
+            bus_pen.setWidthF(max(self.line_width, self.bus_width))
+            painter.setPen(bus_pen)
+            painter.drawPath(self._path)
+            if self.bus_style == "double":
+                inner = QPen(self.canvas.backgroundColor, max(1.0, self.bus_width - self.line_width * 2.2))
+                inner.setCapStyle(Qt.PenCapStyle.RoundCap)
+                inner.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(inner)
+                painter.drawPath(self._path)
+            else:
+                painter.setPen(pen)
+                painter.drawPath(self._path)
+        else:
+            painter.drawPath(self._path)
         if self.animated:
             _paint_path_effect(
                 painter, self._path, self.animation_effect, self.flow_color,
                 self.line_width, self._flow_phase, self.flow_spacing,
                 self.effect_intensity,
             )
+        if self.bridge_crossings:
+            self._paint_crossing_bridges(painter, pen)
         if self._packets:
             _paint_packets(painter, self._path, self._packets)
         if self.arrow_start:
@@ -1525,6 +1573,65 @@ class _CanvasConnector(QGraphicsObject):
             painter.drawRoundedRect(QRectF(text_rect), 6, 6)
             painter.setPen(QColor("#334155"))
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self.label)
+
+    def _paint_crossing_bridges(self, painter: QPainter, pen: QPen) -> None:
+        for point, angle in self._crossing_bridges():
+            radius = self.bridge_size
+            painter.save()
+            painter.translate(point)
+            painter.rotate(math.degrees(angle))
+            gap = QPen(self.canvas.backgroundColor, max(self.line_width + 5.0, radius * 0.9))
+            gap.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(gap)
+            painter.drawLine(QPointF(-radius, 0), QPointF(radius, 0))
+            bridge_pen = QPen(pen)
+            bridge_pen.setStyle(Qt.PenStyle.SolidLine)
+            painter.setPen(bridge_pen)
+            bridge = QPainterPath(QPointF(-radius, 0))
+            bridge.cubicTo(
+                QPointF(-radius * 0.45, -radius),
+                QPointF(radius * 0.45, -radius),
+                QPointF(radius, 0),
+            )
+            painter.drawPath(bridge)
+            painter.restore()
+
+    def _crossing_bridges(self) -> list[tuple[QPointF, float]]:
+        if self._bridge_cache_revision == self.canvas._routing_revision:
+            return self._bridge_cache
+        ordered = sorted(
+            self.canvas._connectors.values(),
+            key=lambda connector: (connector.zValue(), list(self.canvas._connectors).index(connector.connector_id)),
+        )
+        position = ordered.index(self) if self in ordered else 0
+        current_segments = self._path_segments()
+        bridges: list[tuple[QPointF, float]] = []
+        for other in ordered[:position]:
+            if not other.isVisible() or {self.source.element_id, self.target.element_id} & {other.source.element_id, other.target.element_id}:
+                continue
+            for first_start, first_end in current_segments:
+                for second_start, second_end in other._path_segments():
+                    crossing = segment_intersection(
+                        (first_start.x(), first_start.y()), (first_end.x(), first_end.y()),
+                        (second_start.x(), second_start.y()), (second_end.x(), second_end.y()),
+                        endpoint_margin=0.02,
+                    )
+                    if crossing is not None:
+                        angle = math.atan2(first_end.y() - first_start.y(), first_end.x() - first_start.x())
+                        bridges.append((QPointF(*crossing), angle))
+                        if len(bridges) >= 32:
+                            break
+                if len(bridges) >= 32:
+                    break
+        self._bridge_cache = bridges
+        self._bridge_cache_revision = self.canvas._routing_revision
+        return bridges
+
+    def _path_segments(self) -> list[tuple[QPointF, QPointF]]:
+        segments: list[tuple[QPointF, QPointF]] = []
+        for polygon in self._path.toSubpathPolygons():
+            segments.extend((QPointF(first), QPointF(second)) for first, second in zip(polygon, polygon[1:]))
+        return segments
 
     def _paint_arrow(self, painter: QPainter, position: float) -> None:
         point = self._path.pointAtPercent(position)
@@ -1648,6 +1755,12 @@ class _CanvasConnector(QGraphicsObject):
             "label": self.label,
             "labelPosition": self.label_position,
             "parallelSpacing": self.parallel_spacing,
+            "obstacleClearance": self.obstacle_clearance,
+            "bridgeCrossings": self.bridge_crossings,
+            "bridgeSize": self.bridge_size,
+            "busStyle": self.bus_style,
+            "busWidth": self.bus_width,
+            "busId": self.bus_id,
             "metadata": dict(self.metadata),
             "opacity": self.opacity(),
             "z": self.zValue(),
@@ -1951,6 +2064,7 @@ class _CanvasCommandPalette(QDialog):
         if len(selected) == 1 and selected[0] in canvas._connectors:
             connector_id = selected[0]
             commands.extend((
+                ("connector:auto-route", "Route around obstacles", "Connector", "routing obstacle automatic", "focus", writable, lambda: canvas.autoRouteConnector(connector_id)),
                 ("connector:add-waypoint", "Add reroute point", "Connector", "routing waypoint", "add", writable, lambda: canvas.addConnectorWaypoint(connector_id)),
                 ("connector:clear-waypoints", "Clear reroute points", "Connector", "routing waypoint", "delete", writable and bool(canvas.connector(connector_id).waypoints), lambda: canvas.clearConnectorWaypoints(connector_id)),
             ))
@@ -2022,10 +2136,10 @@ class _CanvasEditorToolbox(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(420, 620)
-        self.resize(448, 710)
+        self.setMinimumSize(410, 620)
+        self.resize(438, 720)
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root.setContentsMargins(14, 14, 14, 14)
         panel = QFrame()
         panel.setObjectName("canvasEditorPanel")
         shadow = QGraphicsDropShadowEffect(panel)
@@ -2035,14 +2149,14 @@ class _CanvasEditorToolbox(QDialog):
         panel.setGraphicsEffect(shadow)
         root.addWidget(panel)
         content = QVBoxLayout(panel)
-        content.setContentsMargins(18, 14, 18, 14)
-        content.setSpacing(10)
+        content.setContentsMargins(16, 13, 16, 12)
+        content.setSpacing(9)
         self._pane_header = _CanvasPaneHeader(self, canvas)
         content.addWidget(self._pane_header)
         self._tabs = QTabWidget()
         self._tabs.setObjectName("canvasEditorTabs")
         self._tabs.setDocumentMode(True)
-        self._tabs.setIconSize(QSize(16, 16))
+        self._tabs.setIconSize(QSize(14, 14))
         self._tabs.tabBar().setExpanding(True)
         self._tabs.tabBar().setUsesScrollButtons(False)
         self._tabs.addTab(self._elements_tab(), _canvas_icon("rectangle"), "Add")
@@ -2124,31 +2238,32 @@ class _CanvasEditorToolbox(QDialog):
             border-radius: 10px; padding: 9px;
         }
         QTabWidget#canvasEditorTabs::pane {
-            border: none; background: transparent; top: 7px;
+            border: none; background: transparent; top: 5px;
         }
         QTabWidget#canvasEditorTabs > QTabBar {
-            background: #f2f0ed; border: 1px solid #ebe8e3;
-            border-radius: 12px; padding: 3px;
+            background: #f3f1ee; border: none;
+            border-radius: 11px; padding: 3px;
         }
         QTabWidget#canvasEditorTabs > QTabBar::tab {
-            color: #70777d; background: transparent; border: none; border-radius: 9px;
-            min-height: 22px; padding: 7px 6px; margin: 0px; font-weight: 600;
+            color: #6e767c; background: transparent; border: none; border-radius: 8px;
+            min-height: 20px; padding: 5px 2px; margin: 2px 0px;
+            font-size: 9px; font-weight: 600;
         }
         QTabWidget#canvasEditorTabs > QTabBar::tab:selected {
-            color: #e95549; background: #fffefd; border: 1px solid #e8e3de;
+            color: #e95549; background: #fff7f5; border: none;
         }
         QTabWidget#canvasEditorTabs > QTabBar::tab:hover:!selected {
             color: #3f474e; background: #f9f7f4;
         }
         QGroupBox {
             color: #303941; background: #fffefd; border: 1px solid #e5e1dc;
-            border-radius: 13px; margin-top: 12px; padding: 17px 12px 12px 12px;
+            border-radius: 13px; margin-top: 0px; padding: 31px 12px 12px 12px;
             font-weight: 600;
         }
         QGroupBox::title {
-            color: #303941; background: #fcfbf9; subcontrol-origin: margin;
-            subcontrol-position: top left; left: 13px; padding: 0 7px;
-            font-size: 10px; font-weight: 650;
+            color: #303941; background: transparent; subcontrol-origin: border;
+            subcontrol-position: top left; top: 11px; left: 14px; padding: 0px;
+            font-size: 10px; font-weight: 700;
         }
         QPushButton, QToolButton {
             color: #3b444b; background: #fffefd; border: 1px solid #ddd9d3;
@@ -2202,19 +2317,21 @@ class _CanvasEditorToolbox(QDialog):
         QComboBox::down-arrow {
             image: url(__SPIN_DOWN__); width: 10px; height: 7px;
         }
-        QDoubleSpinBox { padding-right: 28px; }
+        QDoubleSpinBox { padding-right: 31px; }
         QDoubleSpinBox::up-button {
             subcontrol-origin: padding; subcontrol-position: top right;
-            background: transparent; border: none; width: 25px; height: 16px;
-            margin: 1px 1px 0 0;
+            background: #faf8f5; border: none; border-left: 1px solid #ebe7e2;
+            border-bottom: 1px solid #ebe7e2; border-top-right-radius: 9px;
+            width: 27px; height: 16px; margin: 1px 1px 0px 0px;
         }
         QDoubleSpinBox::down-button {
             subcontrol-origin: padding; subcontrol-position: bottom right;
-            background: transparent; border: none; width: 25px; height: 16px;
-            margin: 0 1px 1px 0;
+            background: #faf8f5; border: none; border-left: 1px solid #ebe7e2;
+            border-bottom-right-radius: 9px;
+            width: 27px; height: 16px; margin: 0px 1px 1px 0px;
         }
         QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
-            background: #f1efec; border-radius: 6px;
+            background: #fff0ed;
         }
         QDoubleSpinBox::up-arrow {
             image: url(__SPIN_UP__); width: 10px; height: 7px;
@@ -2513,7 +2630,7 @@ class _CanvasEditorToolbox(QDialog):
         self._stroke_group = QGroupBox("Line / signal")
         stroke_form = QFormLayout(self._stroke_group)
         self._route_combo = QComboBox()
-        self._route_combo.addItems(("Bezier", "Orthogonal", "Straight", "Polyline"))
+        self._route_combo.addItems(("Bezier", "Auto", "Orthogonal", "Straight", "Polyline"))
         self._source_combo = QComboBox()
         self._target_combo = QComboBox()
         self._source_port_combo = QComboBox()
@@ -2543,6 +2660,20 @@ class _CanvasEditorToolbox(QDialog):
         self._parallel_spacing_field = QDoubleSpinBox()
         self._parallel_spacing_field.setRange(0.0, 120.0)
         self._parallel_spacing_field.setSuffix(" px")
+        self._obstacle_clearance_field = QDoubleSpinBox()
+        self._obstacle_clearance_field.setRange(0.0, 160.0)
+        self._obstacle_clearance_field.setSuffix(" px")
+        self._bridge_crossings_check = QCheckBox("Draw bridge over crossings")
+        self._bridge_size_field = QDoubleSpinBox()
+        self._bridge_size_field.setRange(3.0, 30.0)
+        self._bridge_size_field.setSuffix(" px")
+        self._bus_style_combo = QComboBox()
+        self._bus_style_combo.addItems(("None", "Trunk", "Double"))
+        self._bus_width_field = QDoubleSpinBox()
+        self._bus_width_field.setRange(2.0, 80.0)
+        self._bus_width_field.setSuffix(" px")
+        self._bus_id_edit = QLineEdit()
+        self._bus_id_edit.setPlaceholderText("Optional shared bus ID")
         self._arrow_start_check = QCheckBox("Start")
         self._arrow_end_check = QCheckBox("End")
         arrow_row = QWidget()
@@ -2637,10 +2768,22 @@ class _CanvasEditorToolbox(QDialog):
         self._label_position_label = QLabel("Label position")
         self._corner_radius_label = QLabel("Corner radius")
         self._parallel_spacing_label = QLabel("Parallel spacing")
+        self._obstacle_clearance_label = QLabel("Obstacle gap")
+        self._bridge_crossings_label = QLabel("Crossings")
+        self._bridge_size_label = QLabel("Bridge size")
+        self._bus_style_label = QLabel("Bus style")
+        self._bus_width_label = QLabel("Bus width")
+        self._bus_id_label = QLabel("Bus ID")
         stroke_form.addRow(self._connector_label_label, self._connector_label_edit)
         stroke_form.addRow(self._label_position_label, self._label_position_field)
         stroke_form.addRow(self._corner_radius_label, self._corner_radius_field)
         stroke_form.addRow(self._parallel_spacing_label, self._parallel_spacing_field)
+        stroke_form.addRow(self._obstacle_clearance_label, self._obstacle_clearance_field)
+        stroke_form.addRow(self._bridge_crossings_label, self._bridge_crossings_check)
+        stroke_form.addRow(self._bridge_size_label, self._bridge_size_field)
+        stroke_form.addRow(self._bus_style_label, self._bus_style_combo)
+        stroke_form.addRow(self._bus_width_label, self._bus_width_field)
+        stroke_form.addRow(self._bus_id_label, self._bus_id_edit)
         stroke_form.addRow("Arrowheads", arrow_row)
         stroke_form.addRow(self._animation_label, self._animated_check)
         stroke_form.addRow(self._effect_label, self._effect_combo)
@@ -3100,6 +3243,7 @@ class _CanvasEditorToolbox(QDialog):
             ("source", self._source_edit), ("points", self._points_edit),
             ("packetIcon", self._packet_icon_edit),
             ("connectorLabel", self._connector_label_edit),
+            ("busId", self._bus_id_edit),
         ):
             field.textEdited.connect(
                 lambda _text, name=key: self._schedule_inspector_apply(150, name)
@@ -3120,6 +3264,9 @@ class _CanvasEditorToolbox(QDialog):
             "labelPosition": self._label_position_field,
             "cornerRadius": self._corner_radius_field,
             "parallelSpacing": self._parallel_spacing_field,
+            "obstacleClearance": self._obstacle_clearance_field,
+            "bridgeSize": self._bridge_size_field,
+            "busWidth": self._bus_width_field,
         }
         for key, field in numeric_fields.items():
             field.valueChanged.connect(
@@ -3128,7 +3275,7 @@ class _CanvasEditorToolbox(QDialog):
         for combo in (
             self._source_combo, self._target_combo, self._source_port_combo,
             self._target_port_combo, self._route_combo, self._line_style_combo,
-            self._effect_combo, self._flow_direction_combo,
+            self._effect_combo, self._flow_direction_combo, self._bus_style_combo,
         ):
             combo.currentIndexChanged.connect(
                 lambda _index: self._schedule_inspector_apply(0, "choice")
@@ -3136,6 +3283,7 @@ class _CanvasEditorToolbox(QDialog):
         for check in (
             self._arrow_start_check, self._arrow_end_check, self._animated_check,
             self._packet_loop_check,
+            self._bridge_crossings_check,
         ):
             check.toggled.connect(
                 lambda _checked: self._schedule_inspector_apply(0, "choice")
@@ -3231,6 +3379,12 @@ class _CanvasEditorToolbox(QDialog):
                 labelPosition=self._label_position_field.value() / 100.0,
                 cornerRadius=self._corner_radius_field.value(),
                 parallelSpacing=self._parallel_spacing_field.value(),
+                obstacleClearance=self._obstacle_clearance_field.value(),
+                bridgeCrossings=self._bridge_crossings_check.isChecked(),
+                bridgeSize=self._bridge_size_field.value(),
+                busStyle=self._bus_style_combo.currentText().lower(),
+                busWidth=self._bus_width_field.value(),
+                busId=self._bus_id_edit.text(),
             )
         else:
             values = {key: field.value() for key, field in self._number_fields.items()}
@@ -3370,7 +3524,10 @@ class _CanvasEditorToolbox(QDialog):
             self._connector_opacity_field,
             self._connector_z_field, self._points_edit, self._connector_label_edit,
             self._label_position_field, self._corner_radius_field,
-            self._parallel_spacing_field, *self._number_fields.values(),
+            self._parallel_spacing_field, self._obstacle_clearance_field,
+            self._bridge_crossings_check, self._bridge_size_field,
+            self._bus_style_combo, self._bus_width_field, self._bus_id_edit,
+            *self._number_fields.values(),
         ]
         blockers = [QSignalBlocker(widget) for widget in widgets]
         for field in (self._text_edit, *self._number_fields.values()):
@@ -3434,6 +3591,12 @@ class _CanvasEditorToolbox(QDialog):
                            self._label_position_label, self._label_position_field,
                            self._corner_radius_label, self._corner_radius_field,
                            self._parallel_spacing_label, self._parallel_spacing_field,
+                           self._obstacle_clearance_label, self._obstacle_clearance_field,
+                           self._bridge_crossings_label, self._bridge_crossings_check,
+                           self._bridge_size_label, self._bridge_size_field,
+                           self._bus_style_label, self._bus_style_combo,
+                           self._bus_width_label, self._bus_width_field,
+                           self._bus_id_label, self._bus_id_edit,
                            self._waypoint_actions_label, self._waypoint_actions):
                 widget.setVisible(connector)
             for widget in (
@@ -3458,7 +3621,7 @@ class _CanvasEditorToolbox(QDialog):
                 self._source_combo.setCurrentIndex(self._source_combo.findData(item.source.element_id))
                 self._target_combo.setCurrentIndex(self._target_combo.findData(item.target.element_id))
                 self._refresh_endpoint_port_controls(item.source_port, item.target_port)
-                routes = ("bezier", "orthogonal", "straight", "polyline")
+                routes = ("bezier", "auto", "orthogonal", "straight", "polyline")
                 styles = ("solid", "dash", "dot", "dashdot")
                 self._route_combo.setCurrentIndex(routes.index(item.route) if item.route in routes else 0)
                 self._line_style_combo.setCurrentIndex(styles.index(item.line_style) if item.line_style in styles else 0)
@@ -3481,6 +3644,15 @@ class _CanvasEditorToolbox(QDialog):
                 self._label_position_field.setValue(item.label_position * 100.0)
                 self._corner_radius_field.setValue(item.corner_radius)
                 self._parallel_spacing_field.setValue(item.parallel_spacing)
+                self._obstacle_clearance_field.setValue(item.obstacle_clearance)
+                self._bridge_crossings_check.setChecked(item.bridge_crossings)
+                self._bridge_size_field.setValue(item.bridge_size)
+                self._bus_style_combo.setCurrentIndex(
+                    ("none", "trunk", "double").index(item.bus_style)
+                    if item.bus_style in ("none", "trunk", "double") else 0
+                )
+                self._bus_width_field.setValue(item.bus_width)
+                self._bus_id_edit.setText(item.bus_id)
                 self._points_edit.setText(json.dumps([[point.x(), point.y()] for point in item.waypoints]))
             else:
                 self._text_edit.setText(item.text)
@@ -4142,6 +4314,7 @@ class MonkezCanva(QWidget):
         self._animations: dict[str, QPropertyAnimation] = {}
         self._elements: dict[str, _CanvasElement] = {}
         self._connectors: dict[str, _CanvasConnector] = {}
+        self._routing_revision = 0
         self._document_model: CanvasDocument | None = None
         self._document_subscription = ""
         self._last_rendered_document_revision = 0
@@ -4604,8 +4777,25 @@ class MonkezCanva(QWidget):
         action("Zoom to selection", self.zoomToSelection, enabled=bool(selected), icon="fit")
         if object_id in self._connectors:
             connector = self._connectors[object_id]
+            action("Route around obstacles", lambda: self.autoRouteConnector(object_id), enabled=writable, icon="focus")
             action("Add reroute point", lambda: self.addConnectorWaypoint(object_id), enabled=writable, icon="add")
             action("Clear reroute points", lambda: self.clearConnectorWaypoints(object_id), enabled=writable and bool(connector.waypoints), icon="delete")
+            action(
+                "Disable crossing bridges" if connector.bridge_crossings else "Enable crossing bridges",
+                lambda: self.setConnectorBridges(object_id, not connector.bridge_crossings, connector.bridge_size),
+                enabled=writable,
+            )
+            bus_menu = menu.addMenu("Bus style")
+            for style, label in (("none", "None"), ("trunk", "Trunk"), ("double", "Double rail")):
+                entry = bus_menu.addAction(label)
+                entry.setCheckable(True)
+                entry.setChecked(connector.bus_style == style)
+                entry.setEnabled(writable)
+                entry.triggered.connect(
+                    lambda _checked=False, value=style: self.setConnectorBus(
+                        object_id, connector.bus_id, style=value, width=connector.bus_width
+                    )
+                )
             action("Send test message", lambda: self.send_a_message(object_id), enabled=writable)
         return menu
 
@@ -5459,6 +5649,36 @@ class MonkezCanva(QWidget):
             connector_id, label=str(label), labelPosition=float(position)
         )
 
+    def autoRouteConnector(
+        self, connector_id: str, clearance: float | None = None
+    ) -> "MonkezCanva":
+        values: dict[str, Any] = {"route": "auto"}
+        if clearance is not None:
+            values["obstacleClearance"] = float(clearance)
+        return self.updateConnector(connector_id, **values)
+
+    def setConnectorBus(
+        self,
+        connector_id: str,
+        bus_id: str = "",
+        *,
+        style: str = "trunk",
+        width: float = 10.0,
+    ) -> "MonkezCanva":
+        return self.updateConnector(
+            connector_id,
+            busId=str(bus_id),
+            busStyle=str(style).lower(),
+            busWidth=float(width),
+        )
+
+    def setConnectorBridges(
+        self, connector_id: str, enabled: bool = True, size: float = 7.0
+    ) -> "MonkezCanva":
+        return self.updateConnector(
+            connector_id, bridgeCrossings=bool(enabled), bridgeSize=float(size)
+        )
+
     def updateConnector(self, connector_id: str, **values) -> "MonkezCanva":
         if not self._restoring:
             model = self._document_model.connector(connector_id)
@@ -5467,7 +5687,7 @@ class MonkezCanva(QWidget):
             current = model.to_dict()
             current.update(self._model_values(values))
             route = str(current.get("route", "bezier")).lower()
-            if route not in ("bezier", "orthogonal", "straight", "polyline"):
+            if route not in ("bezier", "auto", "orthogonal", "straight", "polyline"):
                 raise ValueError(f"Unsupported connector route: {route}")
             style = str(current.get("lineStyle", "solid")).lower()
             if style not in ("solid", "dash", "dot", "dashdot"):
@@ -5475,6 +5695,9 @@ class MonkezCanva(QWidget):
             effect = str(current.get("animationEffect", "flow")).lower()
             if effect not in _LINE_EFFECTS:
                 raise ValueError(f"Unsupported connector animation effect: {effect}")
+            bus_style = str(current.get("busStyle", "none")).lower()
+            if bus_style not in ("none", "trunk", "double"):
+                raise ValueError(f"Unsupported connector bus style: {bus_style}")
             source = self._required_element(str(current["source"]))
             target = self._required_element(str(current["target"]))
             self._validate_connection_ports(
@@ -5511,7 +5734,7 @@ class MonkezCanva(QWidget):
             connector = self._required_connector(connector_id)
         if "route" in values:
             route = str(values["route"]).lower()
-            if route not in ("bezier", "orthogonal", "straight", "polyline"):
+            if route not in ("bezier", "auto", "orthogonal", "straight", "polyline"):
                 raise ValueError(f"Unsupported connector route: {route}")
             connector.route = route
         if "lineStyle" in values:
@@ -5562,6 +5785,21 @@ class MonkezCanva(QWidget):
             connector.label_position = max(0.0, min(1.0, float(values["labelPosition"])))
         if "parallelSpacing" in values:
             connector.parallel_spacing = max(0.0, min(120.0, float(values["parallelSpacing"])))
+        if "obstacleClearance" in values:
+            connector.obstacle_clearance = max(0.0, min(160.0, float(values["obstacleClearance"])))
+        if "bridgeCrossings" in values:
+            connector.bridge_crossings = bool(values["bridgeCrossings"])
+        if "bridgeSize" in values:
+            connector.bridge_size = max(3.0, min(30.0, float(values["bridgeSize"])))
+        if "busStyle" in values:
+            bus_style = str(values["busStyle"]).lower()
+            if bus_style not in ("none", "trunk", "double"):
+                raise ValueError(f"Unsupported connector bus style: {bus_style}")
+            connector.bus_style = bus_style
+        if "busWidth" in values:
+            connector.bus_width = max(2.0, min(80.0, float(values["busWidth"])))
+        if "busId" in values:
+            connector.bus_id = str(values["busId"])
         if "opacity" in values:
             connector.setOpacity(max(0.0, min(1.0, float(values["opacity"]))))
         if "z" in values:
@@ -6195,6 +6433,12 @@ class MonkezCanva(QWidget):
     ) -> dict[str, Any]:
         values = cls._model_values(options)
         direction = str(values.get("flowDirection", "forward")).lower()
+        route = str(values.get("route", "bezier")).lower()
+        if route not in ("bezier", "auto", "orthogonal", "straight", "polyline"):
+            raise ValueError(f"Unsupported connector route: {route}")
+        bus_style = str(values.get("busStyle", "none")).lower()
+        if bus_style not in ("none", "trunk", "double"):
+            raise ValueError(f"Unsupported connector bus style: {bus_style}")
         return {
             "id": connector_id,
             "type": "connector",
@@ -6204,7 +6448,7 @@ class MonkezCanva(QWidget):
             "targetPort": str(values.get("targetPort", "")),
             "color": _color(values.get("color", "#64748b"), "#64748b").name(QColor.NameFormat.HexArgb),
             "flowColor": _color(values.get("flowColor", "#38bdf8"), "#38bdf8").name(QColor.NameFormat.HexArgb),
-            "route": str(values.get("route", "bezier")).lower(),
+            "route": route,
             "lineStyle": str(values.get("lineStyle", "solid")).lower(),
             "lineWidth": max(0.5, float(values.get("lineWidth", 2.2))),
             "arrowStart": bool(values.get("arrowStart", False)),
@@ -6224,6 +6468,12 @@ class MonkezCanva(QWidget):
             "label": str(values.get("label", "")),
             "labelPosition": max(0.0, min(1.0, float(values.get("labelPosition", 0.5)))),
             "parallelSpacing": max(0.0, min(120.0, float(values.get("parallelSpacing", 22.0)))),
+            "obstacleClearance": max(0.0, min(160.0, float(values.get("obstacleClearance", 20.0)))),
+            "bridgeCrossings": bool(values.get("bridgeCrossings", True)),
+            "bridgeSize": max(3.0, min(30.0, float(values.get("bridgeSize", 7.0)))),
+            "busStyle": bus_style,
+            "busWidth": max(2.0, min(80.0, float(values.get("busWidth", 10.0)))),
+            "busId": str(values.get("busId", "")),
             "metadata": dict(values.get("metadata", {})),
             "opacity": max(0.0, min(1.0, float(values.get("opacity", 1.0)))),
             "z": float(values.get("z", -1.0)),
@@ -7301,9 +7551,14 @@ class MonkezCanva(QWidget):
             item.update()
 
     def _element_changed(self, _element_id: str) -> None:
+        self._routing_revision += 1
+        for connector in self._connectors.values():
+            if connector.route == "auto":
+                connector.updatePath()
         self.documentChanged.emit()
 
     def _connector_changed(self, _connector_id: str) -> None:
+        self._routing_revision += 1
         self.documentChanged.emit()
 
     def _emit_selection(self) -> None:

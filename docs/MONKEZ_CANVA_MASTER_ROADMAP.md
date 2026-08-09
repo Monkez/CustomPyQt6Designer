@@ -130,7 +130,8 @@ connectors. Routing parameters are portable, undoable and Inspector-editable.
 - minimap, document outline, viewport bookmarks and zoom-to-selection — complete;
 - lock, hide and isolate item — complete; group state remains;
 - editable connector waypoints, rounded orthogonal corners and reroute points — complete;
-- edge labels, self-loops and parallel edges — complete; crossing bridges and buses remain;
+- edge labels, self-loops, parallel edges, crossing bridges and visual buses — complete;
+- obstacle-aware Manhattan routing with configurable clearance — complete;
 - group/frame, swimlane, collapsible group and reusable subflow;
 - automatic layout adapter with layered, tree, force and radial strategies.
 
