@@ -6,7 +6,7 @@ from importlib import import_module
 from typing import Any
 
 
-__version__ = "0.6.2"
+__version__ = "0.6.3"
 
 _LAZY_UI_EXPORTS = {
     "UiLoadError",

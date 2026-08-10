@@ -16,6 +16,7 @@ class ProjectScaffoldTests(unittest.TestCase):
             setup_text = (root / "setup.bat").read_text(encoding="utf-8")
             self.assertIn(".venv", setup_text)
             self.assertIn("uv venv", setup_text)
+            self.assertIn("git+https://github.com/Monkez/CustomPyQt6Designer.git@main", (root / "requirements.txt").read_text(encoding="utf-8"))
             for script in ("setup.bat", "run.bat", "build.bat"):
                 self.assertTrue((root / script).is_file())
 

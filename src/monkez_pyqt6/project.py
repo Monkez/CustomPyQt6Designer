@@ -79,11 +79,13 @@ if errorlevel 1 (
   python -m uv venv .venv --python {python_version} --python-preference managed
   if errorlevel 1 exit /b %errorlevel%
   python -m uv pip install --python .venv\Scripts\python.exe --upgrade -r requirements.txt
+  if errorlevel 1 exit /b %errorlevel%
 ) else (
   echo Creating managed Python {python_version} environment with uv...
   uv venv .venv --python {python_version} --python-preference managed
   if errorlevel 1 exit /b %errorlevel%
   uv pip install --python .venv\Scripts\python.exe --upgrade -r requirements.txt
+  if errorlevel 1 exit /b %errorlevel%
 )
 if errorlevel 1 exit /b %errorlevel%
 echo Environment ready.
@@ -129,7 +131,7 @@ def create_project(path: str | Path, *, name: str | None = None, python_version:
     (root / "main.py").write_text(_main_py(project_name, python_version), encoding="utf-8")
     (root / "setup.bat").write_text(_setup_bat(python_version), encoding="utf-8")
     (root / "requirements.txt").write_text(
-        "monkez-pyqt6[all]>=0.6.2\npyinstaller>=6.0\n", encoding="utf-8"
+        "monkez-pyqt6[all] @ git+https://github.com/Monkez/CustomPyQt6Designer.git@main\npyinstaller>=6.0\n", encoding="utf-8"
     )
     (root / "run.bat").write_text(_run_bat(), encoding="utf-8")
     (root / "build.bat").write_text(_build_bat(project_name), encoding="utf-8")
