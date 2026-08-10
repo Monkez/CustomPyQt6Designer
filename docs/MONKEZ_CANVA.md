@@ -8,9 +8,11 @@ Create a portable PyQt6 project with the bundled application skeleton:
 monkez_pyqt6 init -n telemetry_dashboard -python 3.11
 ```
 
-The command creates `main.py`, `assets/qt-uis`, `images`, `icons`, `logs`,
-`configs`, `modules`, `config.json`, and `setup.bat`/`run.bat`/`build.bat`.
-The first run creates `.venv` and installs the package automatically. Use
+The command creates `main.py`, `requirements.txt`, `assets/qt-uis`, `images`,
+`icons`, `logs`, `configs`, `modules`, `config.json`, and
+`setup.bat`/`run.bat`/`build.bat`. The first run creates `.venv` inside the
+project and installs the package automatically. When copying a project to a
+different computer, delete `.venv` and run `setup.bat` again. Use
 `--no-setup` when generating files in CI or when the environment is prepared
 separately.
 

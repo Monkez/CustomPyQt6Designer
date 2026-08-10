@@ -12,6 +12,8 @@ class ProjectScaffoldTests(unittest.TestCase):
             self.assertTrue((root / "main.py").is_file())
             self.assertTrue((root / "assets" / "qt-uis" / "main.ui").is_file())
             self.assertTrue((root / "assets" / "configs" / "config.json").is_file())
+            self.assertTrue((root / "requirements.txt").is_file())
+            self.assertIn(".venv", (root / "setup.bat").read_text(encoding="utf-8"))
             for script in ("setup.bat", "run.bat", "build.bat"):
                 self.assertTrue((root / script).is_file())
 

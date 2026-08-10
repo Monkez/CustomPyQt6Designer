@@ -70,13 +70,30 @@ def _setup_bat(python_version: str) -> str:
     return f'''@echo off
 setlocal
 cd /d "%~dp0"
+set "PYTHON_EXE="
+for /f "delims=" %%P in ('py -{python_version} -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON_EXE=%%P"
+if not defined PYTHON_EXE (
+  echo Python {python_version} was not found. Attempting installation with winget...
+  where winget >nul 2>nul
+  if errorlevel 1 (
+    echo Install Python {python_version} manually, then run setup.bat again.
+    exit /b 1
+  )
+  winget install --id Python.Python.{python_version} --exact --scope user --accept-package-agreements --accept-source-agreements
+  if errorlevel 1 exit /b %errorlevel%
+  for /f "delims=" %%P in ('py -{python_version} -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON_EXE=%%P"
+)
+if not defined PYTHON_EXE (
+  echo Python {python_version} is still unavailable. Open a new terminal and retry.
+  exit /b 1
+)
 if not exist ".venv\Scripts\python.exe" (
-  py -{python_version} -m venv .venv
+  "%PYTHON_EXE%" -m venv .venv
   if errorlevel 1 exit /b %errorlevel%
 )
 call ".venv\Scripts\activate.bat"
 python -m pip install --upgrade pip
-python -m pip install "monkez-pyqt6[all]" pyinstaller
+python -m pip install --upgrade -r requirements.txt
 echo Environment ready.
 '''
 
@@ -102,7 +119,7 @@ echo Built dist\\{project_name}\\{project_name}.exe
 '''
 
 
-def create_project(path: str | Path, *, name: str | None = None, python_version: str = "3.11", run_setup: bool = False) -> Path:
+def create_project(path: str | Path, *, name: str | None = None, python_version: str = "3.11", run_setup: bool = True) -> Path:
     root = Path(path).expanduser().resolve()
     project_name = name or root.name
     if not _PROJECT_NAME.fullmatch(project_name):
@@ -119,6 +136,9 @@ def create_project(path: str | Path, *, name: str | None = None, python_version:
     (root / "assets" / "qt-uis" / "main.ui").write_text(_main_ui(project_name), encoding="utf-8")
     (root / "main.py").write_text(_main_py(project_name, python_version), encoding="utf-8")
     (root / "setup.bat").write_text(_setup_bat(python_version), encoding="utf-8")
+    (root / "requirements.txt").write_text(
+        "monkez-pyqt6[all]>=0.6.0\npyinstaller>=6.0\n", encoding="utf-8"
+    )
     (root / "run.bat").write_text(_run_bat(), encoding="utf-8")
     (root / "build.bat").write_text(_build_bat(project_name), encoding="utf-8")
     (root / "README.md").write_text(f"# {project_name}\n\nRun `setup.bat`, then `run.bat`.\n", encoding="utf-8")
