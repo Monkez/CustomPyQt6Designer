@@ -177,6 +177,17 @@ Docs Lab chỉ tập trung vào tài liệu tương tác:
 - Bảng màu nhanh, format màu và color picker để copy mã màu tiện dùng.
 - Nút Reset để đưa preview về trạng thái mặc định.
 
+## Tạo project mới
+
+```powershell
+monkez-pyqt6 init --name my_app
+```
+
+Scaffold mới có sẵn `assets/images/logo.png` cho splash screen và
+`assets/icons/app.ico` cho application/window icon cũng như bản build PyInstaller.
+Thay trực tiếp hai file này để dùng nhận diện riêng. Xem
+[hướng dẫn tạo project](docs/PROJECT_SCAFFOLD.md) để biết đầy đủ cấu trúc và cấu hình.
+
 ## Demo project
 
 Project mẫu ở [demo_project](demo_project) dùng `monkez_pyqt6.load_ui()` để chạy `.ui` có Monkez widgets:

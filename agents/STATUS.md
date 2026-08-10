@@ -1,8 +1,12 @@
 # Current engineering status
 
-Updated: 2026-08-09
+Updated: 2026-08-10
 
-- Current release gate: 274 tests and 54 subtests pass; Ruff is clean; wheel and
+- Project scaffold now generates a dependency-free default 512 px PNG logo and
+  multi-size Windows ICO. Generated apps read both relative paths from config,
+  show the logo on their splash and keep the icon in the PyInstaller asset tree.
+
+- Current release gate: 279 tests and 54 subtests pass; Ruff is clean; wheel and
   sdist build successfully on the project Python 3.11 environment.
 
 - `MC-RUNTIME-WORKFLOW-002` extends the 29-component workflow pack with bounded
