@@ -61,6 +61,7 @@ Issues = "https://github.com/Monkez/CustomPyQt6Designer/issues"
 
 [project.scripts]
 monkez-pyqt6 = "monkez_pyqt6.launcher:main"
+monkez_pyqt6 = "monkez_pyqt6.launcher:main"
 monkez-plugin-info = "monkez_pyqt6.plugin_info:main"
 monkez-gallery = "monkez_pyqt6.gallery_app:main"
 custom-pyqt6-designer = "monkez_pyqt6.launcher:main"
