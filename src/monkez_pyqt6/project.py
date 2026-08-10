@@ -67,7 +67,7 @@ def _main_ui(project_name: str) -> str:
 
 
 def _setup_bat(python_version: str) -> str:
-    return f'''@echo off
+    return fr'''@echo off
 setlocal
 cd /d "%~dp0"
 set "PYTHON_EXE="
@@ -99,7 +99,7 @@ echo Environment ready.
 
 
 def _run_bat() -> str:
-    return '''@echo off
+    return r'''@echo off
 setlocal
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" call setup.bat
@@ -109,7 +109,7 @@ python main.py
 
 
 def _build_bat(project_name: str) -> str:
-    return f'''@echo off
+    return fr'''@echo off
 setlocal
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" call setup.bat
@@ -137,7 +137,7 @@ def create_project(path: str | Path, *, name: str | None = None, python_version:
     (root / "main.py").write_text(_main_py(project_name, python_version), encoding="utf-8")
     (root / "setup.bat").write_text(_setup_bat(python_version), encoding="utf-8")
     (root / "requirements.txt").write_text(
-        "monkez-pyqt6[all]>=0.6.0\npyinstaller>=6.0\n", encoding="utf-8"
+        "monkez-pyqt6[all]>=0.6.1\npyinstaller>=6.0\n", encoding="utf-8"
     )
     (root / "run.bat").write_text(_run_bat(), encoding="utf-8")
     (root / "build.bat").write_text(_build_bat(project_name), encoding="utf-8")
