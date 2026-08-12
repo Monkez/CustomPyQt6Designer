@@ -1,5 +1,15 @@
 # MonkezCanva
 
+## Runtime locks
+
+`setViewLocked(True)` disables zoom and viewport panning while the canvas is
+running. `setInteractionLocked(True)` disables pointer/keyboard editing,
+selection, dragging, connections, cut/paste, delete and undo/redo in runtime.
+Both locks are deliberately overridden by `setEditMode(True)`, so an editor can
+always recover and modify the document. The matching Qt properties are
+`viewLocked` and `interactionLocked`; each has a `*Changed` signal and a compact
+checkbox group in the View pane.
+
 ## Project scaffolding
 
 Create a portable PyQt6 project with the bundled application skeleton:

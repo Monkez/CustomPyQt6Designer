@@ -2,6 +2,12 @@
 
 Updated: 2026-08-10
 
+## 2026-08-12
+
+- Added runtime `viewLocked` and `interactionLocked` controls to MonkezCanva.
+- Locks apply only outside edit mode and are exposed through Python methods,
+  Qt properties/signals, and the View pane. Edit mode always overrides them.
+
 - Project scaffold now generates a dependency-free default 512 px PNG logo and
   multi-size Windows ICO. Generated apps read both relative paths from config,
   show the logo on their splash and keep the icon in the PyInstaller asset tree.

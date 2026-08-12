@@ -5164,6 +5164,25 @@ class _CanvasEditorToolbox(QDialog):
         navigation_layout.addLayout(move_row, 2, 0, 1, 3)
         layout.addWidget(navigation)
 
+        locks = _CanvasCardGroup("Runtime locks", collapsed=True)
+        locks_layout = QVBoxLayout(locks)
+        locks_layout.setContentsMargins(10, 8, 10, 10)
+        self._view_lock_check = QCheckBox("Lock viewport (zoom / pan)")
+        self._view_lock_check.setToolTip(
+            "Disable viewport navigation while the canvas is running. Edit mode overrides this lock."
+        )
+        self._interaction_lock_check = QCheckBox("Lock interaction (select / drag / connect)")
+        self._interaction_lock_check.setToolTip(
+            "Disable pointer and keyboard editing while running. Edit mode overrides this lock."
+        )
+        locks_layout.addWidget(self._view_lock_check)
+        locks_layout.addWidget(self._interaction_lock_check)
+        layout.addWidget(locks)
+        self._view_lock_check.toggled.connect(self.canvas.setViewLocked)
+        self._interaction_lock_check.toggled.connect(self.canvas.setInteractionLocked)
+        self.canvas.viewLockedChanged.connect(self._sync_runtime_lock_controls)
+        self.canvas.interactionLockedChanged.connect(self._sync_runtime_lock_controls)
+
         performance = _CanvasCardGroup("Rendering", collapsed=True)
         performance_layout = QVBoxLayout(performance)
         self._performance_mode_combo = QComboBox()
@@ -5552,6 +5571,7 @@ class _CanvasEditorToolbox(QDialog):
         self._smart_guides_check.setChecked(self.canvas.smartGuidesVisible())
         self._snap_distance_field.setValue(self.canvas.snapDistance())
         self._minimap_check.setChecked(self.canvas.minimapVisible())
+        self._sync_runtime_lock_controls()
         self._sync_performance_controls()
         self._sync_viewport_bookmarks()
         del blockers
@@ -5574,6 +5594,15 @@ class _CanvasEditorToolbox(QDialog):
             "speed": "Minimal rendering for very large or low-power displays.",
         }
         self._performance_hint.setText(hints[mode])
+
+    def _sync_runtime_lock_controls(self, _value: bool = False) -> None:
+        for checkbox, value in (
+            (self._view_lock_check, self.canvas.getViewLocked()),
+            (self._interaction_lock_check, self.canvas.getInteractionLocked()),
+        ):
+            blocker = QSignalBlocker(checkbox)
+            checkbox.setChecked(value)
+            del blocker
 
     def _update_snap_targets(self, _checked: bool = False) -> None:
         self.canvas.setSnapTargets(
@@ -7503,6 +7532,9 @@ class _CanvasView(QGraphicsView):
             self.canvas._place_minimap()
 
     def wheelEvent(self, event) -> None:
+        if self.canvas._view_is_locked():
+            event.accept()
+            return
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
             current = self.transform().m11()
@@ -7518,6 +7550,12 @@ class _CanvasView(QGraphicsView):
 
     def mousePressEvent(self, event) -> None:
         point = event.position().toPoint()
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self.canvas._interaction_is_locked()
+        ):
+            event.accept()
+            return
         if (
             event.button() == Qt.MouseButton.LeftButton
             and self.canvas.editMode
@@ -7538,7 +7576,11 @@ class _CanvasView(QGraphicsView):
                 )
                 event.accept()
                 return
-        if event.button() == Qt.MouseButton.RightButton and self.itemAt(point) is None:
+        if (
+            event.button() == Qt.MouseButton.RightButton
+            and self.itemAt(point) is None
+            and not self.canvas._view_is_locked()
+        ):
             self._right_pan_active = True
             self._right_pan_origin = point
             self._right_pan_start = point
@@ -7549,6 +7591,13 @@ class _CanvasView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
+        if self.canvas._view_is_locked() and self._right_pan_active:
+            self._right_pan_active = False
+            self._right_pan_origin = None
+            self._right_pan_start = None
+            self.viewport().unsetCursor()
+            event.accept()
+            return
         if self._connection_origin is not None:
             source, port = self._connection_origin
             start = source.portScenePosition(port["id"])
@@ -7620,6 +7669,9 @@ class _CanvasView(QGraphicsView):
             self.canvas.objectClicked.emit(item.connector_id)
 
     def keyPressEvent(self, event) -> None:
+        if self.canvas._view_is_locked() or self.canvas._interaction_is_locked():
+            event.accept()
+            return
         if self._connection_origin is not None and event.key() == Qt.Key.Key_Escape:
             self._connection_origin = None
             self._connection_preview.hide()
@@ -7781,6 +7833,8 @@ class MonkezCanva(QWidget):
     historyChanged = pyqtSignal(bool, bool, str, str)
     documentModifiedChanged = pyqtSignal(bool)
     readOnlyChanged = pyqtSignal(bool, str)
+    viewLockedChanged = pyqtSignal(bool)
+    interactionLockedChanged = pyqtSignal(bool)
     recoveryLoaded = pyqtSignal(str, str)
     assetIntegrityChecked = pyqtSignal(list)
     palettePreferencesChanged = pyqtSignal(list, list)
@@ -7866,6 +7920,10 @@ class MonkezCanva(QWidget):
         self._background_pixmap = QPixmap()
         self._project_directory = ""
         self._edit_mode = False
+        # Runtime safety switches.  Edit mode deliberately overrides both so
+        # authors can always inspect and modify a canvas when editing is on.
+        self._view_locked = False
+        self._interaction_locked = False
         self._shortcut_enabled = True
         self._fit_pending = False
         self._pan_mode = False
@@ -8932,6 +8990,8 @@ class MonkezCanva(QWidget):
     def cutSelection(self) -> dict[str, Any]:
         """Copy then remove the exact current selection as one undoable command."""
 
+        if self._interaction_is_locked():
+            return {}
         self._ensure_writable()
         selected = self.selectedObjectIds()
         payload = self.copySelection()
@@ -8959,6 +9019,8 @@ class MonkezCanva(QWidget):
     ) -> list[str]:
         """Paste a validated clipboard subgraph and return all new object IDs."""
 
+        if self._interaction_is_locked():
+            return []
         self._ensure_writable()
         if payload is None:
             mime = QApplication.clipboard().mimeData()
@@ -12319,6 +12381,8 @@ class MonkezCanva(QWidget):
         animation.deleteLater()
 
     def deleteSelected(self) -> None:
+        if self._interaction_is_locked():
+            return
         selected = list(self._scene.selectedItems())
         use_macro = not self._restoring and len(selected) > 1
         if use_macro:
@@ -14499,7 +14563,7 @@ class MonkezCanva(QWidget):
             self.savePersistent(document)
 
     def undo(self) -> bool:
-        if self.isReadOnly():
+        if self.isReadOnly() or self._interaction_is_locked():
             return False
         self._flush_autosave()
         if not self._undo_stack.canUndo():
@@ -14509,7 +14573,7 @@ class MonkezCanva(QWidget):
         return True
 
     def redo(self) -> bool:
-        if self.isReadOnly():
+        if self.isReadOnly() or self._interaction_is_locked():
             return False
         if not self._undo_stack.canRedo():
             return False
@@ -14781,10 +14845,58 @@ class MonkezCanva(QWidget):
 
     def togglePanMode(self) -> bool:
         self._pan_mode = not self._pan_mode
-        mode = QGraphicsView.DragMode.ScrollHandDrag if self._pan_mode else QGraphicsView.DragMode.RubberBandDrag
-        self._view.setDragMode(mode)
+        self._sync_view_drag_mode()
         self.diagnosticMessage.emit(f"Pan mode={self._pan_mode}")
         return self._pan_mode
+
+    def _view_is_locked(self) -> bool:
+        """Return whether viewport navigation is blocked in runtime mode."""
+        return bool(self._view_locked and not self._edit_mode)
+
+    def _interaction_is_locked(self) -> bool:
+        """Return whether pointer/keyboard interaction is blocked in runtime."""
+        return bool(self._interaction_locked and not self._edit_mode)
+
+    def _sync_view_drag_mode(self) -> None:
+        if self._edit_mode:
+            mode = (
+                QGraphicsView.DragMode.ScrollHandDrag
+                if self._pan_mode
+                else QGraphicsView.DragMode.RubberBandDrag
+            )
+        elif self._view_locked:
+            mode = QGraphicsView.DragMode.NoDrag
+        else:
+            mode = QGraphicsView.DragMode.ScrollHandDrag
+        self._view.setDragMode(mode)
+
+    def getViewLocked(self) -> bool:
+        """Whether zooming and panning are disabled outside edit mode."""
+        return bool(self._view_locked)
+
+    def setViewLocked(self, locked: bool) -> None:
+        locked = bool(locked)
+        if locked == self._view_locked:
+            return
+        self._view_locked = locked
+        self._sync_view_drag_mode()
+        self.viewLockedChanged.emit(locked)
+        self.diagnosticMessage.emit(f"Runtime viewport lock={locked}")
+
+    def getInteractionLocked(self) -> bool:
+        """Whether selection, dragging and connections are disabled in runtime."""
+        return bool(self._interaction_locked)
+
+    def setInteractionLocked(self, locked: bool) -> None:
+        locked = bool(locked)
+        if locked == self._interaction_locked:
+            return
+        self._interaction_locked = locked
+        if locked and not self._edit_mode:
+            self._scene.clearSelection()
+        self._sync_object_states()
+        self.interactionLockedChanged.emit(locked)
+        self.diagnosticMessage.emit(f"Runtime interaction lock={locked}")
 
     def toggleEditMode(self) -> None:
         self.setEditMode(not self._edit_mode)
@@ -14814,7 +14926,7 @@ class MonkezCanva(QWidget):
             self._minimap.hide()
             if self._command_palette is not None:
                 self._command_palette.hide()
-        self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag if enabled else QGraphicsView.DragMode.ScrollHandDrag)
+        self._sync_view_drag_mode()
         if enabled:
             self._ensure_toolbox()
             self._toolbox.show()
@@ -15090,6 +15202,8 @@ class MonkezCanva(QWidget):
         self.selectionSetChanged.emit(element_ids)
 
     editMode = pyqtProperty(bool, getEditMode, setEditMode)
+    viewLocked = pyqtProperty(bool, getViewLocked, setViewLocked)
+    interactionLocked = pyqtProperty(bool, getInteractionLocked, setInteractionLocked)
     editorShortcutEnabled = pyqtProperty(bool, getShortcutEnabled, setShortcutEnabled)
     gridVisible = pyqtProperty(bool, getGridVisible, setGridVisible)
     snapToGrid = pyqtProperty(bool, getSnapToGrid, setSnapToGrid)
